@@ -93,6 +93,7 @@ code,pre,.mono{font-family:var(--f-mono);font-size:.92em}
 /* ---------- Window ---------- */
 .win{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100vh}
 .body{display:grid;grid-template-columns:52px minmax(0,1fr);min-height:0}
+.body.no-rail,.body:not(:has(>.rail)){grid-template-columns:minmax(0,1fr)}
 .main{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
 .doc{display:flex;flex-direction:column;flex:1;min-height:0;position:relative}
 .canvas{flex:1;min-height:0;overflow:auto;background:var(--bg)}
@@ -530,6 +531,8 @@ html:has(.backdrop),body:has(.backdrop){overflow:auto}
 .window-body{padding:28px}
 .theme-float{position:fixed;top:14px;right:14px;z-index:60}
 .dl{display:flex;gap:14px;align-items:flex-start;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
+.dl:last-child{border-bottom:0}
+.dl .btn,.dl .chip{flex:none}
 .dl .ico{width:40px;height:40px;border-radius:10px;background:var(--surface-3);display:grid;place-items:center;flex:none;color:var(--text-2)}
 .steps-num{counter-reset:s}
 .steps-num li{counter-increment:s;position:relative;padding:0 0 14px 34px}

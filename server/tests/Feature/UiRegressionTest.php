@@ -177,4 +177,28 @@ class UiRegressionTest extends TestCase
             $this->assertDoesNotMatchRegularExpression('/<script\b/i', $stripped, "Found inline executable <script> on $url");
         }
     }
+
+    public function test_downloads_layout_handles_guest_no_rail_and_kb_sizes(): void
+    {
+        $this->bootLab();
+        $dir = storage_path('app/public/downloads');
+        @mkdir($dir, 0755, true);
+        $smallFile = $dir.'/test-signing-cert.cer';
+        file_put_contents($smallFile, str_repeat('A', 900));
+
+        try {
+            $guestHtml = $this->get('/downloads')->assertOk()->getContent();
+            $this->assertStringContainsString('class="body no-rail"', $guestHtml);
+            $this->assertStringContainsString('1 KB · Code signing certificate', $guestHtml);
+            $this->assertStringNotContainsString('0 MB · Release artifact', $guestHtml);
+
+            $admin = $this->user('admin');
+            $authHtml = $this->actingAs($admin)->get('/downloads')->assertOk()->getContent();
+            $this->assertStringContainsString('<div class="body">', $authHtml);
+            $this->assertStringContainsString('aria-label="Downloads"', $authHtml);
+            $this->assertMatchesRegularExpression('/href="[^"]*\/downloads"[^>]*aria-current="page"/', $authHtml);
+        } finally {
+            @unlink($smallFile);
+        }
+    }
 }

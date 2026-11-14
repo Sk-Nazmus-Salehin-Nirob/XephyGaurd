@@ -58,10 +58,20 @@ class PublicController extends Controller
         $ca = CertificateAuthority::fromConfig();
         $ccc = $this->resolveCccHost($lab?->ccc_ip);
         $setupFile = self::resolveWindowsInstallerName();
-        $files = collect(glob(storage_path('app/public/downloads/*')) ?: [])->map(fn ($p) => [
-            'name' => basename($p),
-            'size_mb' => round(filesize($p) / 1048576, 1),
-        ])->values()->all();
+        $files = collect(glob(storage_path('app/public/downloads/*')) ?: [])
+            ->filter(fn ($p) => is_file($p))
+            ->map(function ($p) {
+                $bytes = (int) filesize($p);
+                $sizeLabel = $bytes >= 1048576
+                    ? round($bytes / 1048576, 1).' MB'
+                    : max(1, (int) ceil($bytes / 1024)).' KB';
+
+                return [
+                    'name' => basename($p),
+                    'size_mb' => round($bytes / 1048576, 1),
+                    'size_label' => $sizeLabel,
+                ];
+            })->values()->all();
 
         return response()->view('public.downloads', [
             'ccc' => $ccc,
