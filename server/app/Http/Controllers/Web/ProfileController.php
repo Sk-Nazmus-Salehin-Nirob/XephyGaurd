@@ -37,7 +37,7 @@ class ProfileController extends Controller
             $collect[$c] = in_array($c, $d['collect'] ?? [], true);
         }
         $ruleActions = [];
-        foreach (array_filter(array_map('trim', explode(',', $d['kill_rules'] ?? ''))) as $rid) {
+        foreach (array_filter(array_map('trim', preg_split('/[\s,]+/', (string) ($d['kill_rules'] ?? '')) ?: [])) as $rid) {
             $ruleActions[$rid] = ['log', 'warn', 'kill', 'alert'];
         }
         $data = [

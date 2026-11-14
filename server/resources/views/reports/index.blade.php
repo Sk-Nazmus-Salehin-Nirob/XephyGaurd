@@ -5,16 +5,42 @@
   
   <div class="cols-main">
     <section>
-      <div class="rep"><div class="datebox"><b>07</b><span>Nov</span></div><div><div style="font-weight:600">CSE 1101 practice</div><div class="small muted" style="margin-top:2px">14:00 · Practice · 15 PCs</div></div><span class="chip ok"><span class="dot ok"></span>No flags</span><div class="row"><a class="btn btn-sm btn-solid" href="report-session-2.html">Open</a><button class="btn btn-sm" onclick="window.print()">PDF</button><button class="btn btn-sm" onclick="Alpine.store('toasts').add('CSV is downloading.', 'info')">CSV</button></div></div>
-      <div class="rep"><div class="datebox"><b>05</b><span>Nov</span></div><div><div style="font-weight:600">CSE 3201 quiz</div><div class="small muted" style="margin-top:2px">09:30 · Test · 15 PCs</div></div><span class="chip alert"><span class="dot alert"></span>2 flagged</span><div class="row"><a class="btn btn-sm btn-solid" href="report-session-1.html">Open</a><button class="btn btn-sm" onclick="window.print()">PDF</button><button class="btn btn-sm" onclick="Alpine.store('toasts').add('CSV is downloading.', 'info')">CSV</button></div></div>
-      <div class="rep"><div class="datebox"><b>03</b><span>Nov</span></div><div><div style="font-weight:600">CSE 2200 project lab</div><div class="small muted" style="margin-top:2px">10:00 · Always-on · 12 PCs</div></div><span class="chip watch"><span class="dot watch"></span>1 flagged</span><div class="row"><a class="btn btn-sm btn-solid" href="report-session-1.html">Open</a><button class="btn btn-sm" onclick="window.print()">PDF</button><button class="btn btn-sm" onclick="Alpine.store('toasts').add('CSV is downloading.', 'info')">CSV</button></div></div>
+      @if(!empty($sessions) && $sessions->count())
+        @foreach($sessions as $s)
+          @php
+            $rep = isset($reports) ? ($reports[$s->id] ?? null) : null;
+            $flagged = (int) ($rep?->summary['flagged'] ?? 0);
+          @endphp
+          <div class="rep">
+            <div class="datebox"><b>{{ ($s->ended_at ?? $s->starts_at)?->format('d') ?? '07' }}</b><span>{{ ($s->ended_at ?? $s->starts_at)?->format('M') ?? 'Nov' }}</span></div>
+            <div>
+              <div style="font-weight:600">{{ $s->course }}</div>
+              <div class="small muted" style="margin-top:2px">{{ $s->starts_at?->format('H:i') }} · {{ ucfirst(str_replace('_', ' ', $s->mode)) }} · {{ $rep?->summary['pcs'] ?? 15 }} PCs</div>
+            </div>
+            @if($flagged > 0)
+              <span class="chip alert"><span class="dot alert"></span>{{ $flagged }} flagged</span>
+            @else
+              <span class="chip ok"><span class="dot ok"></span>No flags</span>
+            @endif
+            <div class="row">
+              <a class="btn btn-sm btn-solid" href="{{ route('reports.show', $s) }}">Open</a>
+              <a class="btn btn-sm" href="{{ route('reports.pdf', $s) }}">PDF</a>
+              <a class="btn btn-sm" href="{{ route('reports.csv', $s) }}">CSV</a>
+            </div>
+          </div>
+        @endforeach
+      @else
+        <div class="rep"><div class="datebox"><b>07</b><span>Nov</span></div><div><div style="font-weight:600">CSE 1101 practice</div><div class="small muted" style="margin-top:2px">14:00 · Practice · 15 PCs</div></div><span class="chip ok"><span class="dot ok"></span>No flags</span><div class="row"><a class="btn btn-sm btn-solid" href="report-session-2.html">Open</a><button class="btn btn-sm" onclick="window.print()">PDF</button><button class="btn btn-sm" onclick="Alpine.store('toasts').add('CSV is downloading.', 'info')">CSV</button></div></div>
+        <div class="rep"><div class="datebox"><b>05</b><span>Nov</span></div><div><div style="font-weight:600">CSE 3201 quiz</div><div class="small muted" style="margin-top:2px">09:30 · Test · 15 PCs</div></div><span class="chip alert"><span class="dot alert"></span>2 flagged</span><div class="row"><a class="btn btn-sm btn-solid" href="report-session-1.html">Open</a><button class="btn btn-sm" onclick="window.print()">PDF</button><button class="btn btn-sm" onclick="Alpine.store('toasts').add('CSV is downloading.', 'info')">CSV</button></div></div>
+        <div class="rep"><div class="datebox"><b>03</b><span>Nov</span></div><div><div style="font-weight:600">CSE 2200 project lab</div><div class="small muted" style="margin-top:2px">10:00 · Always-on · 12 PCs</div></div><span class="chip watch"><span class="dot watch"></span>1 flagged</span><div class="row"><a class="btn btn-sm btn-solid" href="report-session-1.html">Open</a><button class="btn btn-sm" onclick="window.print()">PDF</button><button class="btn btn-sm" onclick="Alpine.store('toasts').add('CSV is downloading.', 'info')">CSV</button></div></div>
+      @endif
     </section>
-    <aside class="panel panel-pad stack">
+    <form method="get" action="{{ route('research.export') }}" class="panel panel-pad stack">
       <div><h2 class="h2">Research export</h2><p class="muted small" style="margin-top:2px">Pseudonymised data for students who gave consent. Names never leave this server.</p></div>
-      <label class="field"><span>From</span><input class="input" type="date" x-model="from"></label>
-      <label class="field"><span>Until</span><input class="input" type="date" x-model="to"></label>
-      <button class="btn btn-solid" @click="$store.toasts.add('Research CSV is being prepared.', 'info')"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</button>
-    </aside>
+      <label class="field"><span>From</span><input name="from" class="input" type="date" x-model="from"></label>
+      <label class="field"><span>Until</span><input name="until" class="input" type="date" x-model="to"></label>
+      <button type="submit" class="btn btn-solid"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</button>
+    </form>
   </div>
 </div></div>
 @endsection

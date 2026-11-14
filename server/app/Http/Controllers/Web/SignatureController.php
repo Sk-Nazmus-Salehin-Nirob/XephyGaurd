@@ -46,9 +46,14 @@ class SignatureController extends Controller
 
     public function import(Request $request, BlocklistService $svc, NetworkPolicyWriter $net)
     {
-        $d = $request->validate(['category' => 'required|in:'.implode(',', BlocklistEntry::CATEGORIES),
-            'file' => 'required|file|max:4096', 'source' => 'nullable|string|max:24']);
-        $n = $svc->import($d['category'], $request->file('file')->get(), 'import:'.($d['source'] ?? 'file'), $request->user()->id);
+        $d = $request->validate([
+            'category' => 'required|in:'.implode(',', BlocklistEntry::CATEGORIES),
+            'file' => 'required_without:text|nullable|file|max:4096',
+            'text' => 'required_without:file|nullable|string|max:200000',
+            'source' => 'nullable|string|max:24',
+        ]);
+        $raw = $request->hasFile('file') ? $request->file('file')->get() : (string) ($d['text'] ?? '');
+        $n = $svc->import($d['category'], $raw, 'import:'.($d['source'] ?? 'file'), $request->user()->id);
         Audit::log('blocklist.import', null, ['category' => $d['category'], 'added' => $n]);
         $net->write();
 
