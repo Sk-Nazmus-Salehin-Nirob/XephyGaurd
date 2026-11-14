@@ -1,11 +1,89 @@
 @extends('layouts.app', ['activePage' => 'index.html'])
 @section('title', 'Live lab')
 @section('content')
+@php
+  $seatById = isset($seats) ? collect($seats)->keyBy('id') : collect();
+  $livePcs = isset($pcs) && count($pcs) ? collect($pcs)->values()->map(function ($p, $idx) use ($seatById) {
+      $seat = !empty($p['seat_id']) ? $seatById->get($p['seat_id']) : null;
+      $caps = is_array($p['capabilities'] ?? null) ? $p['capabilities'] : [];
+      $scr = is_array($caps['screen'] ?? null) ? $caps['screen'] : [];
+      $status = $p['status'] ?? 'normal';
+      $score = (int) ($p['score'] ?? 0);
+      $user = $p['user'] ?? '';
+      if ($status === 'offline') {
+          $uiStatus = 'offline';
+      } elseif ($user === '' || $user === null) {
+          $uiStatus = 'idle';
+      } elseif ($score >= 50 || $status === 'alert') {
+          $uiStatus = 'alert';
+      } elseif ($score >= 25 || $status === 'watch') {
+          $uiStatus = 'watch';
+      } else {
+          $uiStatus = 'normal';
+      }
+      $scenes = ['code', 'terminal', 'split', 'writer', 'calc', 'browser'];
+      return [
+          'id' => $p['id'],
+          'name' => $p['name'],
+          'host' => $p['hostname'] ?? $p['name'],
+          'ip' => $p['ip'] ?? '—',
+          'os' => trim(($p['os'] ?? 'Linux') . ' ' . ($p['os_version'] ?? '')),
+          'session' => ($scr['session_type'] ?? 'x11') === 'wayland' ? 'wayland' : (($p['os'] ?? '') === 'windows' ? 'win' : 'x11'),
+          'agent' => $p['agent_version'] ?? '0.2.0',
+          'user' => $user !== '' && $user !== null ? $user : 'No one signed in',
+          'app' => $p['app'] ?: '—',
+          'last' => $p['last_event'] ?: 'Active',
+          'score' => $uiStatus === 'offline' || $uiStatus === 'idle' ? '—' : $score,
+          'status' => $uiStatus,
+          'isolated' => (bool) ($p['isolated'] ?? false),
+          'monitors' => (int) ($scr['monitors'] ?? 1) ?: 1,
+          'x' => $seat ? (int) $seat->x : null,
+          'y' => $seat ? (int) $seat->y : null,
+          'scene' => $uiStatus === 'offline' ? 'off' : ($uiStatus === 'idle' ? 'idle' : ($uiStatus === 'alert' ? 'flag' : $scenes[$idx % count($scenes)])),
+          'caps' => [
+              'snapshot' => (bool) ($scr['snapshot'] ?? ($uiStatus !== 'offline')),
+              'live' => (bool) ($scr['live'] ?? ($uiStatus !== 'offline')),
+              'delta' => (bool) ($scr['delta_tiles'] ?? ($uiStatus !== 'offline')),
+              'multi' => ((int) ($scr['monitors'] ?? 1)) > 1,
+              'secure' => (bool) ($scr['secure_desktop'] ?? (($p['os'] ?? '') === 'windows')),
+          ],
+      ];
+  })->all() : null;
+
+  $liveAlerts = isset($recentAlerts) && count($recentAlerts) ? collect($recentAlerts)->map(function ($a) {
+      return [
+          'id' => $a['id'],
+          'pcId' => $a['pc_id'],
+          'pc' => $a['pc'] ?? ('PC-' . $a['pc_id']),
+          'user' => $a['user'] ?: '—',
+          'sev' => $a['severity'] ?? 'medium',
+          'title' => $a['title'] ?? $a['rule_id'],
+          'rule' => $a['rule_id'] ?? '',
+          'at' => $a['occurred_at'] ?? '',
+          'ago' => 1,
+          'acked' => false,
+      ];
+  })->all() : null;
+@endphp
+@if($livePcs !== null)
+<script>
+window.XG_LIVE = {
+  lab: @json(['cols' => $lab->grid_cols ?? 6, 'rows' => $lab->grid_rows ?? 4]),
+  pcs: @json($livePcs),
+  alerts: @json($liveAlerts ?? []),
+};
+</script>
+@endif
 <div class="doc" x-data="labView" @keydown.escape.window="clear()">
 
   <div class="optbar">
     <span class="otitle">Live lab</span>
-    <span class="mode exam">Exam</span><span class="osub">CSER · 41 min left</span>
+    @if(!empty($session))
+      <span class="mode {{ $session->mode }}">{{ str_replace('_', ' ', ucfirst($session->mode)) }}</span>
+      <span class="osub">{{ $session->course }}{{ $session->ends_at ? ' · ' . max(0, (int) now()->diffInMinutes($session->ends_at, false)) . ' min left' : '' }}</span>
+    @else
+      <span class="mode exam">Exam</span><span class="osub">CSER · 41 min left</span>
+    @endif
     <div class="seg" style="margin-left:12px" role="group" aria-label="View">
       <button :aria-pressed="view === 'map'" @click="view = 'map'"><svg class="i i-sm" aria-hidden="true"><use href="#i-live"/></svg> Map</button>
       <button :aria-pressed="view === 'wall'" @click="view = 'wall'"><svg class="i i-sm" aria-hidden="true"><use href="#i-grid"/></svg> Wall</button>
@@ -24,7 +102,24 @@
     </template>
     <button class="btn" x-show="view === 'map'" :class="editing && 'btn-solid'" @click="editing ? saveLayout() : editing = true" x-text="editing ? 'Done editing' : 'Edit seat map'"></button>
     <button class="btn" @click="message(null)"><svg class="i i-sm" aria-hidden="true"><use href="#i-send"/></svg> Message all</button>
-    <button class="btn btn-danger" @click="if(confirm('End the session? Restrictions lift immediately.')) $store.toasts.add('Session ended.', 'watch')">End session</button>
+    @if(!empty($session))
+      @if(!empty($profiles) && count($profiles))
+      <form method="post" action="{{ route('sessions.switch', $session) }}" style="display:inline-flex;gap:6px;align-items:center">
+        @csrf
+        <select name="profile_id" class="select select-sm" style="width:170px" aria-label="Switch profile" onchange="this.form.submit()">
+          @foreach($profiles as $prof)
+            <option value="{{ $prof->id }}" @selected($session->profile_id === $prof->id)>{{ $prof->name }}</option>
+          @endforeach
+        </select>
+      </form>
+      @endif
+      <form method="post" action="{{ route('sessions.stop', $session) }}" style="display:inline" onsubmit="return confirm('End the session? Restrictions lift immediately.')">
+        @csrf
+        <button type="submit" class="btn btn-danger">End session</button>
+      </form>
+    @else
+      <button class="btn btn-danger" @click="if(confirm('End the session? Restrictions lift immediately.')) $store.toasts.add('Session ended.', 'watch')">End session</button>
+    @endif
   </div>
 
   <div class="work" :class="view === 'wall' && 'full'">
@@ -227,16 +322,22 @@
         </section>
 
         <section x-show="tab === 'programs'" x-cloak style="padding:0">
+          <div class="row" style="padding:12px 20px;border-bottom:1px solid var(--border)">
+            <span class="small muted" x-text="det && det.processesUpdatedAt ? 'Updated ' + det.processesUpdatedAt : 'Running processes'"></span>
+            <span class="grow"></span>
+            <button class="btn btn-sm" @click="rescan('processes')"><svg class="i i-sm" aria-hidden="true"><use href="#i-refresh"/></svg> Rescan</button>
+            <button class="btn btn-sm" @click="promptCloseProgram()">Close a program…</button>
+          </div>
           <table class="tbl"><thead><tr><th>Program</th><th class="right">CPU</th><th class="right">Memory</th><th class="right">Network</th><th></th></tr></thead><tbody>
             <template x-for="p in (det ? det.processes : [])" :key="p.pid"><tr>
               <td><div style="font-weight:500" :style="p.threat && 'color:var(--alert)'" x-text="p.name"></div><div class="tiny muted cut" x-text="p.title"></div></td>
               <td class="right num" x-text="p.cpu.toFixed(1) + '%'"></td><td class="right num" x-text="p.mem + ' MB'"></td><td class="right num" x-text="p.net.toFixed(1) + ' Mb/s'"></td>
-              <td class="right nw"><span class="chip alert" x-show="p.threat" x-text="p.threat" style="margin-right:6px"></span><button class="btn btn-sm" @click="closeName = p.name; closeModal = true">Close</button></td></tr></template>
+              <td class="right nw"><span class="chip alert" x-show="p.threat" x-text="p.threat" style="margin-right:6px"></span><button class="btn btn-sm" @click="closeName = p.name; closePid = p.pid || null; closeModal = true">Close</button></td></tr></template>
           </tbody></table>
         </section>
 
         <section x-show="tab === 'browser'" x-cloak style="padding:0">
-          <div style="padding:16px 20px 8px" class="h3">AI traffic</div>
+          <div class="row" style="padding:16px 20px 8px"><span class="h3">AI traffic</span><span class="grow"></span><button class="btn btn-sm" @click="rescan('network')"><svg class="i i-sm" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh</button></div>
           <table class="tbl" x-show="det && det.aiTraffic.length"><thead><tr><th>Service</th><th>Site</th><th>Browser</th><th class="right">Requests</th><th>Last</th><th>Result</th></tr></thead><tbody>
             <template x-for="r in (det ? det.aiTraffic : [])" :key="r.host"><tr><td style="font-weight:500" x-text="r.service"></td><td class="mono small" x-text="r.host"></td><td x-text="r.proc"></td><td class="right num" x-text="r.count"></td><td class="num muted" x-text="r.last"></td><td><span class="chip" :class="r.mode === 'Blocked' ? 'ok' : 'alert'" x-text="r.mode"></span></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.aiTraffic.length" style="padding:20px"><b>No AI traffic</b>No connections to AI services were seen.</div>
@@ -245,23 +346,39 @@
         </section>
 
         <section x-show="tab === 'installed'" x-cloak style="padding:0">
-          <div style="padding:16px 20px 8px" class="h3">Browser extensions</div>
+          <div class="row" style="padding:16px 20px 8px"><span class="h3">Browser extensions</span><span class="grow"></span><button class="btn btn-sm" @click="rescan('extensions')"><svg class="i i-sm" aria-hidden="true"><use href="#i-refresh"/></svg> Rescan</button></div>
           <table class="tbl" x-show="det && det.extensions.length"><tbody><template x-for="e in (det ? det.extensions : [])" :key="e.id"><tr><td class="muted" style="width:90px" x-text="e.browser"></td><td><div style="font-weight:500" x-text="e.name"></div><div class="tiny muted mono" x-text="e.id"></div></td><td class="right"><span class="chip alert">AI assistant</span></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.extensions.length" style="padding:16px"><b>None found</b></div>
-          <div style="padding:16px 20px 8px" class="h3">Local AI files</div>
+          <div class="row" style="padding:16px 20px 8px"><span class="h3">Local AI files</span><span class="grow"></span><button class="btn btn-sm" @click="rescan('artifacts')"><svg class="i i-sm" aria-hidden="true"><use href="#i-refresh"/></svg> Rescan</button></div>
           <table class="tbl" x-show="det && det.artifacts.length"><tbody><template x-for="a in (det ? det.artifacts : [])" :key="a.path"><tr><td class="muted" style="width:90px" x-text="a.kind"></td><td><div class="mono small" x-text="a.path"></div><div class="tiny muted" x-text="a.note"></div></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.artifacts.length" style="padding:16px"><b>None found</b></div>
         </section>
 
         <section x-show="tab === 'network'" x-cloak style="padding:0">
-          <div style="padding:16px 20px 8px" class="h3">Network adapters</div>
-          <table class="tbl"><tbody><template x-for="a in (det ? det.adapters : [])" :key="a.mac"><tr><td style="font-weight:500" x-text="a.name"></td><td class="muted" x-text="a.type"></td><td class="mono small" x-text="a.ip"></td><td class="mono small muted" x-text="a.mac"></td></tr></template></tbody></table>
+          <div class="row" style="padding:16px 20px 8px"><span class="h3">Network adapters</span><span class="grow"></span><button class="btn btn-sm" @click="rescan('network')"><svg class="i i-sm" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh</button></div>
+          <table class="tbl"><tbody><template x-for="a in (det ? det.adapters : [])" :key="a.mac + a.name"><tr><td style="font-weight:500" x-text="a.name"></td><td class="muted" x-text="a.type"></td><td class="mono small" x-text="a.ip"></td><td class="mono small muted" x-text="a.mac"></td></tr></template></tbody></table>
           <div style="padding:16px 20px 8px" class="h3">Listening ports</div>
-          <table class="tbl" x-show="det && det.ports.length"><tbody><template x-for="p in (det ? det.ports : [])" :key="p.port"><tr><td class="mono" x-text="p.port + '/' + p.proto"></td><td x-text="p.proc"></td><td class="right"><span class="chip alert">Local AI port</span></td></tr></template></tbody></table>
+          <table class="tbl" x-show="det && det.ports.length"><tbody><template x-for="p in (det ? det.ports : [])" :key="p.port"><tr><td class="mono" x-text="p.port + '/' + p.proto"></td><td x-text="p.proc"></td><td class="right nw"><span class="chip alert" style="margin-right:6px">Local AI port</span><button class="btn btn-sm" @click="closeName = p.proc; closePid = p.pid || null; closeModal = true">End task</button></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.ports.length" style="padding:16px"><b>Nothing unusual</b></div>
           <div style="padding:16px 20px 8px" class="h3">USB devices</div>
-          <table class="tbl" x-show="det && det.devices.length"><tbody><template x-for="d in (det ? det.devices : [])" :key="d.vidpid"><tr><td class="mono small" x-text="d.vidpid"></td><td x-text="d.name"></td><td class="num muted" x-text="d.time"></td></tr></template></tbody></table>
+          <table class="tbl" x-show="det && det.devices.length"><tbody><template x-for="d in (det ? det.devices : [])" :key="d.vidpid + d.time"><tr><td class="mono small" x-text="d.vidpid"></td><td x-text="d.name"></td><td class="num muted" x-text="d.time"></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.devices.length" style="padding:16px"><b>None attached</b></div>
+          <template x-if="det && det.netEvents && det.netEvents.length">
+            <div>
+              <div style="padding:16px 20px 8px" class="h3">Gateway DNS &amp; proxy log</div>
+              <table class="tbl"><thead><tr><th>Time</th><th>Host</th><th>Layer</th><th>Category</th><th class="right">Action</th></tr></thead><tbody>
+                <template x-for="(n, idx) in det.netEvents" :key="idx">
+                  <tr>
+                    <td class="num muted" x-text="n.occurred_at"></td>
+                    <td class="mono small" x-text="n.host + (n.path ? n.path : '')"></td>
+                    <td class="muted" x-text="n.layer"></td>
+                    <td class="muted" x-text="n.category || '—'"></td>
+                    <td class="right"><span class="chip" :class="n.action === 'blocked' ? 'ok' : 'watch'" x-text="n.action"></span></td>
+                  </tr>
+                </template>
+              </tbody></table>
+            </div>
+          </template>
         </section>
 
         <section x-show="tab === 'typing'" x-cloak>

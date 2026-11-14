@@ -1,16 +1,56 @@
 @extends('layouts.app', ['activePage' => 'alerts.html'])
 @section('title', 'Alerts')
 @section('content')
+@php
+  $liveAlerts = isset($alerts) && $alerts->count() ? $alerts->getCollection()->map(function ($a) {
+      return [
+          'id' => $a->id,
+          'pcId' => $a->pc_id,
+          'pc' => $a->pc?->name ?? ('PC-' . $a->pc_id),
+          'user' => $a->user ?: '—',
+          'sev' => $a->severity ?? 'medium',
+          'title' => $a->title ?: $a->rule_id,
+          'rule' => $a->rule_id ?? '',
+          'at' => $a->occurred_at?->format('H:i:s') ?? '',
+          'ago' => $a->occurred_at ? max(0, (int) $a->occurred_at->diffInMinutes(now())) : 1,
+          'acked' => $a->acknowledged_at !== null,
+          'by' => $a->acknowledger?->name ?? 'KUET admin',
+          'note' => $a->comment ?? '',
+      ];
+  })->values()->all() : null;
+@endphp
 <div class="doc" x-data="{
-  sev: '', unacked: false, grouped: true, q: '', openKey: null, notes: {},
-  all: structuredClone(XG.alerts),
+  sev: @json($filters['severity'] ?? ''), unacked: @json((bool) ($filters['open'] ?? false)), grouped: true, q: '', openKey: null, notes: {},
+  all: {{ $liveAlerts !== null ? json_encode($liveAlerts) : 'structuredClone(XG.alerts)' }},
   get filtered() { const q = this.q.toLowerCase(); return this.all.filter(a => (!this.sev || a.sev === this.sev) && (!this.unacked || !a.acked) && (!q || (a.pc + a.title + a.rule).toLowerCase().includes(q))); },
   get rows() { return this.grouped ? xgGroup(this.filtered) : this.filtered.map(a => ({ ...a, key: 'a' + a.id, count: 1, items: [a] })); },
   get waiting() { return xgGroup(this.all.filter(a => !a.acked)).length; },
   n(s) { return this.all.filter(a => a.sev === s).length; },
-  ack(r) { const note = (this.notes[r.key] || '').trim() || 'Reviewed.'; r.items.forEach(i => { const a = this.all.find(x => x.id === i.id); a.acked = true; a.by = 'KUET admin'; a.note = note; }); this.openKey = null; $store.toasts.add(r.pc + ': marked as reviewed.', 'ok'); }
+  ack(r) {
+    const note = (this.notes[r.key] || '').trim() || 'Reviewed.';
+    r.items.forEach(i => {
+      const a = this.all.find(x => x.id === i.id);
+      if (a) { a.acked = true; a.by = @json(auth()->user()?->name ?? 'KUET admin'); a.note = note; }
+      if (window.xgApi && i.id) {
+        window.xgApi('/alerts/' + i.id + '/ack', { method: 'POST', body: JSON.stringify({ comment: note }) });
+      }
+    });
+    this.openKey = null;
+    $store.toasts.add(r.pc + ': marked as reviewed.', 'ok');
+  }
 }"><div class="optbar"><span class="otitle">Alerts</span><span class="osub"><span x-text="waiting"></span> waiting for review. Repeated alerts are grouped.</span><span class="grow"></span>
-      <select class="select select-sm" style="width:260px" aria-label="Session"><option>Exam · CSER (running)</option><option>All sessions</option><option>CSE 1101 practice · Nov 07</option></select>
+      <select class="select select-sm" style="width:260px" aria-label="Session" onchange="if(this.value!==undefined) location.href='/alerts'+(this.value?'?session='+this.value:'')">
+        @if(!empty($sessions) && count($sessions))
+          <option value="" @selected(empty($filters['session']))>All sessions</option>
+          @foreach($sessions as $s)
+            <option value="{{ $s->id }}" @selected(($filters['session'] ?? null) == $s->id)>{{ ucfirst(str_replace('_', ' ', $s->mode)) }} · {{ $s->course }} ({{ $s->starts_at?->format('M d') }})</option>
+          @endforeach
+        @else
+          <option value="">Exam · CSER (running)</option>
+          <option value="">All sessions</option>
+          <option value="">CSE 1101 practice · Nov 07</option>
+        @endif
+      </select>
     </div><div class="canvas ">
   
 

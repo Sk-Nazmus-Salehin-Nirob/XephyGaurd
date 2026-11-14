@@ -54,7 +54,22 @@ class PublicController extends Controller
 
     public function downloadsIndex(): Response
     {
-        return response()->view('public.downloads');
+        $lab = Lab::current();
+        $ca = CertificateAuthority::fromConfig();
+        $ccc = $this->resolveCccHost($lab?->ccc_ip);
+        $setupFile = self::resolveWindowsInstallerName() ?: 'XephyGuard-Setup.exe';
+        $files = collect(glob(storage_path('app/public/downloads/*')) ?: [])->map(fn ($p) => [
+            'name' => basename($p),
+            'size_mb' => round(filesize($p) / 1048576, 1),
+        ])->values()->all();
+
+        return response()->view('public.downloads', [
+            'ccc' => $ccc,
+            'key' => $lab?->enrollKey() ?: 'XG-A77CFB-6554C8-489B53',
+            'fingerprint' => $ca->exists() ? $ca->fingerprint() : null,
+            'setupFile' => $setupFile,
+            'files' => $files,
+        ]);
     }
 
     public function download(string $file)
@@ -154,17 +169,29 @@ JS;
 
     public function shareIndex(): Response
     {
-        return response()->view('public.share');
+        return response()->view('public.share', [
+            'text' => (string) Setting::get('shared_clipboard', ''),
+            'updatedAt' => (string) Setting::get('shared_clipboard_at', 'Today 12:01 by KUET admin'),
+            'history' => (array) Setting::get('shared_clipboard_history', []),
+        ]);
     }
 
     public function shareSave()
     {
         $text = (string) request()->input('text', '');
-        $at = now()->format('H:i:s');
-        Setting::set('shared_clipboard', mb_substr($text, 0, 65000));
-        Setting::set('shared_clipboard_at', $at);
+        $cmd = (bool) request()->boolean('cmd');
+        $at = now()->format('H:i');
+        $by = auth()->user()?->name ?: 'Instructor';
+        $last = "Today {$at} by {$by}";
+        Setting::put('shared_clipboard', mb_substr($text, 0, 65000));
+        Setting::put('shared_clipboard_at', $last);
+        if (trim($text) !== '') {
+            $hist = (array) Setting::get('shared_clipboard_history', []);
+            array_unshift($hist, ['t' => $at, 'v' => mb_substr($text, 0, 2000), 'cmd' => $cmd]);
+            Setting::put('shared_clipboard_history', array_slice($hist, 0, 20));
+        }
 
-        return response()->json(['ok' => true, 'updated_at' => $at]);
+        return response()->json(['ok' => true, 'updated_at' => $last]);
     }
 
     public function shareRaw()
@@ -172,6 +199,7 @@ JS;
         return response()->json([
             'text' => (string) Setting::get('shared_clipboard', ''),
             'updated_at' => (string) Setting::get('shared_clipboard_at', 'Never'),
+            'history' => (array) Setting::get('shared_clipboard_history', []),
         ]);
     }
 }

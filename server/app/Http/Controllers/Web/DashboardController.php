@@ -29,7 +29,13 @@ class DashboardController extends Controller
             'lab' => $lab,
             'session' => $session?->load('profile'),
             'seats' => Seat::query()->where('lab_id', $lab->id)->get(['id', 'label', 'x', 'y']),
-            'pcs' => Pc::query()->active()->where('lab_id', $lab->id)->orderBy('name')->get()->map->tile(),
+            'pcs' => Pc::query()->active()->where('lab_id', $lab->id)->with('agent:id,pc_id,version')->orderBy('name')->get()->map(fn ($p) => $p->tile() + [
+                'hostname' => $p->hostname,
+                'ip' => $p->ip,
+                'os_version' => $p->os_version,
+                'capabilities' => $p->capabilities,
+                'agent_version' => $p->agent?->version,
+            ]),
             'profiles' => Profile::query()->orderBy('mode')->get(['id', 'name', 'mode']),
             'recentAlerts' => Alert::query()->with('pc:id,name')->latest('occurred_at')->limit(30)->get()->map->broadcastPayload(),
         ]);

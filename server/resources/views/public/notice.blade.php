@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="/">
 <title>Student notice · XephyGuard</title>
 <link rel="icon" href="favicon.ico">
 <script>try{var m=localStorage.getItem('xg-theme')||'system';var d=m==='dark'||(m==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
@@ -18,7 +19,7 @@
   <div class="window-body notice-doc" style="padding:36px 40px">
     <div class="row" style="--gap:10px;margin-bottom:22px"><img src="images/logo-icon-only.svg" alt="" width="28" height="28" style="border-radius:7px"><b>XephyGuard</b><span class="chip plain" style="margin-left:auto">Student notice</span></div>
     <h1>This lab uses XephyGuard. Here is exactly what it does.</h1>
-    <p style="color:var(--text-2);max-width:68ch;font-size:15px">During tests, AI tools are blocked. Passwords and what you type are never collected. Your instructor can look at your screen only during a session, and you will see a notice while they do.</p>
+    <p style="color:var(--text-2);max-width:68ch;font-size:15px">{{ !empty($text) ? $text : 'During tests, AI tools are blocked. Passwords and what you type are never collected. Your instructor can look at your screen only during a session, and you will see a notice while they do.' }}</p>
     <h2>What is noticed, and when</h2>
     <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden"><table class="tbl matrix">
       <thead><tr><th>What</th><th>Outside class</th><th>Practice</th><th>Test or exam</th></tr></thead>
@@ -39,7 +40,7 @@
     </ul>
     <h2>A person decides</h2>
     <blockquote class="quote">XephyGuard only raises a hand. No score can penalise a student on its own, and every flag is checked by a faculty member first.</blockquote>
-    <p class="muted small" style="margin-top:28px">Department of Computer Science and Engineering · CSE Computer Lab 1</p>
+    <p class="muted small" style="margin-top:28px">Department of Computer Science and Engineering · {{ $lab?->name ?? 'CSE Computer Lab 1' }}</p>
   </div>
 </div></div>
 
