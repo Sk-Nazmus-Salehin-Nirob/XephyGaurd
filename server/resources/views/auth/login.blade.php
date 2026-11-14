@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="/">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>Sign in · XephyGuard</title>
 <link rel="icon" href="favicon.ico">
 <script>try{var m=localStorage.getItem('xg-theme')||'system';var d=m==='dark'||(m==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
@@ -17,14 +19,16 @@
 <div class="backdrop"><div class="window">
   <div class="window-body stack" style="--gap:18px">
     <div class="row" style="--gap:12px;flex-wrap:nowrap"><img src="images/logo-icon-only.svg" alt="" width="44" height="44" style="border-radius:11px"><div><div style="font-size:20px;font-weight:650;letter-spacing:-.015em">XephyGuard</div><div class="muted">Lab control center</div></div></div>
-    <form class="stack" onsubmit="event.preventDefault(); location.href='index.html'">
-      <label class="field"><span>Email</span><input class="input" style="height:36px" type="email" value="tahmid.tts@gmail.com" autocomplete="username" required></label>
-      <label class="field"><span>Password</span><input class="input" style="height:36px" type="password" placeholder="••••••••••" autocomplete="current-password"></label>
-      <label class="check"><input type="checkbox"> Keep me signed in on this computer</label>
+    @if ($errors->any())
+    <div class="note warn"><svg class="i i-sm" aria-hidden="true"><use href="#i-warn"/></svg><span>{{ $errors->first() }}</span></div>
+    @endif
+    <form class="stack" method="post" action="{{ url('/login') }}">@csrf
+      <label class="field"><span>Email</span><input class="input" style="height:36px" name="email" type="email" value="{{ old('email', 'tahmid.tts@gmail.com') }}" autocomplete="username" required></label>
+      <label class="field"><span>Password</span><input class="input" style="height:36px" name="password" type="password" placeholder="••••••••••" autocomplete="current-password" required></label>
+      <label class="check"><input type="checkbox" name="remember" value="1"> Keep me signed in on this computer</label>
       <button class="btn btn-solid btn-block">Sign in</button>
     </form>
-    <div class="note"><svg class="i i-sm" aria-hidden="true"><use href="#i-info"/></svg><span>Interactive preview. Signing in opens the live lab; no account is checked.</span></div>
-    <div class="row small" style="--gap:16px"><a href="notice.html">What does XephyGuard collect?</a><a href="downloads.html">Downloads</a></div>
+    <div class="row small" style="--gap:16px"><a href="{{ route('notice') }}">What does XephyGuard collect?</a><a href="{{ route('downloads.index') }}">Downloads</a></div>
   </div>
 </div></div>
 

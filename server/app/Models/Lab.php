@@ -37,8 +37,14 @@ class Lab extends Model
     public function enrollKey(): ?string
     {
         $enc = Setting::get('enroll_key_plain');
-
-        return $enc ? decrypt($enc) : null;
+        if (! $enc) {
+            return null;
+        }
+        try {
+            return decrypt($enc);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function checkEnrollKey(string $key): bool
