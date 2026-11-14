@@ -37,8 +37,16 @@ class DashboardController extends Controller
                 'agent_version' => $p->agent?->version,
             ]),
             'profiles' => Profile::query()->orderBy('mode')->get(['id', 'name', 'mode']),
-            'recentAlerts' => Alert::query()->with(['pc:id,name', 'acknowledger:id,name'])->latest('occurred_at')->limit(30)->get()
+            'recentAlerts' => Alert::query()->whereNull('acknowledged_at')
+                ->with(['pc:id,name,retired_at', 'acknowledger:id,name'])
+                ->latest('occurred_at')->limit(500)->get()
+                ->concat(
+                    Alert::query()->whereNotNull('acknowledged_at')
+                        ->with(['pc:id,name,retired_at', 'acknowledger:id,name'])
+                        ->latest('acknowledged_at')->limit(30)->get()
+                )
                 ->map(fn ($a) => $a->broadcastPayload() + [
+                    'pc_retired' => $a->pc?->retired_at !== null,
                     'occurred_at_iso' => $a->occurred_at?->toIso8601String(),
                     'ago_min' => $a->occurred_at ? max(0, (int) $a->occurred_at->diffInMinutes(now())) : 0,
                     'acked' => $a->acknowledged_at !== null,

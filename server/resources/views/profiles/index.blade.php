@@ -40,55 +40,22 @@
       ];
   })->all() : [];
 @endphp
-<script>
-window.XG_PROFILES_PAGE = {
-  profiles: @json($liveProfiles),
-  items: @json($liveEntries),
-};
-</script>
-<div class="doc" x-data="{
-  tab: 'profiles', cur: 0, hr: 44, start: 8, end: 18, days: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], addOpen: false,
-  profiles: window.XG_PROFILES_PAGE.profiles || [],
-  cats: [['ai', 'AI chat sites'], ['ide', 'Editor assistants'], ['marketplace', 'Code marketplaces'], ['vpn', 'VPNs and proxies'], ['doh', 'Encrypted DNS'], ['custom', 'Custom list']],
-  coll: [['window', 'Active window'], ['clipboard', 'Paste size'], ['keys', 'Typing pace'], ['files', 'File activity'], ['gpu', 'GPU use'], ['artifacts', 'Installed AI files']],
-  get p() { return this.profiles[this.cur] || null; },
-  has(arr, k) { return (arr || []).includes(k); },
-  flip(arr, k) { const i = arr.indexOf(k); i >= 0 ? arr.splice(i, 1) : arr.push(k); },
-  newProfile() {
-    this.profiles.push({ id: null, builtin: false, name: 'Custom profile ' + (this.profiles.length + 1), mode: 'test', desc: 'Custom policy profile.', block: ['ai', 'ide'], strict: false, aiov: true, collect: ['window', 'clipboard', 'keys', 'artifacts'], titles: 'app', kill: 'proc.ollama' });
-    this.cur = this.profiles.length - 1;
-  },
-  items: window.XG_PROFILES_PAGE.items || [],
-  form: { day: 'Sun', from: '09:00', to: '11:00', course: '', profile: (window.XG_PROFILES_PAGE.profiles && window.XG_PROFILES_PAGE.profiles[0]?.name) || '', valid_from: '', valid_until: '' },
-  dayNum(d) { return ({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 })[d] || 7; },
-  modeOf(p) { return (p || '').startsWith('Test') ? 'test' : (p || '').startsWith('Exam') ? 'exam' : (p || '').startsWith('Practice') ? 'practice' : 'always'; },
-  top(t) { const [h, m] = t.split(':'); return ((+h - this.start) + (+m) / 60) * this.hr; },
-  tall(i) { return Math.max(28, this.top(i.to) - this.top(i.from)); },
-  toggleSlot(i) {
-    i.paused = !i.paused;
-    if (i.real && window.xgApi) window.xgApi('/timetable/' + i.id + '/toggle', { method: 'POST' });
-    $store.toasts.add(i.paused ? 'Class paused.' : 'Class resumed.', 'ok');
-  },
-  removeSlot(i) {
-    this.items = this.items.filter(x => x.id !== i.id);
-    if (i.real && window.xgApi) window.xgApi('/timetable/' + i.id, { method: 'DELETE' });
-    $store.toasts.add('Removed from timetable.', 'ok');
-  },
-  add() {
-    if (!this.form.course.trim()) return;
-    this.items.push({ id: Date.now(), real: false, ...this.form, paused: false });
-    this.form.course = '';
-    this.addOpen = false;
-    $store.toasts.add('Added to the timetable.', 'ok');
-  }
-}"><div class="optbar"><span class="otitle">Timetable and profiles</span><span class="osub">What each class runs under, and when.</span><span class="grow"></span></div><div class="canvas ">
-  
+<script type="application/json" id="xg-page-data">{!! json_encode([
+  'profiles' => $liveProfiles,
+  'items' => $liveEntries,
+  'formProfile' => $liveProfiles[0]['name'] ?? '',
+  'canAdmin' => (bool) auth()->user()?->hasRole('admin'),
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<div class="doc" x-data="profilesPage"><div class="optbar"><span class="otitle">Timetable and profiles</span><span class="osub">What each class runs under, and when.</span><span class="grow"></span></div><div class="canvas ">
+  @if ($errors->any())
+  <div class="note warn" style="margin-bottom:16px"><svg class="i i-sm" aria-hidden="true"><use href="#i-warn"/></svg><span>{{ $errors->first() }}</span></div>
+  @endif
   <div class="tabs" role="tablist"><button role="tab" :aria-selected="tab === 'profiles'" @click="tab = 'profiles'">Profiles</button><button role="tab" :aria-selected="tab === 'timetable'" @click="tab = 'timetable'">Timetable</button></div>
 
   <!-- Profiles -->
   <div x-show="tab === 'profiles'" class="cols-side" style="grid-template-columns:300px minmax(0,1fr)">
     <div class="panel" style="min-height:100%">
-      <div class="panel-head"><span class="h3">Profiles</span><button type="button" class="btn btn-sm" @click="newProfile()"><svg class="i i-sm" aria-hidden="true"><use href="#i-plus"/></svg> New</button></div>
+      <div class="panel-head"><span class="h3">Profiles</span><button type="button" class="btn btn-sm" x-show="canAdmin" @click="newProfile()"><svg class="i i-sm" aria-hidden="true"><use href="#i-plus"/></svg> New</button></div>
       <div class="empty-state" x-show="!profiles.length"><b>No profiles yet</b>Click New to create one.</div>
       <ul class="plist" x-show="profiles.length"><template x-for="(pr, i) in profiles" :key="i"><li :class="cur === i && 'on'" @click="cur = i"><div class="grow" style="min-width:0"><div class="t" x-text="pr.name"></div><div class="d" x-text="pr.desc"></div></div><span class="mode" :class="pr.mode" x-text="pr.mode === 'always' ? 'Always' : pr.mode" style="text-transform:capitalize"></span></li></template></ul>
     </div>
@@ -102,31 +69,31 @@ window.XG_PROFILES_PAGE = {
         <section class="panel panel-pad" style="padding:20px 24px">
           <div class="fgroup stack">
             <h2 class="h2">General</h2>
-            <div class="form-grid"><label class="field"><span>Name</span><input name="name" class="input" x-model="p.name" required></label>
-              <label class="field"><span>Type</span><select class="select" x-model="p.mode"><option value="always">Always-on</option><option value="practice">Practice</option><option value="test">Test</option><option value="exam">Exam</option></select></label></div>
-            <label class="field"><span>Description</span><input name="description" class="input" x-model="p.desc"></label>
+            <div class="form-grid"><label class="field"><span>Name</span><input name="name" class="input" x-model="p.name" :readonly="!canAdmin" required></label>
+              <label class="field"><span>Type</span><select class="select" x-model="p.mode" :disabled="!canAdmin"><option value="always">Always-on</option><option value="practice">Practice</option><option value="test">Test</option><option value="exam">Exam</option></select></label></div>
+            <label class="field"><span>Description</span><input name="description" class="input" x-model="p.desc" :readonly="!canAdmin"></label>
           </div>
           <div class="fgroup stack">
             <div><h2 class="h2">Blocking</h2><p class="muted small">Which kinds of sites are cut off during this profile.</p></div>
-            <div class="checks-grid"><template x-for="c in cats" :key="c[0]"><label class="check"><input type="checkbox" name="block_categories[]" :value="c[0]" :checked="has(p.block, c[0])" @change="flip(p.block, c[0])"> <span x-text="c[1]"></span></label></template></div>
-            <label class="check"><span class="switch"><input type="checkbox" name="strict_egress" value="1" x-model="p.strict"><i></i></span> Strict outbound: only approved destinations</label>
-            <label class="check"><span class="switch"><input type="checkbox" name="google_udm14" value="1" x-model="p.aiov"><i></i></span> Hide AI summaries in search results</label>
+            <div class="checks-grid"><template x-for="c in cats" :key="c[0]"><label class="check"><input type="checkbox" name="block_categories[]" :value="c[0]" :checked="has(p.block, c[0])" :disabled="!canAdmin" @change="flip(p.block, c[0])"> <span x-text="c[1]"></span></label></template></div>
+            <label class="check"><span class="switch"><input type="checkbox" name="strict_egress" value="1" x-model="p.strict" :disabled="!canAdmin"><i></i></span> Strict outbound: only approved destinations</label>
+            <label class="check"><span class="switch"><input type="checkbox" name="google_udm14" value="1" x-model="p.aiov" :disabled="!canAdmin"><i></i></span> Hide AI summaries in search results</label>
           </div>
           <div class="fgroup stack">
             <div><h2 class="h2">What the agent notices</h2><p class="muted small">Keys pressed and pasted text are never collected.</p></div>
-            <div class="checks-grid"><template x-for="c in coll" :key="c[0]"><label class="check"><input type="checkbox" name="collect[]" :value="c[0]" :checked="has(p.collect, c[0])" @change="flip(p.collect, c[0])"> <span x-text="c[1]"></span></label></template></div>
-            <label class="field" style="max-width:260px"><span>Window titles</span><select class="select" x-model="p.titles"><option value="off">Not recorded</option><option value="app">Program name only</option><option value="full">Full title</option></select></label>
+            <div class="checks-grid"><template x-for="c in coll" :key="c[0]"><label class="check"><input type="checkbox" name="collect[]" :value="c[0]" :checked="has(p.collect, c[0])" :disabled="!canAdmin" @change="flip(p.collect, c[0])"> <span x-text="c[1]"></span></label></template></div>
+            <label class="field" style="max-width:260px"><span>Window titles</span><select class="select" x-model="p.titles" :disabled="!canAdmin"><option value="off">Not recorded</option><option value="app">Program name only</option><option value="full">Full title</option></select></label>
           </div>
           <div class="fgroup stack">
             <div><h2 class="h2">Close automatically</h2><p class="muted small">Detection rule IDs, one per line. Matching programs are closed on sight.</p></div>
-            <textarea name="kill_rules" class="textarea mono" rows="3" x-model="p.kill" placeholder="proc.ollama"></textarea>
+            <textarea name="kill_rules" class="textarea mono" rows="3" x-model="p.kill" :readonly="!canAdmin" placeholder="proc.ollama"></textarea>
           </div>
         </section>
         <div class="savebar">
-          <span class="muted small grow">Changes apply to the next session that uses this profile.</span>
-          <button type="button" class="btn btn-danger" x-show="p.id && !p.builtin" @click="if(confirm('Delete this profile?')) document.getElementById('xg-del-profile-form').submit()">Delete profile</button>
-          <button type="button" class="btn" @click="location.reload()">Discard</button>
-          <button type="submit" class="btn btn-solid">Save profile</button>
+          <span class="muted small grow" x-text="canAdmin ? 'Changes apply to the next session that uses this profile.' : 'Administrator permission required to edit profiles.'"></span>
+          <button type="button" class="btn btn-danger" x-show="canAdmin && p.id && !p.builtin" @click="deleteCurrent()">Delete profile</button>
+          <button type="button" class="btn" x-show="canAdmin" @click="reload()">Discard</button>
+          <button type="submit" class="btn btn-solid" x-show="canAdmin">Save profile</button>
         </div>
       </form>
       <form id="xg-del-profile-form" method="post" :action="'/profiles/' + p.id" style="display:none">@csrf @method('DELETE')</form>

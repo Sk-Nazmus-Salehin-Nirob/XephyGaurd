@@ -46,74 +46,25 @@
       ];
   })->values()->all() : [];
 @endphp
-<script>
-window.XG_SIG_PAGE = {
-  cat: @json(!empty($category) ? $category : 'all'),
-  counts: @json($liveCounts),
-  sites: @json($liveSites),
-  rules: @json($liveRules),
-  versions: @json($liveVersions),
-};
-</script>
-<div class="doc" x-data="{
-  tab: 'sites', cat: window.XG_SIG_PAGE.cat, q: '', newDomain: '', newCat: 'custom', rq: '', rk: 'all', importOpen: false, ruleModal: false,
-  ruleForm: { rule_id: '', kind: 'process', severity: 'high', description: '', definition: '{}', actions: ['log', 'alert'] },
-  counts: window.XG_SIG_PAGE.counts,
-  sites: window.XG_SIG_PAGE.sites || [],
-  rules: window.XG_SIG_PAGE.rules || [],
-  versions: window.XG_SIG_PAGE.versions || [],
-  lab(k) { return ({ all: 'All', ai: 'AI', ide: 'Editor', marketplace: 'Marketplace', doh: 'Encrypted DNS', vpn: 'VPN', custom: 'Custom' })[k] || k; },
-  get catKeys() { return Object.keys(this.counts); },
-  get shown() { const q = this.q.toLowerCase(); return this.sites.filter(s => (this.cat === 'all' || s.c === this.cat) && (!q || s.d.includes(q))); },
-  get rshown() { const q = this.rq.toLowerCase(); return this.rules.filter(r => (this.rk === 'all' || r.kind === this.rk) && (!q || (r.id + r.desc).toLowerCase().includes(q))); },
-  get kinds() { return ['all', ...new Set(this.rules.map(r => r.kind))]; },
-  toggleSite(s) {
-    s.off = !s.off;
-    if (s.real && window.xgApi) window.xgApi('/blocklist/' + s.id + '/toggle', { method: 'POST' });
-  },
-  deleteSite(s) {
-    this.sites = this.sites.filter(x => x.id !== s.id);
-    if (s.real && window.xgApi) window.xgApi('/blocklist/' + s.id, { method: 'DELETE' });
-    $store.toasts.add(s.d + ' removed.', 'ok');
-  },
-  toggleRule(r) {
-    if (r.dbId && window.xgApi) window.xgApi('/rules/' + r.dbId + '/toggle', { method: 'POST' });
-  },
-  openRuleModal(r) {
-    if (r) {
-      this.ruleForm = {
-        rule_id: r.id,
-        kind: ['process','extension','port','artifact','adapter','device'].includes(r.kind) ? r.kind : 'process',
-        severity: r.sev || 'high',
-        description: r.desc || '',
-        definition: r.definition || '{}',
-        actions: [...(r.actions || ['log', 'alert'])],
-      };
-    } else {
-      this.ruleForm = {
-        rule_id: 'proc.custom_ai',
-        kind: 'process',
-        severity: 'high',
-        description: '',
-        definition: '{}',
-        actions: ['log', 'alert'],
-      };
-    }
-    this.ruleModal = true;
-  },
-  flipAction(a) {
-    const idx = this.ruleForm.actions.indexOf(a);
-    idx >= 0 ? this.ruleForm.actions.splice(idx, 1) : this.ruleForm.actions.push(a);
-  },
-  addSite() { const d = this.newDomain.trim().toLowerCase(); if (!d) return; this.sites.unshift({ id: Date.now(), real: false, d, c: this.newCat, s: 'custom', off: false }); this.newDomain = ''; $store.toasts.add(d + ' is now blocked.', 'ok'); }
-}"><div class="optbar"><span class="otitle">Blocklists and rules</span><span class="osub">What gets blocked and noticed on each PC.</span><span class="grow"></span></div><div class="canvas ">
-  
+<script type="application/json" id="xg-page-data">{!! json_encode([
+  'cat' => !empty($category) ? $category : 'all',
+  'q' => request()->string('q')->toString(),
+  'counts' => $liveCounts,
+  'sites' => $liveSites,
+  'rules' => $liveRules,
+  'versions' => $liveVersions,
+  'hasPages' => isset($entries) && $entries->hasPages(),
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<div class="doc" x-data="sigPage"><div class="optbar"><span class="otitle">Blocklists and rules</span><span class="osub">What gets blocked and noticed on each PC.</span><span class="grow"></span></div><div class="canvas ">
+  @if ($errors->any() || session('error'))
+  <div class="note warn" style="margin-bottom:16px"><svg class="i i-sm" aria-hidden="true"><use href="#i-warn"/></svg><span>{{ session('error') ?: $errors->first() }}</span></div>
+  @endif
   <div class="tabs" role="tablist"><button role="tab" :aria-selected="tab === 'sites'" @click="tab = 'sites'">Websites</button><button role="tab" :aria-selected="tab === 'rules'" @click="tab = 'rules'">Detection rules <span class="count" x-text="rules.length"></span></button><button role="tab" :aria-selected="tab === 'versions'" @click="tab = 'versions'">Published versions</button></div>
 
   <section x-show="tab === 'sites'">
     <div class="toolbar">
-      <div class="pills"><template x-for="k in catKeys" :key="k"><button class="pill" :aria-pressed="cat === k" @click="cat = k"><span x-text="lab(k)"></span> <span class="n" x-text="counts[k]"></span></button></template></div>
-      <span class="grow"></span><input class="input input-sm" style="width:220px" placeholder="Search sites" x-model="q"><button class="btn btn-sm" @click="importOpen = !importOpen"><svg class="i i-sm" aria-hidden="true"><use href="#i-upload"/></svg> Import list</button>
+      <div class="pills"><template x-for="k in catKeys" :key="k"><button class="pill" :aria-pressed="cat === k" @click="selectCat(k)"><span x-text="lab(k)"></span> <span class="n" x-text="counts[k]"></span></button></template></div>
+      <span class="grow"></span><input class="input input-sm" style="width:220px" placeholder="Search sites (Enter for all)" x-model="q" @keydown.enter.prevent="searchSites()"><button class="btn btn-sm" @click="importOpen = !importOpen"><svg class="i i-sm" aria-hidden="true"><use href="#i-upload"/></svg> Import list</button>
     </div>
     <form method="post" action="{{ route('blocklist.add') }}" class="row" style="padding:12px 20px;background:var(--surface-2);border-bottom:1px solid var(--border)">
       @csrf
@@ -140,7 +91,23 @@ window.XG_SIG_PAGE = {
         </td></tr></template>
         <template x-if="!shown.length"><tr><td colspan="4" class="muted" style="padding:18px 16px">No blocklist domains match this filter.</td></tr></template>
       </tbody>
-    </table></div><div class="tbl-foot">Changes apply to PCs within seconds.</div></section>
+    </table></div><div class="tbl-foot">
+      <span>@if(isset($entries) && $entries->total() > 0) Showing {{ $entries->firstItem() }}–{{ $entries->lastItem() }} of {{ $entries->total() }} sites · @endif Changes apply to PCs within seconds.</span>
+      @if(isset($entries) && $entries->hasPages())
+        <div class="pager">
+          @if($entries->onFirstPage())
+            <button disabled>Prev</button>
+          @else
+            <a class="btn btn-sm" href="{{ $entries->previousPageUrl() }}">Prev</a>
+          @endif
+          @if($entries->hasMorePages())
+            <a class="btn btn-sm" href="{{ $entries->nextPageUrl() }}">Next</a>
+          @else
+            <button disabled>Next</button>
+          @endif
+        </div>
+      @endif
+    </div></section>
   </section>
 
   <section x-show="tab === 'rules'" x-cloak>
@@ -159,7 +126,7 @@ window.XG_SIG_PAGE = {
   </section>
 
   <section x-show="tab === 'versions'" x-cloak>
-    <form method="post" action="{{ route('signatures.publish') }}" class="panel panel-pad stack" style="max-width:none" onsubmit="return confirm('Publish to all PCs?')">
+    <form method="post" action="{{ route('signatures.publish') }}" class="panel panel-pad stack" style="max-width:none" @submit="confirmSubmit($event, 'Publish to all PCs?')">
       @csrf
       <div><h2 class="h2">Publish the current rules</h2><p class="muted small" style="margin-top:2px">Signs the blocklists and rules and sends them to every PC.</p></div>
       <div class="row"><input name="note" class="input" style="max-width:420px" placeholder="What changed? (optional)"><button type="submit" class="btn btn-solid">Publish to PCs</button></div>
@@ -167,7 +134,7 @@ window.XG_SIG_PAGE = {
     <section class="panel"><table class="tbl"><thead><tr><th>Version</th><th>Note</th><th>Published</th><th></th></tr></thead><tbody>
       <template x-for="v in versions" :key="v.v"><tr><td class="mono small" style="font-weight:500" x-text="v.v"></td><td x-text="v.note"></td><td class="muted" x-text="v.when"></td><td class="right">
         <span class="chip ok" x-show="v.active">In use</span>
-        <form x-show="!v.active && v.id" method="post" :action="'/signatures/' + v.id + '/activate'" style="display:inline" onsubmit="return confirm('Roll every PC back to this version?')">
+        <form x-show="!v.active && v.id" method="post" :action="'/signatures/' + v.id + '/activate'" style="display:inline" @submit="confirmSubmit($event, 'Roll every PC back to this version?')">
           @csrf
           <button type="submit" class="btn btn-sm">Roll back</button>
         </form>

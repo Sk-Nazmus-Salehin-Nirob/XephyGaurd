@@ -45,6 +45,27 @@ class EnrollmentController extends Controller
         abort_unless($enrollment->status === 'pending', 422, 'Already decided.');
         $d = $request->validate(['name' => 'nullable|string|max:64']);
         $pc = $svc->approve($enrollment, $request->user(), $d['name'] ?? null);
+        $pc->loadMissing('agent');
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'pc' => [
+                    'id' => $pc->id,
+                    'real' => true,
+                    'name' => $pc->name,
+                    'host' => $pc->hostname,
+                    'os' => trim($pc->os.' '.($pc->os_version ?? '')),
+                    'ip' => $pc->ip ?? '—',
+                    'agent' => $pc->agent?->version ?? '—',
+                    'status' => $pc->online() ? 'normal' : 'offline',
+                    'lastSeen' => 'Never',
+                    'certExpires' => $pc->agent?->cert_expires_at?->format('Y-m-d') ?? '—',
+                    'retired' => false,
+                    'editingName' => false,
+                ],
+            ]);
+        }
 
         return back()->with('status', "Approved {$pc->name}. The agent picks up its certificate within seconds.");
     }
@@ -64,7 +85,9 @@ class EnrollmentController extends Controller
     {
         $svc->reject($enrollment, $request->user());
 
-        return back()->with('status', 'Request rejected.');
+        return $request->expectsJson()
+            ? response()->json(['ok' => true])
+            : back()->with('status', 'Request rejected.');
     }
 
     public function rotateKey()
@@ -94,16 +117,18 @@ class EnrollmentController extends Controller
         Audit::log('pc.rename', $pc, ['from' => $pc->name, 'to' => $d['name']]);
         $pc->update($d);
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 
-    public function retire(Pc $pc, NetworkPolicyWriter $net)
+    public function retire(Request $request, Pc $pc, NetworkPolicyWriter $net)
     {
         $pc->update(['retired_at' => now(), 'seat_id' => null]);
         $pc->agents()->whereNull('revoked_at')->update(['revoked_at' => now()]);
         Audit::log('pc.retire', $pc, ['name' => $pc->name]);
         $net->write();
 
-        return back()->with('status', "{$pc->name} retired; its agent credentials were revoked.");
+        return $request->expectsJson()
+            ? response()->json(['ok' => true])
+            : back()->with('status', "{$pc->name} retired; its agent credentials were revoked.");
     }
 }

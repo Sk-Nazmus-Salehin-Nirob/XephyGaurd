@@ -78,19 +78,19 @@ class ProfileController extends Controller
         return back()->with('status', 'Timetable entry added.');
     }
 
-    public function toggleEntry(TimetableEntry $entry)
+    public function toggleEntry(Request $request, TimetableEntry $entry)
     {
         $entry->update(['enabled' => ! $entry->enabled]);
         Audit::log('timetable.toggle', $entry, ['enabled' => $entry->enabled]);
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 
-    public function deleteEntry(TimetableEntry $entry)
+    public function deleteEntry(Request $request, TimetableEntry $entry)
     {
         Audit::log('timetable.delete', $entry, $entry->only(['course', 'weekday', 'start_time']));
         $entry->delete();
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 }

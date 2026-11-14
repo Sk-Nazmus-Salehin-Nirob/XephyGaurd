@@ -37,6 +37,25 @@
       @else
         <div class="panel empty-state"><b>No completed sessions yet</b>Reports appear here automatically once a session ends.</div>
       @endif
+      @if(!empty($sessions) && $sessions->hasPages())
+        <div class="panel" style="margin-top:12px">
+          <div class="tbl-foot">
+            <span>Showing {{ $sessions->firstItem() }}–{{ $sessions->lastItem() }} of {{ $sessions->total() }} sessions</span>
+            <div class="pager">
+              @if($sessions->onFirstPage())
+                <button disabled>Prev</button>
+              @else
+                <a class="btn btn-sm" href="{{ $sessions->previousPageUrl() }}">Prev</a>
+              @endif
+              @if($sessions->hasMorePages())
+                <a class="btn btn-sm" href="{{ $sessions->nextPageUrl() }}">Next</a>
+              @else
+                <button disabled>Next</button>
+              @endif
+            </div>
+          </div>
+        </div>
+      @endif
     </section>
     <form method="get" action="{{ route('research.export') }}" class="panel panel-pad stack">
       <div><h2 class="h2">Research export</h2><p class="muted small" style="margin-top:2px">Pseudonymised data for students who gave consent. Names never leave this server.</p></div>

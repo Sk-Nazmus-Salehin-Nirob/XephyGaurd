@@ -6,9 +6,9 @@
 <base href="/">
 <title>Student notice · XephyGuard</title>
 <link rel="icon" href="favicon.ico">
-<script>try{var m=localStorage.getItem('xg-theme')||'system';var d=m==='dark'||(m==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
+<script src="js/theme.js"></script>
 <link rel="stylesheet" href="css/xg.css">
-<script src="js/app.js"></script>
+<script defer src="js/app.js"></script>
 <script defer src="js/alpine.min.js"></script>
 </head>
 <body>

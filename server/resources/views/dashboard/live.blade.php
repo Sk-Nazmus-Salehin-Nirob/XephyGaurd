@@ -54,6 +54,7 @@
           'id' => $a['id'],
           'pcId' => $a['pc_id'],
           'pc' => $a['pc'] ?? ('PC-' . $a['pc_id']),
+          'pcRetired' => (bool) ($a['pc_retired'] ?? false),
           'user' => $a['user'] ?: '—',
           'sev' => $a['severity'] ?? 'medium',
           'title' => $a['title'] ?? $a['rule_id'],
@@ -66,15 +67,13 @@
       ];
   })->all() : [];
 @endphp
-<script>
-window.XG_LIVE = {
-  cols: @json((int) ($lab->grid_cols ?? 6)),
-  rows: @json((int) ($lab->grid_rows ?? 4)),
-  lab: @json(['cols' => (int) ($lab->grid_cols ?? 6), 'rows' => (int) ($lab->grid_rows ?? 4)]),
-  pcs: @json($livePcs),
-  alerts: @json($liveAlerts),
-};
-</script>
+<script type="application/json" id="xg-live-data">{!! json_encode([
+  'cols' => (int) ($lab->grid_cols ?? 6),
+  'rows' => (int) ($lab->grid_rows ?? 4),
+  'lab' => ['cols' => (int) ($lab->grid_cols ?? 6), 'rows' => (int) ($lab->grid_rows ?? 4)],
+  'pcs' => $livePcs,
+  'alerts' => $liveAlerts,
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 <div class="doc" x-data="labView" @keydown.escape.window="clear()">
 
   <div class="optbar">
@@ -84,7 +83,7 @@ window.XG_LIVE = {
       <span class="osub">{{ $session->course }}{{ $session->ends_at ? ' · ' . max(0, (int) now()->diffInMinutes($session->ends_at, false)) . ' min left' : '' }}</span>
     @else
       <span class="mode always">Always-on</span><span class="osub">No active session</span>
-      <a class="btn btn-sm btn-quiet" href="sessions.html#start">Start session</a>
+      <a class="btn btn-sm btn-quiet" href="{{ route('sessions.index') }}#start">Start session</a>
     @endif
     <div class="seg" style="margin-left:12px" role="group" aria-label="View">
       <button :aria-pressed="view === 'map'" @click="view = 'map'"><svg class="i i-sm" aria-hidden="true"><use href="#i-live"/></svg> Map</button>
@@ -108,19 +107,19 @@ window.XG_LIVE = {
       @if(!empty($profiles) && count($profiles))
       <form method="post" action="{{ route('sessions.switch', $session) }}" style="display:inline-flex;gap:6px;align-items:center">
         @csrf
-        <select name="profile_id" class="select select-sm" style="width:170px" aria-label="Switch profile" onchange="this.form.submit()">
+        <select name="profile_id" class="select select-sm" style="width:170px" aria-label="Switch profile" @change="$el.form?.submit()">
           @foreach($profiles as $prof)
             <option value="{{ $prof->id }}" @selected($session->profile_id === $prof->id)>{{ $prof->name }}</option>
           @endforeach
         </select>
       </form>
       @endif
-      <form method="post" action="{{ route('sessions.stop', $session) }}" style="display:inline" onsubmit="return confirm('End the session? Restrictions lift immediately.')">
+      <form method="post" action="{{ route('sessions.stop', $session) }}" style="display:inline" @submit="confirmForm($event, 'End the session? Restrictions lift immediately.')">
         @csrf
         <button type="submit" class="btn btn-danger">End session</button>
       </form>
     @else
-      <a class="btn btn-solid" href="sessions.html#start">Start a session</a>
+      <a class="btn btn-solid" href="{{ route('sessions.index') }}#start">Start a session</a>
     @endif
   </div>
 
@@ -218,13 +217,13 @@ window.XG_LIVE = {
     <!-- DOCK -->
     <aside class="dock" x-show="view === 'map'" aria-label="Details">
       <section class="dsec">
-        <div class="dsec-head" role="button" tabindex="0" :aria-expanded="dock.att" @click="dock.att = !dock.att"><svg class="i i-sm" aria-hidden="true"><use href="#i-chev"/></svg> Needs attention <span class="count" x-show="groups.length" x-text="groups.length"></span><span class="sp"></span><a href="alerts.html" @click.stop class="small" style="font-weight:500">All alerts</a></div>
+        <div class="dsec-head" role="button" tabindex="0" :aria-expanded="dock.att" @click="dock.att = !dock.att"><svg class="i i-sm" aria-hidden="true"><use href="#i-chev"/></svg> Needs attention <span class="count" x-show="groups.length" x-text="groups.length"></span><span class="sp"></span><a href="{{ route('alerts.index') }}" @click.stop class="small" style="font-weight:500">All alerts</a></div>
         <div x-show="dock.att" style="max-height:300px;overflow:auto">
           <template x-for="g in groups" :key="g.key">
             <div class="q-item" :class="activePcId === g.pcId && 'sel'">
               <div class="row" style="justify-content:space-between"><span class="sev" :class="g.sev" x-text="g.sev"></span><span class="small muted" x-text="xgAgo(g.ago)"></span></div>
               <div class="q-title"><span x-text="g.title"></span> <span class="count" x-show="g.count > 1" x-text="'×' + g.count"></span></div>
-              <div class="q-meta"><b x-text="g.pc"></b> · <span x-text="g.user"></span></div>
+              <div class="q-meta"><b x-text="g.pc"></b><span class="chip plain" x-show="g.pcRetired" style="margin-left:6px">retired</span> · <span x-text="g.user"></span></div>
               <div class="q-actions"><button class="btn btn-sm" @click="openInspector(g.pcId, 'alerts')">Open</button><button class="btn btn-sm btn-quiet" @click="ackGroup(g)">Mark reviewed</button></div>
             </div>
           </template>
@@ -293,7 +292,7 @@ window.XG_LIVE = {
           <div class="row" style="margin-bottom:14px;--gap:10px">
             <div class="seg"><button :aria-pressed="screenMode === 'snapshot'" @click="screenMode = 'snapshot'">Snapshot</button><button :aria-pressed="screenMode === 'live'" @click="goLive()" :disabled="!active.caps || !active.caps.live">Live</button></div>
             <button class="btn" @click="snapshot()" :disabled="!screenOk"><svg class="i i-sm" aria-hidden="true"><use href="#i-camera"/></svg> Take snapshot</button>
-            <div class="seg" x-show="active.monitors > 1"><template x-for="m in active.monitors" :key="m"><button :aria-pressed="monitor === m - 1" @click="monitor = m - 1" x-text="'Monitor ' + m"></button></template></div>
+            <div class="seg" x-show="(active.monitors || 1) > 1"><template x-for="m in (active.monitors || 1)" :key="m"><button :aria-pressed="monitor === m - 1" @click="monitor = m - 1" x-text="'Monitor ' + m"></button></template></div>
             <span class="grow"></span>
             <button class="btn" @click="evidence()" :disabled="!screenOk">Save as evidence</button>
           </div>
@@ -313,7 +312,7 @@ window.XG_LIVE = {
         </section>
 
         <section x-show="tab === 'timeline'" x-cloak>
-          <ul class="timeline"><template x-for="ev in (det ? det.events : [])" :key="ev.time + ev.label"><li :class="ev.sev"><time x-text="ev.time"></time><span x-text="ev.label"></span></li></template></ul>
+          <ul class="timeline"><template x-for="(ev, idx) in (det ? det.events : [])" :key="idx + '-' + ev.time"><li :class="ev.sev"><time x-text="ev.time"></time><span x-text="ev.label"></span></li></template></ul>
         </section>
 
         <section x-show="tab === 'alerts'" x-cloak style="padding:0">
@@ -331,39 +330,39 @@ window.XG_LIVE = {
             <button class="btn btn-sm" @click="promptCloseProgram()">Close a program…</button>
           </div>
           <table class="tbl"><thead><tr><th>Program</th><th class="right">CPU</th><th class="right">Memory</th><th class="right">Network</th><th></th></tr></thead><tbody>
-            <template x-for="p in (det ? det.processes : [])" :key="p.pid"><tr>
+            <template x-for="(p, idx) in (det ? det.processes : [])" :key="(p.pid || idx) + '-' + p.name"><tr>
               <td><div style="font-weight:500" :style="p.threat && 'color:var(--alert)'" x-text="p.name"></div><div class="tiny muted cut" x-text="p.title"></div></td>
               <td class="right num" x-text="p.cpu.toFixed(1) + '%'"></td><td class="right num" x-text="p.mem + ' MB'"></td><td class="right num" x-text="p.net.toFixed(1) + ' Mb/s'"></td>
-              <td class="right nw"><span class="chip alert" x-show="p.threat" x-text="p.threat" style="margin-right:6px"></span><button class="btn btn-sm" @click="closeName = p.name; closePid = p.pid || null; closeModal = true">Close</button></td></tr></template>
+              <td class="right nw"><span class="chip alert" x-show="p.threat" x-text="p.threat" style="margin-right:6px"></span><button class="btn btn-sm" @click="promptCloseProgram(p.name, p.pid || null)">Close</button></td></tr></template>
           </tbody></table>
         </section>
 
         <section x-show="tab === 'browser'" x-cloak style="padding:0">
           <div class="row" style="padding:16px 20px 8px"><span class="h3">AI traffic</span><span class="grow"></span><button class="btn btn-sm" @click="rescan('network')"><svg class="i i-sm" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh</button></div>
           <table class="tbl" x-show="det && det.aiTraffic.length"><thead><tr><th>Service</th><th>Site</th><th>Browser</th><th class="right">Requests</th><th>Last</th><th>Result</th></tr></thead><tbody>
-            <template x-for="r in (det ? det.aiTraffic : [])" :key="r.host"><tr><td style="font-weight:500" x-text="r.service"></td><td class="mono small" x-text="r.host"></td><td x-text="r.proc"></td><td class="right num" x-text="r.count"></td><td class="num muted" x-text="r.last"></td><td><span class="chip" :class="r.mode === 'Blocked' ? 'ok' : 'alert'" x-text="r.mode"></span></td></tr></template></tbody></table>
+            <template x-for="(r, idx) in (det ? det.aiTraffic : [])" :key="idx + '-' + r.host"><tr><td style="font-weight:500" x-text="r.service"></td><td class="mono small" x-text="r.host"></td><td x-text="r.proc"></td><td class="right num" x-text="r.count"></td><td class="num muted" x-text="r.last"></td><td><span class="chip" :class="r.mode === 'Blocked' ? 'ok' : 'alert'" x-text="r.mode"></span></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.aiTraffic.length" style="padding:20px"><b>No AI traffic</b>No connections to AI services were seen.</div>
           <div style="padding:16px 20px 8px" class="h3">Open tabs</div>
-          <table class="tbl"><tbody><template x-for="t in (det ? det.tabs : [])" :key="t.title"><tr><td style="width:90px" class="muted" x-text="t.browser"></td><td><div x-text="t.title" style="font-weight:500"></div><div class="tiny muted mono" x-text="t.host"></div></td><td class="right"><span class="chip alert" x-show="t.ai">AI site</span></td></tr></template></tbody></table>
+          <table class="tbl"><tbody><template x-for="(t, idx) in (det ? det.tabs : [])" :key="idx + '-' + t.title"><tr><td style="width:90px" class="muted" x-text="t.browser"></td><td><div x-text="t.title" style="font-weight:500"></div><div class="tiny muted mono" x-text="t.host"></div></td><td class="right"><span class="chip alert" x-show="t.ai">AI site</span></td></tr></template></tbody></table>
         </section>
 
         <section x-show="tab === 'installed'" x-cloak style="padding:0">
           <div class="row" style="padding:16px 20px 8px"><span class="h3">Browser extensions</span><span class="grow"></span><button class="btn btn-sm" @click="rescan('extensions')"><svg class="i i-sm" aria-hidden="true"><use href="#i-refresh"/></svg> Rescan</button></div>
-          <table class="tbl" x-show="det && det.extensions.length"><tbody><template x-for="e in (det ? det.extensions : [])" :key="e.id"><tr><td class="muted" style="width:90px" x-text="e.browser"></td><td><div style="font-weight:500" x-text="e.name"></div><div class="tiny muted mono" x-text="e.id"></div></td><td class="right"><span class="chip alert">AI assistant</span></td></tr></template></tbody></table>
+          <table class="tbl" x-show="det && det.extensions.length"><tbody><template x-for="(e, idx) in (det ? det.extensions : [])" :key="idx + '-' + e.id"><tr><td class="muted" style="width:90px" x-text="e.browser"></td><td><div style="font-weight:500" x-text="e.name"></div><div class="tiny muted mono" x-text="e.id"></div></td><td class="right"><span class="chip alert">AI assistant</span></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.extensions.length" style="padding:16px"><b>None found</b></div>
           <div class="row" style="padding:16px 20px 8px"><span class="h3">Local AI files</span><span class="grow"></span><button class="btn btn-sm" @click="rescan('artifacts')"><svg class="i i-sm" aria-hidden="true"><use href="#i-refresh"/></svg> Rescan</button></div>
-          <table class="tbl" x-show="det && det.artifacts.length"><tbody><template x-for="a in (det ? det.artifacts : [])" :key="a.path"><tr><td class="muted" style="width:90px" x-text="a.kind"></td><td><div class="mono small" x-text="a.path"></div><div class="tiny muted" x-text="a.note"></div></td></tr></template></tbody></table>
+          <table class="tbl" x-show="det && det.artifacts.length"><tbody><template x-for="(a, idx) in (det ? det.artifacts : [])" :key="idx + '-' + a.path"><tr><td class="muted" style="width:90px" x-text="a.kind"></td><td><div class="mono small" x-text="a.path"></div><div class="tiny muted" x-text="a.note"></div></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.artifacts.length" style="padding:16px"><b>None found</b></div>
         </section>
 
         <section x-show="tab === 'network'" x-cloak style="padding:0">
           <div class="row" style="padding:16px 20px 8px"><span class="h3">Network adapters</span><span class="grow"></span><button class="btn btn-sm" @click="rescan('network')"><svg class="i i-sm" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh</button></div>
-          <table class="tbl"><tbody><template x-for="a in (det ? det.adapters : [])" :key="a.mac + a.name"><tr><td style="font-weight:500" x-text="a.name"></td><td class="muted" x-text="a.type"></td><td class="mono small" x-text="a.ip"></td><td class="mono small muted" x-text="a.mac"></td></tr></template></tbody></table>
+          <table class="tbl"><tbody><template x-for="(a, idx) in (det ? det.adapters : [])" :key="idx + '-' + a.name"><tr><td style="font-weight:500" x-text="a.name"></td><td class="muted" x-text="a.type"></td><td class="mono small" x-text="a.ip"></td><td class="mono small muted" x-text="a.mac"></td></tr></template></tbody></table>
           <div style="padding:16px 20px 8px" class="h3">Listening ports</div>
-          <table class="tbl" x-show="det && det.ports.length"><tbody><template x-for="p in (det ? det.ports : [])" :key="p.port"><tr><td class="mono" x-text="p.port + '/' + p.proto"></td><td x-text="p.proc"></td><td class="right nw"><span class="chip alert" style="margin-right:6px">Local AI port</span><button class="btn btn-sm" @click="closeName = p.proc; closePid = p.pid || null; closeModal = true">End task</button></td></tr></template></tbody></table>
+          <table class="tbl" x-show="det && det.ports.length"><tbody><template x-for="(p, idx) in (det ? det.ports : [])" :key="idx + '-' + p.port"><tr><td class="mono" x-text="p.port + '/' + p.proto"></td><td x-text="p.proc"></td><td class="right nw"><span class="chip alert" style="margin-right:6px">Local AI port</span><button class="btn btn-sm" @click="promptCloseProgram(p.exe || p.proc, p.pid || null)">End task</button></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.ports.length" style="padding:16px"><b>Nothing unusual</b></div>
           <div style="padding:16px 20px 8px" class="h3">USB devices</div>
-          <table class="tbl" x-show="det && det.devices.length"><tbody><template x-for="d in (det ? det.devices : [])" :key="d.vidpid + d.time"><tr><td class="mono small" x-text="d.vidpid"></td><td x-text="d.name"></td><td class="num muted" x-text="d.time"></td></tr></template></tbody></table>
+          <table class="tbl" x-show="det && det.devices.length"><tbody><template x-for="(d, idx) in (det ? det.devices : [])" :key="idx + '-' + d.vidpid"><tr><td class="mono small" x-text="d.vidpid"></td><td x-text="d.name"></td><td class="num muted" x-text="d.time"></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.devices.length" style="padding:16px"><b>None attached</b></div>
           <template x-if="det && det.netEvents && det.netEvents.length">
             <div>
@@ -389,7 +388,7 @@ window.XG_LIVE = {
         </section>
 
         <section x-show="tab === 'pastes'" x-cloak style="padding:0">
-          <table class="tbl" x-show="det && det.pastes.length"><thead><tr><th>Time</th><th>Size</th><th>From</th><th>Into</th></tr></thead><tbody><template x-for="p in (det ? det.pastes : [])" :key="p.time"><tr><td class="num muted" x-text="p.time"></td><td x-text="p.chars + ' characters, ' + p.lines + ' lines'"></td><td x-text="p.from"></td><td x-text="p.to"></td></tr></template></tbody></table>
+          <table class="tbl" x-show="det && det.pastes.length"><thead><tr><th>Time</th><th>Size</th><th>From</th><th>Into</th></tr></thead><tbody><template x-for="(p, idx) in (det ? det.pastes : [])" :key="idx + '-' + p.time"><tr><td class="num muted" x-text="p.time"></td><td x-text="p.chars + ' characters, ' + p.lines + ' lines'"></td><td x-text="p.from"></td><td x-text="p.to"></td></tr></template></tbody></table>
           <div class="empty-state" x-show="det && !det.pastes.length"><b>No large pastes</b>Only the size of a paste is recorded, never its text.</div>
         </section>
       </div>
@@ -411,7 +410,10 @@ window.XG_LIVE = {
   <div class="overlay" x-show="closeModal" x-cloak x-transition.opacity @click.self="closeModal = false">
     <div class="modal" role="dialog" aria-label="Close a program">
       <div class="modal-head"><span class="h2">Close this program?</span><button class="xbtn" @click="closeModal = false" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></div>
-      <div class="modal-body stack"><p class="muted">The agent will ask <b x-text="closeName"></b> to quit on <b x-text="active.name"></b>. Unsaved work in it may be lost.</p></div>
+      <div class="modal-body stack">
+        <label class="field" x-show="closeManual"><span>Program name or executable</span><input class="input mono" x-model="closeName" placeholder="e.g. ollama, code, chrome"></label>
+        <p class="muted" x-show="!closeManual || closeName">The agent will ask <b x-text="closeName || ('PID ' + closePid)"></b> to quit on <b x-text="active.name || 'this PC'"></b>. Unsaved work in it may be lost.</p>
+      </div>
       <div class="modal-foot"><button class="btn" @click="closeModal = false">Cancel</button><button class="btn btn-danger" @click="closeProgram()">Close program</button></div>
     </div>
   </div>

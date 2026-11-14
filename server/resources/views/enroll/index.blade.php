@@ -36,57 +36,17 @@
       ];
   })->values()->all() : [];
 @endphp
-<script>
-window.XG_ENROLL_PAGE = {
-  auto: @json((bool) ($lab?->auto_approve ?? false)),
-  key: @json($key ?? ''),
-  fp: @json($fingerprint ?? ''),
-  macs: @json(implode("\n", $lab?->auto_approve_macs ?? [])),
-  exeName: @json($exeName),
-  baseUrl: @json($baseUrl),
-  pending: @json($livePending),
-  enrolled: @json($livePcs),
-};
-</script>
-<div class="doc" x-data="{
-  os: 'win', q: '',
-  auto: window.XG_ENROLL_PAGE.auto,
-  key: window.XG_ENROLL_PAGE.key,
-  fp: window.XG_ENROLL_PAGE.fp,
-  macs: window.XG_ENROLL_PAGE.macs,
-  pending: window.XG_ENROLL_PAGE.pending || [],
-  enrolled: window.XG_ENROLL_PAGE.enrolled || [],
-  get cmd() {
-    const keyPart = this.key || '<ROTATE_KEY_FIRST>';
-    if (this.os === 'win') {
-      const exe = window.XG_ENROLL_PAGE.exeName || 'XephyGuard-Setup.exe';
-      return exe + ' /S /KEY=' + keyPart + ' /CCC=' + window.XG_ENROLL_PAGE.baseUrl + (this.fp ? ' /CAFP=' + this.fp : '');
-    }
-    return 'curl -fsSL ' + window.XG_ENROLL_PAGE.baseUrl + '/install/linux.sh | sudo bash -s -- --key ' + keyPart;
-  },
-  get shown() { const q = this.q.toLowerCase(); return this.enrolled.filter(p => !q || (p.name + p.host + p.ip).toLowerCase().includes(q)); },
-  approve(p) {
-    if (p.real && window.xgApi) window.xgApi('/enroll/' + p.id + '/approve', { method: 'POST', body: JSON.stringify({ name: p.name }) });
-    this.pending = this.pending.filter(x => x.id !== p.id);
-    $store.toasts.add('Enrolled ' + (p.name || p.host) + '.', 'ok');
-  },
-  reject(p) {
-    if (p.real && window.xgApi) window.xgApi('/enroll/' + p.id + '/reject', { method: 'POST' });
-    this.pending = this.pending.filter(x => x.id !== p.id);
-    $store.toasts.add('Turned away ' + p.host + '.', 'watch');
-  },
-  renamePc(p) {
-    p.editingName = false;
-    if (p.real && window.xgApi) window.xgApi('/pcs/' + p.id + '/rename', { method: 'POST', body: JSON.stringify({ name: p.name }) });
-    $store.toasts.add('Renamed to ' + p.name + '.', 'ok');
-  },
-  retirePc(p) {
-    if (!confirm('Retire ' + p.name + '? Its certificate stops working.')) return;
-    if (p.real && window.xgApi) window.xgApi('/pcs/' + p.id + '/retire', { method: 'POST' });
-    this.enrolled = this.enrolled.filter(x => x.id !== p.id);
-    $store.toasts.add(p.name + ' retired.', 'watch');
-  }
-}"><div class="optbar"><span class="otitle">Add a PC</span><span class="osub">Install the agent, then approve the PC when it appears.</span><span class="grow"></span><a class="btn" href="downloads.html"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Downloads</a></div><div class="canvas ">
+<script type="application/json" id="xg-page-data">{!! json_encode([
+  'auto' => (bool) ($lab?->auto_approve ?? false),
+  'key' => $key ?? '',
+  'fp' => $fingerprint ?? '',
+  'macs' => implode("\n", $lab?->auto_approve_macs ?? []),
+  'exeName' => $exeName,
+  'baseUrl' => $baseUrl,
+  'pending' => $livePending,
+  'enrolled' => $livePcs,
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<div class="doc" x-data="enrollPage"><div class="optbar"><span class="otitle">Add a PC</span><span class="osub">Install the agent, then approve the PC when it appears.</span><span class="grow"></span><a class="btn" href="{{ route('downloads.index') }}"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Downloads</a></div><div class="canvas ">
   
 
   <div class="cols-2">
@@ -97,7 +57,7 @@ window.XG_ENROLL_PAGE = {
           <div class="key">
             <code x-text="key || 'Not set'"></code>
             <button type="button" class="btn btn-sm" x-show="key" @click="xgCopy(key, 'Key copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg> Copy</button>
-            <form method="post" action="{{ route('enroll.rotate') }}" style="display:inline" onsubmit="return confirm('The old key stops working for new installs. Continue?')">
+            <form method="post" action="{{ route('enroll.rotate') }}" style="display:inline" @submit="confirmSubmit($event, 'The old key stops working for new installs. Continue?')">
               @csrf
               <button type="submit" class="btn btn-sm btn-quiet">Rotate</button>
             </form>

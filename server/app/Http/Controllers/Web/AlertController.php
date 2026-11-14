@@ -13,19 +13,32 @@ class AlertController extends Controller
 {
     public function index(Request $request)
     {
-        $q = Alert::query()->with(['pc:id,name', 'acknowledger:id,name'])->latest('occurred_at');
-        if ($s = $request->integer('session')) {
-            $q->where('lab_session_id', $s);
+        $sessionId = $request->integer('session');
+        $base = Alert::query()->when($sessionId, fn ($q) => $q->where('lab_session_id', $sessionId));
+        $openOnly = $request->boolean('open');
+
+        $sevQuery = clone $base;
+        if ($openOnly) {
+            $sevQuery->whereNull('acknowledged_at');
         }
+        $sevCounts = $sevQuery->selectRaw('severity, count(*) as n')->groupBy('severity')->pluck('n', 'severity');
+        $sevTotals = [];
+        foreach (['critical', 'high', 'medium', 'low', 'info'] as $sName) {
+            $sevTotals[$sName] = (int) ($sevCounts[$sName] ?? 0);
+        }
+
+        $q = (clone $base)->with(['pc:id,name,retired_at', 'acknowledger:id,name'])->latest('occurred_at');
         if ($sev = $request->string('severity')->toString()) {
             $q->where('severity', $sev);
         }
-        if ($request->boolean('open')) {
+        if ($openOnly) {
             $q->whereNull('acknowledged_at');
         }
 
         return view('alerts.index', [
-            'alerts' => $q->paginate(50)->withQueryString(),
+            'alerts' => $q->paginate(100)->withQueryString(),
+            'openTotal' => (clone $base)->whereNull('acknowledged_at')->count(),
+            'sevTotals' => $sevTotals,
             'sessions' => LabSession::query()->latest('starts_at')->limit(30)->get(['id', 'course', 'starts_at', 'mode']),
             'filters' => $request->only(['session', 'severity', 'open']),
         ]);
@@ -37,10 +50,11 @@ class AlertController extends Controller
         $alert->forceFill(['acknowledged_by' => $request->user()->id, 'acknowledged_at' => now(),
             'comment' => $d['comment'] ?? $alert->comment])->save();
         Audit::log('alert.ack', $alert, ['comment' => $d['comment'] ?? null]);
-        $pc = $alert->pc;
-        $ingestor->refreshLiveScore($pc, $alert->session);
-        $pc->save();
-        broadcast(new \App\Events\PcUpdated($pc));
+        if ($pc = $alert->pc) {
+            $ingestor->refreshLiveScore($pc, $alert->session);
+            $pc->save();
+            broadcast(new \App\Events\PcUpdated($pc));
+        }
 
         return $request->expectsJson() ? response()->json(['ok' => true]) : back()->with('status', 'Alert acknowledged.');
     }

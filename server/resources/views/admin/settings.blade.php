@@ -3,35 +3,28 @@
 @section('content')
 @php
   $netMode = ($v['network_mode'] ?? 'proxy_only') === 'gateway' ? 'gateway' : 'proxy_only';
-  $tAlways = ($v['title_capture_always_on'] ?? 'off') === 'app_only' ? 'app' : ($v['title_capture_always_on'] ?? 'off');
-  $tPractice = ($v['title_capture_practice'] ?? 'app_only') === 'app_only' ? 'app' : ($v['title_capture_practice'] ?? 'app_only');
-  $tTest = ($v['title_capture_test'] ?? 'full') === 'app_only' ? 'app' : ($v['title_capture_test'] ?? 'full');
-  $logHosts = (bool) ($v['log_urls']['enabled'] ?? true);
-  $logQueries = (bool) ($v['log_urls']['query'] ?? false);
+  $tAlwaysRaw = $v['title_capture_always_on'] ?? 'off';
+  $tPracticeRaw = $v['title_capture_practice'] ?? 'app_only';
+  $tTestRaw = $v['title_capture_test'] ?? 'full';
+  $tAlways = $tAlwaysRaw === 'app_only' ? 'app' : $tAlwaysRaw;
+  $tPractice = $tPracticeRaw === 'app_only' ? 'app' : $tPracticeRaw;
+  $tTest = $tTestRaw === 'app_only' ? 'app' : $tTestRaw;
+  $logHosts = (bool) ($v['log_urls']['enabled'] ?? false);
+  $logQueries = $logHosts && (bool) ($v['log_urls']['query'] ?? false);
 @endphp
-<script>
-window.XG_SETTINGS_PAGE = {
-  mode: @json($netMode),
-  pasteAt: @json((int) ($v['paste_alert_chars'] ?? 800)),
-  tAlways: @json($tAlways),
-  tPractice: @json($tPractice),
-  tTest: @json($tTest),
-  hosts: @json($logHosts),
-  queries: @json($logQueries),
-};
-</script>
-<div class="doc" x-data="{
-  cur: 'network',
-  mode: window.XG_SETTINGS_PAGE.mode,
-  pasteAt: window.XG_SETTINGS_PAGE.pasteAt,
-  tAlways: window.XG_SETTINGS_PAGE.tAlways,
-  tPractice: window.XG_SETTINGS_PAGE.tPractice,
-  tTest: window.XG_SETTINGS_PAGE.tTest,
-  hosts: window.XG_SETTINGS_PAGE.hosts,
-  queries: window.XG_SETTINGS_PAGE.queries,
-  go(id) { this.cur = id; document.getElementById(id).scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-}"><div class="optbar"><span class="otitle">Settings</span><span class="osub">Network, privacy and the notice students see.</span><span class="grow"></span></div><div class="canvas ">
-  
+<script type="application/json" id="xg-page-data">{!! json_encode([
+  'mode' => $netMode,
+  'pasteAt' => (int) ($v['paste_alert_chars'] ?? 800),
+  'tAlways' => $tAlways,
+  'tPractice' => $tPractice,
+  'tTest' => $tTest,
+  'hosts' => $logHosts,
+  'queries' => $logQueries,
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<div class="doc" x-data="settingsPage"><div class="optbar"><span class="otitle">Settings</span><span class="osub">Network, privacy and the notice students see.</span><span class="grow"></span></div><div class="canvas ">
+  @if ($errors->any())
+  <div class="note warn" style="margin-bottom:16px"><svg class="i i-sm" aria-hidden="true"><use href="#i-warn"/></svg><span>{{ $errors->first() }}</span></div>
+  @endif
   <div class="cols-side" style="grid-template-columns:200px minmax(0,1fr)">
     <nav class="index" aria-label="Sections">
       <a href="#network" :class="cur === 'network' && 'on'" @click.prevent="go('network')">Network</a>
@@ -41,9 +34,9 @@ window.XG_SETTINGS_PAGE = {
     </nav>
     <form method="post" action="{{ route('admin.settings.save') }}">
       @csrf
-      <input type="hidden" name="title_capture_always_on" :value="tAlways === 'app' ? 'app_only' : tAlways">
-      <input type="hidden" name="title_capture_practice" :value="tPractice === 'app' ? 'app_only' : tPractice">
-      <input type="hidden" name="title_capture_test" :value="tTest === 'app' ? 'app_only' : tTest">
+      <input type="hidden" name="title_capture_always_on" value="{{ $tAlwaysRaw }}" :value="tAlways === 'app' ? 'app_only' : tAlways">
+      <input type="hidden" name="title_capture_practice" value="{{ $tPracticeRaw }}" :value="tPractice === 'app' ? 'app_only' : tPractice">
+      <input type="hidden" name="title_capture_test" value="{{ $tTestRaw }}" :value="tTest === 'app' ? 'app_only' : tTest">
       <section class="section" id="network"><div class="panel-head"><h2 class="h2">Network</h2></div>
         <div class="panel-body stack" style="max-width:760px;--gap:20px">
           <div class="form-grid">
@@ -81,9 +74,9 @@ window.XG_SETTINGS_PAGE = {
               <tr><td>Test or exam</td><td class="right"><div class="seg"><button type="button" :aria-pressed="tTest === 'off'" @click="tTest = 'off'">Off</button><button type="button" :aria-pressed="tTest === 'app'" @click="tTest = 'app'">Program</button><button type="button" :aria-pressed="tTest === 'full'" @click="tTest = 'full'">Full</button></div></td></tr></tbody></table></div>
           <div class="stack" style="--gap:12px"><label class="check"><span class="switch"><input type="checkbox" name="log_urls" value="1" x-model="hosts"><i></i></span> Log which allowed sites are visited</label><label class="check" x-show="hosts"><span class="switch"><input type="checkbox" name="log_queries" value="1" x-model="queries"><i></i></span> <span>Include search terms <span class="muted">(off by default)</span></span></label></div>
         </div></section>
-      <section class="section" id="notice"><div class="panel-head"><h2 class="h2">Student notice</h2><a class="small" href="notice.html">Preview</a></div>
+      <section class="section" id="notice"><div class="panel-head"><h2 class="h2">Student notice</h2><a class="small" href="{{ route('notice') }}">Preview</a></div>
         <div class="panel-body" style="max-width:760px"><textarea name="notice_text" class="textarea" rows="4" required>{{ !empty($v['notice_text']) ? $v['notice_text'] : 'Lab computers are equipped with XephyGuard. During tests, generative AI and assistance tools are blocked. Passwords and typed text are never collected. Screens are viewed only by your instructor, only during a session, and a notice is shown on your screen while it happens.' }}</textarea><p class="help">Shown on the agent’s indicator and on the public notice page.</p></div></section>
-      <div class="savebar"><span class="muted small grow">Changes apply to every PC within a few seconds.</span><button type="button" class="btn" onclick="location.reload()">Discard</button><button type="submit" class="btn btn-solid">Save settings</button></div>
+      <div class="savebar"><span class="muted small grow">Changes apply to every PC within a few seconds.</span><button type="button" class="btn" @click="reload()">Discard</button><button type="submit" class="btn btn-solid">Save settings</button></div>
     </form>
   </div>
 </div></div>

@@ -15,42 +15,17 @@
       ];
   })->values()->all() : [];
 @endphp
-<script>
-window.XG_ROSTER_PAGE = {
-  pseudo: @json((bool) ($pseudonymize ?? true)),
-  rows: @json($liveRows),
-  total: @json(isset($students) ? $students->total() : 0),
-};
-</script>
-<div class="doc" x-data="{
-  q: '', pseudo: window.XG_ROSTER_PAGE.pseudo,
-  rows: window.XG_ROSTER_PAGE.rows || [],
-  get shown() { const q = this.q.toLowerCase(); return this.rows.filter(r => !q || (r.id + r.name + r.login).toLowerCase().includes(q)); },
-  togglePseudo() {
-    if (window.xgApi) window.xgApi('/roster/pseudonymize', { method: 'POST', body: JSON.stringify({ enabled: this.pseudo }) });
-    $store.toasts.add(this.pseudo ? 'Pseudonyms enabled in exports.' : 'Student numbers used in exports.', 'ok');
-  },
-  setConsent(r, status) {
-    r.consent = status;
-    if (r.dbId && window.xgApi) {
-      window.xgApi('/roster/' + r.dbId + '/consent', { method: 'POST', body: JSON.stringify({ granted: status === 'granted' }) });
-    }
-    $store.toasts.add('Consent updated for ' + r.name + '.', 'ok');
-  },
-  saveExempt(r, exempt) {
-    if (!exempt) { r.ex = ''; }
-    r.exOpen = false;
-    if (r.dbId && window.xgApi) {
-      window.xgApi('/roster/' + r.dbId + '/exempt', { method: 'POST', body: JSON.stringify({ exempt: !!r.ex, reason: r.ex || null }) });
-    }
-    $store.toasts.add('Saved.', 'ok');
-  }
-}">
+<script type="application/json" id="xg-page-data">{!! json_encode([
+  'pseudo' => (bool) ($pseudonymize ?? true),
+  'rows' => $liveRows,
+  'total' => isset($students) ? $students->total() : 0,
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<div class="doc" x-data="rosterPage">
   <form id="xg-roster-import" method="post" action="{{ route('roster.import') }}" enctype="multipart/form-data" style="display:none">
     @csrf
-    <input id="csv" name="file" type="file" accept=".csv" hidden onchange="this.form.submit()">
+    <input x-ref="csv" id="csv" name="file" type="file" accept=".csv" hidden @change="submitImport($event)">
   </form>
-  <div class="optbar"><span class="otitle">Roster</span><span class="osub">Maps lab logins to students. Exports use the pseudonym only.</span><span class="grow"></span><button class="btn btn-solid" onclick="document.getElementById('csv').click()"><svg class="i i-sm" aria-hidden="true"><use href="#i-upload"/></svg> Import CSV</button></div><div class="canvas ">
+  <div class="optbar"><span class="otitle">Roster</span><span class="osub">Maps lab logins to students. Exports use the pseudonym only.</span><span class="grow"></span><button type="button" class="btn btn-solid" @click="triggerImport()"><svg class="i i-sm" aria-hidden="true"><use href="#i-upload"/></svg> Import CSV</button></div><div class="canvas ">
   
   <div class="toolbar"><input class="input input-sm" style="width:280px" placeholder="Search ID, name or login" x-model="q"><span class="grow"></span><label class="check small"><span class="switch"><input type="checkbox" x-model="pseudo" @change="togglePseudo()"><i></i></span> Pseudonyms in research exports</label></div>
   <section class="panel">
@@ -68,7 +43,7 @@ window.XG_ROSTER_PAGE = {
       </tbody>
     </table></div>
     <div class="tbl-foot">
-      <span x-text="'Showing ' + shown.length + ' of ' + window.XG_ROSTER_PAGE.total + ' students'"></span>
+      <span x-text="'Showing ' + shown.length + ' of ' + total + ' students'"></span>
       @if(isset($students) && $students->hasPages())
         <div class="pager">
           @if($students->onFirstPage())

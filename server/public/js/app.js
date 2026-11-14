@@ -1,6 +1,42 @@
-// XephyGuard UI v2 · interactive & backend-wired runtime
+// XephyGuard UI v2 · interactive & backend-wired runtime (CSP-safe)
 
 window.xgCsrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+window.xgJson = function (id, fallback = null) {
+  const el = document.getElementById(id);
+  if (!el) return fallback;
+  try {
+    return JSON.parse(el.textContent || 'null') ?? fallback;
+  } catch (e) {
+    return fallback;
+  }
+};
+
+window.xgHydrateGlobals = function () {
+  const app = window.xgJson('xg-app-data', null);
+  if (app && typeof app === 'object') {
+    window.XG_APP = app;
+    if (app.userName !== undefined) window.XG_USER_NAME = app.userName;
+    if (app.serverHost !== undefined) window.XG_SERVER_HOST = app.serverHost;
+  }
+  const live = window.xgJson('xg-live-data', null);
+  if (live && typeof live === 'object') {
+    window.XG_LIVE = live;
+  }
+};
+
+window.xgAdjustAlertBadge = function (delta) {
+  const badge = document.getElementById('xg-open-alerts-badge');
+  if (!badge) return;
+  const cur = parseInt(badge.textContent || '0', 10);
+  if (Number.isNaN(cur)) return;
+  const next = Math.max(0, cur + delta);
+  badge.textContent = String(next);
+  badge.style.display = next > 0 ? '' : 'none';
+};
+
+window.xgHydrateGlobals();
+document.addEventListener('DOMContentLoaded', window.xgHydrateGlobals);
 
 window.xgApi = async function (url, opts = {}) {
   const method = (opts.method || 'GET').toUpperCase();
@@ -12,7 +48,18 @@ window.xgApi = async function (url, opts = {}) {
   const res = await fetch(url, { credentials: 'same-origin', ...opts, method, headers });
   if (!res.ok) {
     let msg = res.statusText || ('HTTP ' + res.status);
-    try { const j = await res.json(); if (j && j.message) msg = j.message; } catch (e) {}
+    try {
+      const j = await res.json();
+      if (j) {
+        if (j.errors && typeof j.errors === 'object') {
+          const first = Object.values(j.errors).flat()[0];
+          if (first) msg = first;
+          else if (j.message) msg = j.message;
+        } else if (j.message) {
+          msg = j.message;
+        }
+      }
+    } catch (e) {}
     throw new Error(msg);
   }
   const ct = res.headers.get('content-type') || '';
@@ -303,7 +350,7 @@ window.xgGroup = function (list) {
   const map = new Map();
   list.forEach(a => {
     const k = a.pcId + '|' + a.rule;
-    if (!map.has(k)) map.set(k, { key: k, pcId: a.pcId, pc: a.pc, user: a.user, rule: a.rule, sev: a.sev, title: a.title, at: a.at, ago: a.ago, items: [] });
+    if (!map.has(k)) map.set(k, { key: k, pcId: a.pcId, pc: a.pc, pcRetired: !!a.pcRetired, user: a.user, rule: a.rule, sev: a.sev, title: a.title, at: a.at, ago: a.ago, items: [] });
     const g = map.get(k); g.items.push(a);
     if ((rank[a.sev] || 0) > (rank[g.sev] || 0)) g.sev = a.sev;
     if (a.ago < g.ago) { g.ago = a.ago; g.at = a.at; g.title = a.title; }
@@ -314,6 +361,7 @@ window.xgGroup = function (list) {
 window.xgAgo = m => m < 60 ? m + ' min ago' : Math.floor(m / 60) + ' h ago';
 
 document.addEventListener('alpine:init', () => {
+  window.xgHydrateGlobals();
 
   /* ---------- Theme ---------- */
   const apply = mode => {
@@ -344,28 +392,48 @@ document.addEventListener('alpine:init', () => {
   /* ---------- Command palette ---------- */
   Alpine.data('palette', () => ({
     open: false, q: '', idx: 0,
-    base: [
-      { g: 'Go to', t: 'Live lab', icon: 'live', href: 'index.html', k: 'Alt+1' },
-      { g: 'Go to', t: 'Alerts', icon: 'bell', href: 'alerts.html', k: 'Alt+2' },
-      { g: 'Go to', t: 'Sessions', icon: 'clock', href: 'sessions.html', k: 'Alt+3' },
-      { g: 'Go to', t: 'Timetable and profiles', icon: 'calendar', href: 'profiles.html', k: 'Alt+4' },
-      { g: 'Go to', t: 'Roster', icon: 'users', href: 'roster.html', k: 'Alt+5' },
-      { g: 'Go to', t: 'Blocklists and rules', icon: 'shield', href: 'signatures.html', k: 'Alt+6' },
-      { g: 'Go to', t: 'Reports', icon: 'report', href: 'reports.html', k: 'Alt+7' },
-      { g: 'Go to', t: 'Add a PC', icon: 'addpc', href: 'enroll.html', k: 'Alt+8' },
-      { g: 'Go to', t: 'Health', icon: 'pulse', href: 'admin-health.html', k: 'Alt+9' },
-      { g: 'Go to', t: 'Settings', icon: 'sliders', href: 'admin-settings.html' },
-      { g: 'Go to', t: 'Staff accounts', icon: 'badge', href: 'admin-users.html' },
-      { g: 'Go to', t: 'Audit log', icon: 'list', href: 'admin-audit.html' },
-      { g: 'Go to', t: 'Shared clipboard', icon: 'clipboard', href: 'share.html' },
-      { g: 'Go to', t: 'Downloads', icon: 'download', href: 'downloads.html' },
-      { g: 'Actions', t: 'Open the screen wall', icon: 'grid', href: 'index.html#wall' },
-      { g: 'Actions', t: 'Start a session', icon: 'plus', href: 'sessions.html#start' },
-      { g: 'Actions', t: 'Switch theme', icon: 'sun', run: () => Alpine.store('theme').toggle() }
-    ],
+    get base() {
+      const app = window.XG_APP || {};
+      const canInstructor = !!app.canInstructor;
+      const canAdmin = !!app.canAdmin;
+      const nav = [
+        { g: 'Go to', t: 'Live lab', icon: 'live', href: '/', k: 'Alt+1' },
+        { g: 'Go to', t: 'Alerts', icon: 'bell', href: '/alerts', k: 'Alt+2' },
+        { g: 'Go to', t: 'Sessions', icon: 'clock', href: '/sessions', k: 'Alt+3' },
+      ];
+      if (canInstructor) {
+        nav.push(
+          { g: 'Go to', t: 'Timetable and profiles', icon: 'calendar', href: '/profiles', k: 'Alt+4' },
+          { g: 'Go to', t: 'Roster', icon: 'users', href: '/roster', k: 'Alt+5' }
+        );
+      }
+      if (canAdmin) {
+        nav.push({ g: 'Go to', t: 'Blocklists and rules', icon: 'shield', href: '/signatures', k: 'Alt+6' });
+      }
+      if (canInstructor) {
+        nav.push({ g: 'Go to', t: 'Reports', icon: 'report', href: '/reports', k: 'Alt+7' });
+      }
+      nav.push({ g: 'Go to', t: 'Add a PC', icon: 'addpc', href: '/enroll', k: 'Alt+8' });
+      if (canAdmin) {
+        nav.push(
+          { g: 'Go to', t: 'Health', icon: 'pulse', href: '/admin/health', k: 'Alt+9' },
+          { g: 'Go to', t: 'Settings', icon: 'sliders', href: '/admin/settings' },
+          { g: 'Go to', t: 'Staff accounts', icon: 'badge', href: '/admin/users' },
+          { g: 'Go to', t: 'Audit log', icon: 'list', href: '/admin/audit' }
+        );
+      }
+      nav.push(
+        { g: 'Go to', t: 'Shared clipboard', icon: 'clipboard', href: '/share' },
+        { g: 'Go to', t: 'Downloads', icon: 'download', href: '/downloads' },
+        { g: 'Actions', t: 'Open the screen wall', icon: 'grid', href: '/#wall' },
+        { g: 'Actions', t: 'Start a session', icon: 'plus', href: '/sessions#start' },
+        { g: 'Actions', t: 'Switch theme', icon: 'sun', run: () => Alpine.store('theme').toggle() }
+      );
+      return nav;
+    },
     get items() {
       const pool = (window.XG_LIVE && Array.isArray(window.XG_LIVE.pcs)) ? window.XG_LIVE.pcs : [];
-      const pcs = pool.map(p => ({ g: 'PCs', t: p.name, icon: 'live', href: 'index.html#pc=' + p.id, k: p.user || '—' }));
+      const pcs = pool.map(p => ({ g: 'PCs', t: p.name, icon: 'live', href: '/#pc=' + p.id, k: p.user || '—' }));
       const q = this.q.trim().toLowerCase();
       const all = this.base.concat(pcs);
       return q ? all.filter(i => (i.t + ' ' + (i.k || '')).toLowerCase().includes(q)).slice(0, 12) : this.base.slice(0, 8);
@@ -379,7 +447,7 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('labView', () => ({
     view: 'map',
     cols: (window.XG_LIVE && (window.XG_LIVE.cols || (window.XG_LIVE.lab && window.XG_LIVE.lab.cols))) || 6,
-    rows: (window.XG_LIVE && (window.XG_LIVE.rows || (window.XG_LIVE.lab && window.XG_LIVE.lab.rows))) || 3,
+    rows: (window.XG_LIVE && (window.XG_LIVE.rows || (window.XG_LIVE.lab && window.XG_LIVE.lab.rows))) || 4,
     editing: false, dragId: null, dropKey: null,
     pcs: (window.XG_LIVE && Array.isArray(window.XG_LIVE.pcs)) ? structuredClone(window.XG_LIVE.pcs) : [],
     alerts: (window.XG_LIVE && Array.isArray(window.XG_LIVE.alerts)) ? structuredClone(window.XG_LIVE.alerts) : [],
@@ -387,12 +455,9 @@ document.addEventListener('alpine:init', () => {
     activePcId: null, inspector: false, tab: 'screen', screenMode: 'snapshot', monitor: 0, snapT: 4200, snapAt: '',
     screenStreaming: false, screenHasFrame: false, screenStatus: '', screenAuditId: null, screenViewer: null, screenRenewTimer: null,
     tile: 240, flagged: false, blur: false, pinned: [], dock: { att: true, props: true, list: true }, pcFilter: 'all',
-    messageModal: false, messageTarget: null, messageText: '', showDone: false, closeModal: false, closeName: '', closePid: null,
+    messageModal: false, messageTarget: null, messageText: '', showDone: false, closeModal: false, closeName: '', closePid: null, closeManual: false,
 
     init() {
-      if (this.pcs.length && !this.pcs.some(p => p.id === 1)) {
-        this.pinned = [this.pcs[0].id];
-      }
       const h = location.hash;
       if (h.includes('wall')) this.view = 'wall';
       const m = h.match(/pc=(\d+)/); if (m) this.select(+m[1]);
@@ -440,7 +505,26 @@ document.addEventListener('alpine:init', () => {
           keyrate: [],
           pastes: [],
         };
+        const pcObj = d.pc || {};
+        const pcUiStatus = pcObj.status || 'offline';
+        const pcUser = pcObj.user || 'No one signed in';
         const mapped = {
+          pcInfo: {
+            id: pcObj.id || id,
+            name: pcObj.name || ('PC-' + id),
+            host: pcObj.hostname || pcObj.name || ('PC-' + id),
+            ip: pcObj.ip || '—',
+            os: ((pcObj.os || 'Linux') + ' ' + (pcObj.os_version || '')).trim(),
+            agent: pcObj.agent_version || '—',
+            status: pcUiStatus,
+            user: pcUser,
+            last: pcObj.last_event || 'Retired / Offline',
+            score: typeof pcObj.score === 'number' ? pcObj.score : '—',
+            isolated: !!pcObj.isolated,
+            monitors: 1,
+            caps: { snapshot: false, live: false, delta: false, multi: false, secure: false },
+          },
+          processesUpdatedAt: d.processes_updated_at || '',
           events: (d.timeline && d.timeline.length)
             ? d.timeline.map(e => ({ time: e.at, sev: e.type === 'rule_hit' || e.type === 'tamper' ? 'high' : 'info', label: e.summary }))
             : base.events,
@@ -479,14 +563,17 @@ document.addEventListener('alpine:init', () => {
             : base.pastes,
         };
         this.serverDetails[id] = mapped;
-      } catch (e) {}
+      } catch (e) {
+        Alpine.store('toasts').add(e.message || 'Could not load PC details.', 'alert');
+      }
     },
 
     /* derived */
-    get active() { return this.pcs.find(p => p.id === this.activePcId) || {}; },
+    get active() { return this.pcs.find(p => p.id === this.activePcId) || (this.serverDetails[this.activePcId]?.pcInfo) || {}; },
     get det() {
       if (!this.activePcId) return null;
       return this.serverDetails[this.activePcId] || {
+        processesUpdatedAt: '',
         events: [], processes: [], aiTraffic: [], tabs: [], extensions: [],
         artifacts: [], adapters: [], ports: [], devices: [], netEvents: [],
         keyrate: [], pastes: [],
@@ -533,6 +620,7 @@ document.addEventListener('alpine:init', () => {
     openInspector(id, tab) { if (this.editing) return; this.activePcId = id; this.tab = tab || 'screen'; this.screenMode = 'snapshot'; this.monitor = 0; this.inspector = true; this.fetchDetail(id); },
     closeInspector() { this.stopScreen(); this.inspector = false; },
     clear() { this.stopScreen(); this.inspector = false; this.messageModal = false; this.closeModal = false; },
+    confirmForm(evt, msg) { if (!confirm(msg)) evt.preventDefault(); },
 
     async toggleIsolate(pc) {
       if (!pc || !pc.id) return;
@@ -540,8 +628,11 @@ document.addEventListener('alpine:init', () => {
       pc.isolated = next;
       try {
         await window.xgApi(`/pcs/${pc.id}/isolate`, { method: 'POST', body: JSON.stringify({ isolated: next, reason: 'dashboard' }) });
-      } catch (e) {}
-      Alpine.store('toasts').add(pc.isolated ? `${pc.name} is cut off from the lab network.` : `${pc.name} is back on the network.`, pc.isolated ? 'alert' : 'ok');
+        Alpine.store('toasts').add(pc.isolated ? `${pc.name} is cut off from the lab network.` : `${pc.name} is back on the network.`, pc.isolated ? 'alert' : 'ok');
+      } catch (e) {
+        pc.isolated = !next;
+        Alpine.store('toasts').add(e.message || 'Could not change isolation state.', 'alert');
+      }
     },
     async rescan(pcOrKind, kindArg) {
       const targetPc = (typeof pcOrKind === 'object' && pcOrKind) ? pcOrKind : this.active;
@@ -551,26 +642,34 @@ document.addEventListener('alpine:init', () => {
       try {
         await window.xgApi(`/pcs/${targetPc.id}/rescan`, { method: 'POST', body: JSON.stringify({ kind }) });
         setTimeout(() => this.fetchDetail(targetPc.id), 800);
-      } catch (e) {}
+      } catch (e) {
+        Alpine.store('toasts').add(e.message || 'Rescan request failed.', 'alert');
+      }
     },
     promptCloseProgram(name = '', pid = null) {
       this.closeName = name;
       this.closePid = pid;
+      this.closeManual = !name && !pid;
       this.closeModal = true;
     },
     async closeProgram() {
       const exe = (this.closeName || '').trim();
-      if (!exe && !this.closePid) return;
+      if (!exe && !this.closePid) {
+        Alpine.store('toasts').add('Enter a program name to close.', 'watch');
+        return;
+      }
       const target = this.active;
-      this.closeModal = false;
+      if (!target || !target.id) return;
       try {
-        if (target && target.id) {
-          await window.xgApi(`/pcs/${target.id}/kill`, { method: 'POST', body: JSON.stringify({ exe: exe || null, pid: this.closePid || null }) });
-        }
-      } catch (e) {}
-      Alpine.store('toasts').add(`Asked ${target.name} to close ${exe || ('PID ' + this.closePid)}.`, 'watch');
-      this.closeName = '';
-      this.closePid = null;
+        await window.xgApi(`/pcs/${target.id}/kill`, { method: 'POST', body: JSON.stringify({ exe: exe || null, pid: this.closePid || null }) });
+        this.closeModal = false;
+        Alpine.store('toasts').add(`Asked ${target.name} to close ${exe || ('PID ' + this.closePid)}.`, 'watch');
+        this.closeName = '';
+        this.closePid = null;
+        this.closeManual = false;
+      } catch (e) {
+        Alpine.store('toasts').add(e.message || 'Could not send kill command.', 'alert');
+      }
     },
     async startScreenStream(mode = 'live') {
       const pcId = this.activePcId;
@@ -603,6 +702,7 @@ document.addEventListener('alpine:init', () => {
         }
       } catch (e) {
         this.screenStreaming = false;
+        Alpine.store('toasts').add(e.message || 'Screen stream unavailable.', 'watch');
       }
     },
     async stopScreen() {
@@ -622,7 +722,6 @@ document.addEventListener('alpine:init', () => {
       this.screenMode = 'snapshot';
       this.startScreenStream('snapshot');
       this.paintLive();
-      Alpine.store('toasts').add('Snapshot taken.', 'ok');
     },
     goLive() {
       this.screenMode = 'live';
@@ -640,20 +739,31 @@ document.addEventListener('alpine:init', () => {
       const txt = this.messageText.trim();
       if (!txt) return;
       const target = this.messageTarget;
-      this.messageModal = false;
-      this.messageText = '';
       try {
         await window.xgApi('/sessions/message', { method: 'POST', body: JSON.stringify({ text: txt, pc_ids: target ? [target.id] : [] }) });
-      } catch (e) {}
-      Alpine.store('toasts').add(`Message sent to ${target ? target.name : 'every student screen'}.`, 'ok');
+        this.messageModal = false;
+        this.messageText = '';
+        Alpine.store('toasts').add(`Message sent to ${target ? target.name : 'every student screen'}.`, 'ok');
+      } catch (e) {
+        Alpine.store('toasts').add(e.message || 'Could not send message.', 'alert');
+      }
     },
     async ackGroup(g) {
-      g.items.forEach(a => {
-        const x = this.alerts.find(y => y.id === a.id);
-        if (x) { x.acked = true; x.by = window.XG_USER_NAME || 'Staff'; }
-        window.xgApi(`/alerts/${a.id}/ack`, { method: 'POST', body: JSON.stringify({}) }).catch(() => {});
-      });
-      Alpine.store('toasts').add(`${g.pc}: ${g.count > 1 ? g.count + ' alerts' : 'alert'} marked as reviewed.`, 'ok');
+      const items = (g.items || []).filter(a => !a.acked && a.id);
+      if (!items.length) return;
+      try {
+        await Promise.all(items.map(a =>
+          window.xgApi(`/alerts/${a.id}/ack`, { method: 'POST', body: JSON.stringify({}) })
+        ));
+        items.forEach(a => {
+          const x = this.alerts.find(y => y.id === a.id);
+          if (x) { x.acked = true; x.by = window.XG_USER_NAME || 'Staff'; }
+        });
+        window.xgAdjustAlertBadge(-items.length);
+        Alpine.store('toasts').add(`${g.pc}: ${items.length > 1 ? items.length + ' alerts' : 'alert'} marked as reviewed.`, 'ok');
+      } catch (e) {
+        Alpine.store('toasts').add(e.message || 'Could not mark reviewed.', 'alert');
+      }
     },
 
     /* seat map editing */
@@ -665,21 +775,550 @@ document.addEventListener('alpine:init', () => {
     },
     dropShelf() { const mv = this.pcs.find(p => p.id === this.dragId); this.dragId = null; this.dropKey = null; if (mv) mv.seat = null; },
     async saveLayout() {
-      this.editing = false;
       const tiles = this.pcs.filter(p => p.seat).map(p => ({ pc_id: p.id, x: p.seat.x, y: p.seat.y }));
       try {
         await window.xgApi('/lab/layout', { method: 'POST', body: JSON.stringify({ cols: this.cols, rows: this.rows, tiles }) });
-      } catch (e) {}
-      Alpine.store('toasts').add('Seat map saved.', 'ok');
+        this.editing = false;
+        Alpine.store('toasts').add('Seat map saved.', 'ok');
+      } catch (e) {
+        Alpine.store('toasts').add(e.message || 'Could not save seat map.', 'alert');
+      }
     }
   }));
+
+  /* ---------- Alerts page ---------- */
+  Alpine.data('alertsPage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      sev: d.sev || '',
+      unacked: !!d.unacked,
+      session: d.session || '',
+      grouped: true,
+      q: '',
+      openKey: null,
+      notes: {},
+      byName: d.byName || window.XG_USER_NAME || 'Staff',
+      openTotal: Number(d.openTotal ?? 0),
+      total: Number(d.total ?? 0),
+      hasPages: !!d.hasPages,
+      sevTotals: d.sevTotals || null,
+      all: Array.isArray(d.items) ? d.items : [],
+      get filtered() {
+        const q = this.q.toLowerCase();
+        return this.all.filter(a =>
+          (!this.sev || a.sev === this.sev)
+          && (!this.unacked || !a.acked)
+          && (!q || (a.pc + ' ' + a.title + ' ' + a.rule + ' ' + a.user).toLowerCase().includes(q))
+        );
+      },
+      get rows() {
+        return this.grouped
+          ? window.xgGroup(this.filtered)
+          : this.filtered.map(a => ({ ...a, key: 'a' + a.id, count: 1, items: [a] }));
+      },
+      get waiting() {
+        if (!this.hasPages && !this.session) {
+          return window.xgGroup(this.all.filter(a => !a.acked)).length;
+        }
+        return this.openTotal;
+      },
+      n(s) {
+        if (this.sevTotals && s in this.sevTotals) return Number(this.sevTotals[s] || 0);
+        return this.all.filter(a => a.sev === s).length;
+      },
+      allCount() {
+        return this.total || this.all.length;
+      },
+      nav(params) {
+        const u = new URL('/alerts', window.location.origin);
+        if (params.session) u.searchParams.set('session', params.session);
+        if (params.severity) u.searchParams.set('severity', params.severity);
+        if (params.open) u.searchParams.set('open', '1');
+        window.location.href = u.pathname + u.search;
+      },
+      selectSession(val) {
+        this.nav({ session: val || '', severity: this.sev, open: this.unacked });
+      },
+      setSev(s) {
+        if (this.hasPages || d.sev) {
+          this.nav({ session: this.session, severity: s, open: this.unacked });
+        } else {
+          this.sev = s;
+        }
+      },
+      toggleUnacked() {
+        this.nav({ session: this.session, severity: this.sev, open: this.unacked });
+      },
+      async ack(r) {
+        const note = (this.notes[r.key] || '').trim() || 'Reviewed.';
+        const pending = (r.items || []).filter(i => !i.acked && i.id);
+        if (!pending.length) return;
+        try {
+          await Promise.all(pending.map(i =>
+            window.xgApi('/alerts/' + i.id + '/ack', { method: 'POST', body: JSON.stringify({ comment: note }) })
+          ));
+          pending.forEach(i => {
+            const a = this.all.find(x => x.id === i.id);
+            if (a) { a.acked = true; a.by = this.byName; a.note = note; }
+          });
+          this.openTotal = Math.max(0, this.openTotal - pending.length);
+          window.xgAdjustAlertBadge(-pending.length);
+          this.openKey = null;
+          Alpine.store('toasts').add(r.pc + ': marked as reviewed.', 'ok');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not mark reviewed.', 'alert');
+        }
+      }
+    };
+  });
+
+  /* ---------- Settings page ---------- */
+  Alpine.data('settingsPage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      cur: 'network',
+      mode: d.mode || 'proxy_only',
+      pasteAt: d.pasteAt ?? 800,
+      tAlways: d.tAlways || 'off',
+      tPractice: d.tPractice || 'app',
+      tTest: d.tTest || 'full',
+      hosts: !!d.hosts,
+      queries: !!d.queries,
+      init() {
+        this.$watch('hosts', v => { if (!v) this.queries = false; });
+      },
+      go(id) {
+        this.cur = id;
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
+      reload() { window.location.reload(); }
+    };
+  });
+
+  /* ---------- Staff accounts page ---------- */
+  Alpine.data('usersPage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      users: Array.isArray(d.users) ? d.users : [],
+      addOpen: false,
+      caps: [
+        ['Watch the live lab', 1, 1, 1],
+        ['View student screens', 0, 1, 1],
+        ['Enrol and approve PCs', 1, 0, 1],
+        ['Start sessions and edit the timetable', 0, 1, 1],
+        ['Reports and roster', 0, 1, 1],
+        ['Blocklists, settings and staff', 0, 0, 1]
+      ],
+      initials(n) { return (n || '').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase(); },
+      async saveUser(u) {
+        if (u.pwOpen && u.pw && u.pw.length < 10) {
+          Alpine.store('toasts').add('Password must be at least 10 characters.', 'alert');
+          return;
+        }
+        try {
+          const payload = { name: u.name, email: u.email, role: u.role, active: !!u.on };
+          if (u.pw) payload.password = u.pw;
+          await window.xgApi('/users/' + u.id, { method: 'POST', body: JSON.stringify(payload) });
+          u.pwOpen = false;
+          u.pw = '';
+          Alpine.store('toasts').add('Saved ' + u.name + '.', 'ok');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not save user.', 'alert');
+        }
+      }
+    };
+  });
+
+  /* ---------- Audit log page ---------- */
+  Alpine.data('auditPage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      fam: d.fam || '',
+      q: '',
+      openId: null,
+      hasPages: !!d.hasPages,
+      rows: Array.isArray(d.rows) ? d.rows : [],
+      get shown() {
+        const q = this.q.toLowerCase();
+        return this.rows.filter(r =>
+          (!this.fam || r.act.startsWith(this.fam))
+          && (!q || (r.who + ' ' + r.act + ' ' + r.target + ' ' + r.sum).toLowerCase().includes(q))
+        );
+      },
+      setFam(f) {
+        if (this.hasPages || d.fam) {
+          window.location.href = f ? ('/admin/audit?action=' + encodeURIComponent(f)) : '/admin/audit';
+        } else {
+          this.fam = f;
+        }
+      }
+    };
+  });
+
+  /* ---------- Timetable & Profiles page ---------- */
+  Alpine.data('profilesPage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      tab: location.hash === '#timetable' ? 'timetable' : 'profiles',
+      cur: 0, hr: 44, start: 8, end: 18,
+      days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+      addOpen: false,
+      canAdmin: !!(d.canAdmin ?? window.XG_APP?.canAdmin),
+      profiles: Array.isArray(d.profiles) ? d.profiles : [],
+      cats: [['ai', 'AI chat sites'], ['ide', 'Editor assistants'], ['marketplace', 'Code marketplaces'], ['vpn', 'VPNs and proxies'], ['doh', 'Encrypted DNS'], ['custom', 'Custom list']],
+      coll: [['window', 'Active window'], ['clipboard', 'Paste size'], ['keys', 'Typing pace'], ['files', 'File activity'], ['gpu', 'GPU use'], ['artifacts', 'Installed AI files']],
+      get p() { return this.profiles[this.cur] || null; },
+      has(arr, k) { return (arr || []).includes(k); },
+      flip(arr, k) { const i = arr.indexOf(k); i >= 0 ? arr.splice(i, 1) : arr.push(k); },
+      newProfile() {
+        this.profiles.push({ id: null, builtin: false, name: 'Custom profile ' + (this.profiles.length + 1), mode: 'test', desc: 'Custom policy profile.', block: ['ai', 'ide'], strict: false, aiov: true, collect: ['window', 'clipboard', 'keys', 'artifacts'], titles: 'app', kill: 'proc.ollama' });
+        this.cur = this.profiles.length - 1;
+      },
+      deleteCurrent() {
+        if (!this.p || !this.p.id) return;
+        if (confirm('Delete this profile?')) document.getElementById('xg-del-profile-form')?.submit();
+      },
+      reload() { window.location.reload(); },
+      items: Array.isArray(d.items) ? d.items : [],
+      form: { day: 'Sun', from: '09:00', to: '11:00', course: '', profile: d.formProfile || '', valid_from: '', valid_until: '' },
+      dayNum(day) { return ({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 })[day] || 7; },
+      modeOf(p) { return (p || '').startsWith('Test') ? 'test' : (p || '').startsWith('Exam') ? 'exam' : (p || '').startsWith('Practice') ? 'practice' : 'always'; },
+      top(t) { const [h, m] = t.split(':'); return ((+h - this.start) + (+m) / 60) * this.hr; },
+      tall(i) { return Math.max(28, this.top(i.to) - this.top(i.from)); },
+      async toggleSlot(i) {
+        const prev = i.paused;
+        i.paused = !prev;
+        try {
+          if (i.real) await window.xgApi('/timetable/' + i.id + '/toggle', { method: 'POST' });
+          Alpine.store('toasts').add(i.paused ? 'Class paused.' : 'Class resumed.', 'ok');
+        } catch (e) {
+          i.paused = prev;
+          Alpine.store('toasts').add(e.message || 'Could not update class.', 'alert');
+        }
+      },
+      async removeSlot(i) {
+        try {
+          if (i.real) await window.xgApi('/timetable/' + i.id, { method: 'DELETE' });
+          this.items = this.items.filter(x => x.id !== i.id);
+          Alpine.store('toasts').add('Removed from timetable.', 'ok');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not remove class.', 'alert');
+        }
+      }
+    };
+  });
+
+  /* ---------- Roster page ---------- */
+  Alpine.data('rosterPage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      q: '',
+      pseudo: !!d.pseudo,
+      total: Number(d.total ?? 0),
+      rows: Array.isArray(d.rows) ? d.rows : [],
+      get shown() {
+        const q = this.q.toLowerCase();
+        return this.rows.filter(r => !q || (r.id + ' ' + r.name + ' ' + r.login).toLowerCase().includes(q));
+      },
+      triggerImport() { this.$refs.csv?.click(); },
+      submitImport(evt) { if (evt.target?.files?.length) evt.target.form?.submit(); },
+      async togglePseudo() {
+        const next = this.pseudo;
+        try {
+          await window.xgApi('/roster/pseudonymize', { method: 'POST', body: JSON.stringify({ enabled: next }) });
+          Alpine.store('toasts').add(next ? 'Pseudonyms enabled in exports.' : 'Student numbers used in exports.', 'ok');
+        } catch (e) {
+          this.pseudo = !next;
+          Alpine.store('toasts').add(e.message || 'Could not update setting.', 'alert');
+        }
+      },
+      async setConsent(r, status) {
+        const prev = r.consent;
+        r.consent = status;
+        try {
+          if (r.dbId) await window.xgApi('/roster/' + r.dbId + '/consent', { method: 'POST', body: JSON.stringify({ granted: status === 'granted' }) });
+          Alpine.store('toasts').add('Consent updated for ' + r.name + '.', 'ok');
+        } catch (e) {
+          r.consent = prev;
+          Alpine.store('toasts').add(e.message || 'Could not update consent.', 'alert');
+        }
+      },
+      async saveExempt(r, exempt) {
+        const reason = exempt ? String(r.ex || '').trim() : '';
+        if (exempt && !reason) {
+          Alpine.store('toasts').add('Enter what accommodation is needed.', 'watch');
+          return;
+        }
+        try {
+          if (r.dbId) await window.xgApi('/roster/' + r.dbId + '/exempt', { method: 'POST', body: JSON.stringify({ exempt: !!reason, reason: reason || null }) });
+          r.ex = reason;
+          r.exOpen = false;
+          Alpine.store('toasts').add('Saved.', 'ok');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not update accommodation.', 'alert');
+        }
+      }
+    };
+  });
+
+  /* ---------- Blocklists & Rules page ---------- */
+  Alpine.data('sigPage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      tab: location.hash === '#rules' ? 'rules' : (location.hash === '#versions' ? 'versions' : 'sites'),
+      cat: d.cat || 'all',
+      q: d.q || '',
+      newDomain: '',
+      newCat: 'custom',
+      rq: '',
+      rk: 'all',
+      importOpen: false,
+      ruleModal: false,
+      hasPages: !!d.hasPages,
+      ruleForm: { rule_id: '', kind: 'process', severity: 'high', description: '', definition: '{}', actions: ['log', 'alert'] },
+      counts: d.counts || {},
+      sites: Array.isArray(d.sites) ? d.sites : [],
+      rules: Array.isArray(d.rules) ? d.rules : [],
+      versions: Array.isArray(d.versions) ? d.versions : [],
+      lab(k) { return ({ all: 'All', ai: 'AI', ide: 'Editor', marketplace: 'Marketplace', doh: 'Encrypted DNS', vpn: 'VPN', custom: 'Custom' })[k] || k; },
+      get catKeys() { return Object.keys(this.counts); },
+      get shown() {
+        const q = this.q.toLowerCase();
+        return this.sites.filter(s => (this.cat === 'all' || s.c === this.cat) && (!q || s.d.toLowerCase().includes(q)));
+      },
+      get rshown() {
+        const q = this.rq.toLowerCase();
+        return this.rules.filter(r => (this.rk === 'all' || r.kind === this.rk) && (!q || (r.id + ' ' + r.desc).toLowerCase().includes(q)));
+      },
+      get kinds() { return ['all', ...new Set(this.rules.map(r => r.kind))]; },
+      selectCat(k) {
+        if (this.hasPages || d.cat !== 'all' || d.q) {
+          const u = new URL('/signatures', window.location.origin);
+          if (k && k !== 'all') u.searchParams.set('category', k);
+          if (this.q.trim()) u.searchParams.set('q', this.q.trim());
+          window.location.href = u.pathname + u.search;
+        } else {
+          this.cat = k;
+        }
+      },
+      searchSites() {
+        if (this.hasPages || d.q) {
+          const u = new URL('/signatures', window.location.origin);
+          if (this.cat && this.cat !== 'all') u.searchParams.set('category', this.cat);
+          if (this.q.trim()) u.searchParams.set('q', this.q.trim());
+          window.location.href = u.pathname + u.search;
+        }
+      },
+      confirmSubmit(evt, msg) { if (!confirm(msg)) evt.preventDefault(); },
+      async toggleSite(s) {
+        const prev = s.off;
+        s.off = !prev;
+        try {
+          if (s.real) await window.xgApi('/blocklist/' + s.id + '/toggle', { method: 'POST' });
+        } catch (e) {
+          s.off = prev;
+          Alpine.store('toasts').add(e.message || 'Could not update blocklist entry.', 'alert');
+        }
+      },
+      async deleteSite(s) {
+        try {
+          if (s.real) await window.xgApi('/blocklist/' + s.id, { method: 'DELETE' });
+          this.sites = this.sites.filter(x => x.id !== s.id);
+          Alpine.store('toasts').add(s.d + ' removed.', 'ok');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not delete entry.', 'alert');
+        }
+      },
+      async toggleRule(r) {
+        try {
+          if (r.dbId) await window.xgApi('/rules/' + r.dbId + '/toggle', { method: 'POST' });
+        } catch (e) {
+          r.on = !r.on;
+          Alpine.store('toasts').add(e.message || 'Could not toggle rule.', 'alert');
+        }
+      },
+      openRuleModal(r) {
+        if (r) {
+          this.ruleForm = {
+            rule_id: r.id,
+            kind: ['process', 'extension', 'port', 'artifact', 'adapter', 'device'].includes(r.kind) ? r.kind : 'process',
+            severity: r.sev || 'high',
+            description: r.desc || '',
+            definition: r.definition || '{}',
+            actions: [...(r.actions || ['log', 'alert'])],
+          };
+        } else {
+          this.ruleForm = {
+            rule_id: 'proc.custom_ai',
+            kind: 'process',
+            severity: 'high',
+            description: '',
+            definition: '{}',
+            actions: ['log', 'alert'],
+          };
+        }
+        this.ruleModal = true;
+      },
+      flipAction(a) {
+        const idx = this.ruleForm.actions.indexOf(a);
+        idx >= 0 ? this.ruleForm.actions.splice(idx, 1) : this.ruleForm.actions.push(a);
+      }
+    };
+  });
+
+  /* ---------- Add a PC / Enrollment page ---------- */
+  Alpine.data('enrollPage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      os: 'win', q: '',
+      auto: !!d.auto,
+      key: d.key || '',
+      fp: d.fp || '',
+      macs: d.macs || '',
+      exeName: d.exeName || 'XephyGuard-Setup.exe',
+      baseUrl: d.baseUrl || window.location.origin,
+      pending: Array.isArray(d.pending) ? d.pending : [],
+      enrolled: Array.isArray(d.enrolled) ? d.enrolled : [],
+      get cmd() {
+        const keyPart = this.key || '<ROTATE_KEY_FIRST>';
+        if (this.os === 'win') {
+          return this.exeName + ' /S /KEY=' + keyPart + ' /CCC=' + this.baseUrl + (this.fp ? ' /CAFP=' + this.fp : '');
+        }
+        return 'curl -fsSL ' + this.baseUrl + '/install/linux.sh | sudo bash -s -- --key ' + keyPart;
+      },
+      get shown() {
+        const q = this.q.toLowerCase();
+        return this.enrolled.filter(p => !q || (p.name + ' ' + p.host + ' ' + p.ip).toLowerCase().includes(q));
+      },
+      confirmSubmit(evt, msg) { if (!confirm(msg)) evt.preventDefault(); },
+      async approve(p) {
+        try {
+          const res = p.real ? await window.xgApi('/enroll/' + p.id + '/approve', { method: 'POST', body: JSON.stringify({ name: p.name }) }) : null;
+          this.pending = this.pending.filter(x => x.id !== p.id);
+          if (res && res.pc) this.enrolled.unshift(res.pc);
+          Alpine.store('toasts').add('Enrolled ' + (p.name || p.host) + '.', 'ok');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not approve PC.', 'alert');
+        }
+      },
+      async reject(p) {
+        try {
+          if (p.real) await window.xgApi('/enroll/' + p.id + '/reject', { method: 'POST' });
+          this.pending = this.pending.filter(x => x.id !== p.id);
+          Alpine.store('toasts').add('Turned away ' + p.host + '.', 'watch');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not reject request.', 'alert');
+        }
+      },
+      async renamePc(p) {
+        const nextName = String(p.name || '').trim();
+        if (!nextName) return;
+        try {
+          if (p.real) await window.xgApi('/pcs/' + p.id + '/rename', { method: 'POST', body: JSON.stringify({ name: nextName }) });
+          p.name = nextName;
+          p.editingName = false;
+          Alpine.store('toasts').add('Renamed to ' + nextName + '.', 'ok');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not rename PC.', 'alert');
+        }
+      },
+      async retirePc(p) {
+        if (!confirm('Retire ' + p.name + '? Its certificate stops working.')) return;
+        try {
+          if (p.real) await window.xgApi('/pcs/' + p.id + '/retire', { method: 'POST' });
+          p.retired = true;
+          Alpine.store('toasts').add(p.name + ' retired.', 'watch');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not retire PC.', 'alert');
+        }
+      }
+    };
+  });
+
+  /* ---------- Shared clipboard page ---------- */
+  Alpine.data('sharePage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      text: d.text || '',
+      cmd: false,
+      editing: false,
+      last: d.last || 'Never',
+      hist: Array.isArray(d.hist) ? d.hist : [],
+      userName: d.userName || window.XG_USER_NAME || 'Staff',
+      init() {
+        this._poll = setInterval(async () => {
+          if (this.editing || document.hidden) return;
+          try {
+            const r = await window.xgApi('/share/raw');
+            if (r && r.ok && r.data) {
+              if (r.data.updated_at && r.data.updated_at !== 'Never') this.last = r.data.updated_at;
+              if (Array.isArray(r.data.history) && r.data.history.length) this.hist = r.data.history;
+            }
+          } catch (e) {}
+        }, 2500);
+      },
+      async send() {
+        if (!this.text.trim()) return;
+        const v = this.text;
+        const nowT = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        try {
+          const r = await window.xgApi('/share', { method: 'POST', body: JSON.stringify({ text: v, cmd: this.cmd }) });
+          this.hist.unshift({ t: nowT, v: v, cmd: this.cmd });
+          this.last = (r && r.data && r.data.updated_at) ? r.data.updated_at : ('Today ' + nowT + ' by ' + this.userName);
+          this.text = '';
+          this.editing = false;
+          Alpine.store('toasts').add('Shared with all online PCs.', 'ok');
+        } catch (e) {
+          Alpine.store('toasts').add(e.message || 'Could not share item.', 'alert');
+        }
+      }
+    };
+  });
+
+  /* ---------- Downloads / Sessions / Health / Session Report ---------- */
+  Alpine.data('dlPage', () => {
+    const d = window.xgJson('xg-page-data', {}) || {};
+    return {
+      win: d.win || '',
+      lin: d.lin || '',
+      notify(msg) { Alpine.store('toasts').add(msg, 'info'); }
+    };
+  });
+
+  Alpine.data('sessionsPage', () => ({
+    startOpen: location.hash === '#start',
+    bc: '',
+    confirmStop(evt) { if (!confirm('End the session? Restrictions lift immediately.')) evt.preventDefault(); }
+  }));
+
+  Alpine.data('healthPage', () => ({
+    running: false,
+    rerun() { this.running = true; setTimeout(() => { window.location.reload(); }, 600); }
+  }));
+
+  Alpine.data('sessionReportPage', () => ({
+    printReport() { window.print(); }
+  }));
+});
+
+/* ---------- Flash messages on Alpine ready ---------- */
+document.addEventListener('alpine:initialized', () => {
+  window.xgHydrateGlobals();
+  const app = window.XG_APP || {};
+  const toasts = window.Alpine?.store('toasts');
+  if (!toasts) return;
+  if (app.flashStatus) toasts.add(app.flashStatus, 'ok');
+  if (app.flashError) toasts.add(app.flashError, 'alert');
+  if (Array.isArray(app.flashErrors)) {
+    app.flashErrors.forEach(msg => toasts.add(msg, 'alert'));
+  }
 });
 
 /* ---------- Shortcuts ---------- */
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); window.dispatchEvent(new CustomEvent('xg-palette')); return; }
   if (!e.altKey || e.ctrlKey || e.metaKey) return;
-  const map = { 1: 'index', 2: 'alerts', 3: 'sessions', 4: 'profiles', 5: 'roster', 6: 'signatures', 7: 'reports', 8: 'enroll', 9: 'admin-health' };
+  const map = { 1: '/', 2: '/alerts', 3: '/sessions', 4: '/profiles', 5: '/roster', 6: '/signatures', 7: '/reports', 8: '/enroll', 9: '/admin/health' };
   const code = e.code && e.code.startsWith('Digit') ? e.code.slice(5) : e.key;
-  if (map[code]) { e.preventDefault(); location.href = map[code] + '.html'; }
+  if (map[code]) { e.preventDefault(); location.href = map[code]; }
 });

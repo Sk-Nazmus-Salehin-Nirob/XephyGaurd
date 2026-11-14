@@ -1,7 +1,7 @@
 @extends('layouts.app', ['activePage' => 'sessions.html'])
 @section('title', 'Sessions')
 @section('content')
-<div class="doc" x-data="{ startOpen: location.hash === '#start', bc: '' }"><div class="optbar"><span class="otitle">Sessions</span><span class="osub">Start, watch and review lab sessions.</span><span class="grow"></span><button class="btn btn-solid" @click="startOpen = true"><svg class="i i-sm" aria-hidden="true"><use href="#i-plus"/></svg> Start a session</button></div><div class="canvas ">
+<div class="doc" x-data="sessionsPage"><div class="optbar"><span class="otitle">Sessions</span><span class="osub">Start, watch and review lab sessions.</span><span class="grow"></span><button class="btn btn-solid" @click="startOpen = true"><svg class="i i-sm" aria-hidden="true"><use href="#i-plus"/></svg> Start a session</button></div><div class="canvas ">
   
 
   @if(!empty($active))
@@ -31,7 +31,7 @@
         <button type="submit" class="btn btn-sm">Switch profile</button>
       </form>
       @endif
-      <form method="post" action="{{ route('sessions.stop', $active) }}" onsubmit="return confirm('End the session? Restrictions lift immediately.')">
+      <form method="post" action="{{ route('sessions.stop', $active) }}" @submit="confirmStop($event)">
         @csrf
         <button type="submit" class="btn btn-danger">End session</button>
       </form>
@@ -89,7 +89,7 @@
           </tbody></table></div>
       </section>
       <section class="panel">
-        <div class="panel-head"><h2 class="h2">Past sessions</h2><a class="small" href="reports.html">All reports</a></div>
+        <div class="panel-head"><h2 class="h2">Past sessions</h2><a class="small" href="{{ route('reports.index') }}">All reports</a></div>
         <div class="table-wrap"><table class="tbl">
           <thead><tr><th>When</th><th>Course</th><th>Profile</th><th></th></tr></thead>
           <tbody>

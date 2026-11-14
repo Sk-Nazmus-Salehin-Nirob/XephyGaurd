@@ -10,7 +10,7 @@
   $totalGb = $hasDisk ? round($disk['total'] / 1073741824, 1) : 0;
   $usedPct = $hasDisk ? min(100, max(1, (int) round((($totalGb - $freeGb) / $totalGb) * 100))) : 0;
 @endphp
-<div class="doc" x-data="{ running: false, rerun() { this.running = true; setTimeout(() => { location.reload(); }, 600); } }"><div class="optbar"><span class="otitle">Health</span><span class="osub"><b>{{ $okCount }} of {{ $totalCount }}</b> checks passed. CLI: <code class="mono">sudo xephyguard-ccc doctor</code></span><span class="grow"></span><button class="btn btn-solid" @click="rerun()" :disabled="running"><svg class="i i-sm" :class="running && 'spin'"><use href="#i-refresh"/></svg> <span x-text="running ? 'Checking…' : 'Run checks again'"></span></button></div><div class="canvas ">
+<div class="doc" x-data="healthPage"><div class="optbar"><span class="otitle">Health</span><span class="osub"><b>{{ $okCount }} of {{ $totalCount }}</b> checks passed. CLI: <code class="mono">sudo xephyguard-ccc doctor</code></span><span class="grow"></span><button class="btn btn-solid" @click="rerun()" :disabled="running"><svg class="i i-sm" :class="running && 'spin'"><use href="#i-refresh"/></svg> <span x-text="running ? 'Checking…' : 'Run checks again'"></span></button></div><div class="canvas ">
   
   <div class="cols-main">
     <section class="panel"><ul class="checks">
@@ -56,7 +56,7 @@
               <li>
                 <span class="dot {{ $p->online() ? 'watch' : 'off' }}"></span>
                 <span class="grow"><b>{{ $p->name }}</b> · {{ !$p->online() ? 'Offline' : ($p->isolated ? 'Isolated' : (($p->usage['helpers'] ?? 1) === 0 ? 'Session helper stopped' : 'Reduced capabilities')) }}</span>
-                <a class="small" href="index.html#pc={{ $p->id }}">Inspect</a>
+                <a class="small" href="{{ route('dashboard') }}#pc={{ $p->id }}">Inspect</a>
               </li>
             @endforeach
           </ul>

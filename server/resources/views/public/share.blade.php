@@ -4,47 +4,13 @@
 @php
   $initialHist = !empty($history) ? $history : [];
 @endphp
-<script>
-window.XG_SHARE = {
-  text: @json($text ?? ''),
-  last: @json($updatedAt ?? 'Never'),
-  hist: @json($initialHist),
-  userName: @json(auth()->user()?->name ?? 'Staff'),
-};
-</script>
-<div class="doc" x-data="{
-  text: window.XG_SHARE.text,
-  cmd: false,
-  editing: false,
-  last: window.XG_SHARE.last,
-  hist: window.XG_SHARE.hist,
-  init() {
-    setInterval(async () => {
-      if (this.editing) return;
-      const r = await (window.xgApi ? window.xgApi('/share/raw') : null);
-      if (r && r.ok && r.data) {
-        if (r.data.updated_at && r.data.updated_at !== 'Never') this.last = r.data.updated_at;
-        if (Array.isArray(r.data.history) && r.data.history.length) this.hist = r.data.history;
-      }
-    }, 2500);
-  },
-  async send() {
-    if (!this.text.trim()) return;
-    const v = this.text;
-    const nowT = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-    this.hist.unshift({ t: nowT, v: v, cmd: this.cmd });
-    if (window.xgApi) {
-      const r = await window.xgApi('/share', { method: 'POST', body: JSON.stringify({ text: v, cmd: this.cmd }) });
-      if (r && r.ok && r.data && r.data.updated_at) this.last = r.data.updated_at;
-      else this.last = 'Today ' + nowT + ' by ' + window.XG_SHARE.userName;
-    } else {
-      this.last = 'Today ' + nowT + ' by ' + window.XG_SHARE.userName;
-    }
-    this.text = '';
-    this.editing = false;
-    $store.toasts.add('Shared with all online PCs.', 'ok');
-  }
-}">
+<script type="application/json" id="xg-page-data">{!! json_encode([
+  'text' => $text ?? '',
+  'last' => $updatedAt ?? 'Never',
+  'hist' => $initialHist,
+  'userName' => auth()->user()?->name ?? 'Staff',
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<div class="doc" x-data="sharePage">
   <div class="optbar"><span class="otitle">Shared clipboard</span><span class="osub">Send text, commands or links to every PC in one step.</span><span class="grow"></span></div><div class="canvas narrow">
   
   <section class="panel" style="border-radius:0">

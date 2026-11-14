@@ -2,7 +2,7 @@
 @section('title', 'Session report')
 @section('content')
 @if(!empty($session))
-<div class="doc"><div class="optbar noprint">
+<div class="doc" x-data="sessionReportPage"><div class="optbar noprint">
   @if(!empty($student))
     <a class="btn btn-quiet btn-sm" href="{{ route('reports.show', $session) }}"><svg class="i i-sm" aria-hidden="true"><use href="#i-back"/></svg> Session report</a>
   @else
@@ -17,7 +17,7 @@
   </form>
   <a class="btn btn-sm" href="{{ route('reports.csv', $session) }}"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> CSV</a>
   <a class="btn btn-sm" href="{{ route('reports.pdf', $session) }}"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> PDF</a>
-  <button class="btn btn-sm btn-solid" onclick="window.print()"><svg class="i i-sm" aria-hidden="true"><use href="#i-print"/></svg> Print or save as PDF</button>
+  <button type="button" class="btn btn-sm btn-solid" @click="printReport()"><svg class="i i-sm" aria-hidden="true"><use href="#i-print"/></svg> Print or save as PDF</button>
 </div>
 <div class="canvas pad"><article class="paper">
   <div class="row" style="--gap:10px;margin-bottom:12px"><span class="mode {{ $session->mode }}">{{ ucfirst(str_replace('_', ' ', $session->mode)) }}</span><span class="muted small">Academic integrity report</span></div>

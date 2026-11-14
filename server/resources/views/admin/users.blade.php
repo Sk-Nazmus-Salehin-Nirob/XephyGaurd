@@ -14,28 +14,11 @@
       ];
   })->values()->all() : [];
 @endphp
-<script>
-window.XG_USERS_PAGE = {
-  users: @json($liveUsers),
-};
-</script>
-<div class="doc" x-data="{
-  users: window.XG_USERS_PAGE.users || [],
-  addOpen: false,
-  caps: [['Watch the live lab', 1, 1, 1], ['View student screens', 0, 1, 1], ['Enrol and approve PCs', 1, 0, 1], ['Start sessions and edit the timetable', 0, 1, 1], ['Reports and roster', 0, 1, 1], ['Blocklists, settings and staff', 0, 0, 1]],
-  initials(n) { return (n || '').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase(); },
-  saveUser(u) {
-    if (u.id && window.xgApi) {
-      const payload = { name: u.name, email: u.email, role: u.role, active: u.on };
-      if (u.pw && u.pw.length >= 10) payload.password = u.pw;
-      window.xgApi('/users/' + u.id, { method: 'POST', body: JSON.stringify(payload) });
-    }
-    u.pwOpen = false;
-    u.pw = '';
-    $store.toasts.add('Saved ' + u.name + '.', 'ok');
-  }
-}"><div class="optbar"><span class="otitle">Staff accounts</span><span class="osub">Give each person the smallest role that lets them do their job.</span><span class="grow"></span><button class="btn btn-solid" @click="addOpen = true"><svg class="i i-sm" aria-hidden="true"><use href="#i-plus"/></svg> Add a person</button></div><div class="canvas ">
-  
+<script type="application/json" id="xg-page-data">{!! json_encode(['users' => $liveUsers], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<div class="doc" x-data="usersPage"><div class="optbar"><span class="otitle">Staff accounts</span><span class="osub">Give each person the smallest role that lets them do their job.</span><span class="grow"></span><button class="btn btn-solid" @click="addOpen = true"><svg class="i i-sm" aria-hidden="true"><use href="#i-plus"/></svg> Add a person</button></div><div class="canvas ">
+  @if ($errors->any())
+  <div class="note warn" style="margin-bottom:16px"><svg class="i i-sm" aria-hidden="true"><use href="#i-warn"/></svg><span>{{ $errors->first() }}</span></div>
+  @endif
   <section class="panel"><div class="table-wrap"><table class="tbl">
     <thead><tr><th>Person</th><th>Role</th><th>Can sign in</th><th></th></tr></thead>
     <tbody><template x-for="u in users" :key="u.email"><tr :style="!u.on && 'opacity:.55'">
