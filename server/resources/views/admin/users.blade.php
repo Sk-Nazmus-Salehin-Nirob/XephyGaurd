@@ -12,7 +12,7 @@
           'pwOpen' => false,
           'pw' => '',
       ];
-  })->values()->all() : null;
+  })->values()->all() : [];
 @endphp
 <script>
 window.XG_USERS_PAGE = {
@@ -20,7 +20,7 @@ window.XG_USERS_PAGE = {
 };
 </script>
 <div class="doc" x-data="{
-  users: window.XG_USERS_PAGE.users !== null ? window.XG_USERS_PAGE.users : [ { id: null, name: 'KUET Admin', email: 'tahmid.tts@gmail.com', role: 'admin', on: true, pwOpen: false, pw: '' }, { id: null, name: 'Course Instructor', email: 'instructor@cse.kuet.ac.bd', role: 'instructor', on: true, pwOpen: false, pw: '' }, { id: null, name: 'Lab Assistant', email: 'assistant@cse.kuet.ac.bd', role: 'assistant', on: true, pwOpen: false, pw: '' } ],
+  users: window.XG_USERS_PAGE.users || [],
   addOpen: false,
   caps: [['Watch the live lab', 1, 1, 1], ['View student screens', 0, 1, 1], ['Enrol and approve PCs', 1, 0, 1], ['Start sessions and edit the timetable', 0, 1, 1], ['Reports and roster', 0, 1, 1], ['Blocklists, settings and staff', 0, 0, 1]],
   initials(n) { return (n || '').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase(); },
@@ -48,7 +48,9 @@ window.XG_USERS_PAGE = {
         </template>
         <button class="btn btn-sm btn-quiet" @click="u.pwOpen = !u.pwOpen" x-text="u.pwOpen ? 'Cancel' : 'Reset password'"></button>
         <button class="btn btn-sm" @click="saveUser(u)">Save</button>
-      </td></tr></template></tbody>
+      </td></tr></template>
+      <template x-if="!users.length"><tr><td colspan="4" class="muted" style="padding:18px 16px">No staff accounts found.</td></tr></template>
+    </tbody>
   </table></div></section>
   <section class="panel"><div class="panel-head"><h2 class="h2">What each role can do</h2></div>
     <table class="tbl matrix"><thead><tr><th>Ability</th><th>Assistant</th><th>Instructor</th><th>Admin</th></tr></thead>

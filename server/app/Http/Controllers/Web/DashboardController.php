@@ -37,7 +37,14 @@ class DashboardController extends Controller
                 'agent_version' => $p->agent?->version,
             ]),
             'profiles' => Profile::query()->orderBy('mode')->get(['id', 'name', 'mode']),
-            'recentAlerts' => Alert::query()->with('pc:id,name')->latest('occurred_at')->limit(30)->get()->map->broadcastPayload(),
+            'recentAlerts' => Alert::query()->with(['pc:id,name', 'acknowledger:id,name'])->latest('occurred_at')->limit(30)->get()
+                ->map(fn ($a) => $a->broadcastPayload() + [
+                    'occurred_at_iso' => $a->occurred_at?->toIso8601String(),
+                    'ago_min' => $a->occurred_at ? max(0, (int) $a->occurred_at->diffInMinutes(now())) : 0,
+                    'acked' => $a->acknowledged_at !== null,
+                    'by' => $a->acknowledger?->name ?? '',
+                    'note' => $a->comment ?? '',
+                ]),
         ]);
     }
 

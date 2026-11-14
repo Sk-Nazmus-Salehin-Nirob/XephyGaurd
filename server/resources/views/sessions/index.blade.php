@@ -18,7 +18,7 @@
       <div class="grow">
         <div class="row" style="--gap:8px;margin-bottom:8px"><span class="mode {{ $active->mode }}">{{ ucfirst(str_replace('_', ' ', $active->mode)) }}</span><span class="chip ok"><span class="dot ok"></span>Running</span></div>
         <div class="title">{{ $active->course }}</div>
-        <p class="muted" style="margin-top:4px">{{ $active->profile?->name ?? ucfirst($active->mode) }} · started {{ $startAt->format('H:i') }} · {{ $totalMin }} minutes · {{ $active->sessionPcs?->count() ?? 15 }} PCs</p>
+        <p class="muted" style="margin-top:4px">{{ $active->profile?->name ?? ucfirst($active->mode) }} · started {{ $startAt->format('H:i') }} · {{ $totalMin }} minutes · {{ $active->sessionPcs?->count() ?? 0 }} PCs</p>
       </div>
       @if(!empty($profiles) && count($profiles))
       <form method="post" action="{{ route('sessions.switch', $active) }}" class="row" style="--gap:6px">
@@ -44,32 +44,13 @@
   </section>
   @else
   <section class="nowhero">
-    <div class="row" style="align-items:flex-start;--gap:12px">
+    <div class="row" style="align-items:center;--gap:12px">
       <div class="grow">
-        <div class="row" style="--gap:8px;margin-bottom:8px"><span class="mode exam">Exam</span><span class="chip ok"><span class="dot ok"></span>Running</span></div>
-        <div class="title">CSER · Software engineering lab exam</div>
-        <p class="muted" style="margin-top:4px">Exam: strict · started 11:19 · 90 minutes · 15 PCs</p>
+        <div class="row" style="--gap:8px;margin-bottom:8px"><span class="mode always">Always-on</span><span class="chip plain">Idle</span></div>
+        <div class="title">No active lab session</div>
+        <p class="muted" style="margin-top:4px">PCs follow the always-on baseline policy until a timed session starts.</p>
       </div>
-      <div class="row" style="--gap:6px">
-        <select class="select select-sm" style="width:190px" aria-label="Switch session profile">
-          @if(!empty($profiles) && count($profiles))
-            @foreach($profiles as $prof)
-              <option value="{{ $prof->id }}">{{ $prof->name }}</option>
-            @endforeach
-          @else
-            <option selected>Exam: strict</option>
-            <option>Test: AI blocked</option>
-            <option>Practice: AI allowed</option>
-          @endif
-        </select>
-        <button type="button" class="btn btn-sm" onclick="Alpine.store('toasts').add('Mode switched.', 'ok')">Switch profile</button>
-      </div>
-      <button class="btn btn-danger" onclick="if(confirm('End the session? Restrictions lift immediately.')) Alpine.store('toasts').add('Session ended.', 'watch')">End session</button>
-    </div>
-    <div class="clock" aria-label="41 minutes remaining">
-      <span class="tick" style="left:54%">12:08</span>
-      <div class="track"><i style="width:54%"></i></div>
-      <div class="ends"><span>11:19</span><span>41 min left</span><span>12:49</span></div>
+      <button class="btn btn-solid" @click="startOpen = true"><svg class="i i-sm" aria-hidden="true"><use href="#i-plus"/></svg> Start a session</button>
     </div>
   </section>
   @endif
@@ -103,8 +84,7 @@
                 @endif
               @endforeach
             @else
-              <tr><td class="name">SIyam</td><td><select class="select select-sm" style="width:200px"><option>Same as session</option><option selected>Practice: AI allowed</option><option>Exam: strict</option></select></td><td><input class="input input-sm" value="Screen reader and speech tools"></td><td class="right"><button class="btn btn-sm" onclick="Alpine.store('toasts').add('Saved for SIyam.', 'ok')">Save</button></td></tr>
-              <tr><td class="name">PC-08</td><td><select class="select select-sm" style="width:200px"><option selected>Same as session</option><option>Practice: AI allowed</option><option>Exam: strict</option></select></td><td><input class="input input-sm" placeholder="Why does this PC differ?"></td><td class="right"><button class="btn btn-sm" onclick="Alpine.store('toasts').add('Saved for PC-08.', 'ok')">Save</button></td></tr>
+              <tr><td colspan="4" class="muted" style="padding:18px 16px">{{ !empty($active) ? 'No per-PC rule overrides configured for this session.' : 'Start a session to configure per-PC rule overrides.' }}</td></tr>
             @endif
           </tbody></table></div>
       </section>
@@ -129,12 +109,26 @@
                 </tr>
               @endforeach
             @else
-              <tr><td class="nw">Today 11:19 – now</td><td class="name">CSER lab exam</td><td><span class="mode exam">Exam</span></td><td class="right"><span class="chip ok">Running</span></td></tr>
-              <tr><td class="nw">Nov 07 · 14:00 – 16:00</td><td class="name">CSE 1101 practice</td><td><span class="mode practice">Practice</span></td><td class="right"><a href="report-session-2.html">View report</a></td></tr>
-              <tr><td class="nw">Nov 05 · 09:30 – 12:30</td><td class="name">CSE 3201 quiz</td><td><span class="mode test">Test</span></td><td class="right"><a href="report-session-1.html">View report</a></td></tr>
+              <tr><td colspan="4" class="muted" style="padding:18px 16px">No sessions recorded yet.</td></tr>
             @endif
           </tbody></table></div>
-        <div class="tbl-foot">{{ !empty($history) && $history->count() ? $history->count() . ' of ' . $history->total() . ' sessions' : '3 of 18 sessions' }} <div class="pager"><button aria-current="page">1</button><button>2</button></div></div>
+        <div class="tbl-foot">
+          {{ !empty($history) ? $history->count() . ' of ' . $history->total() . ' sessions' : '0 sessions' }}
+          @if(!empty($history) && $history->hasPages())
+            <div class="pager">
+              @if($history->onFirstPage())
+                <button disabled>Prev</button>
+              @else
+                <a class="btn btn-sm" href="{{ $history->previousPageUrl() }}">Prev</a>
+              @endif
+              @if($history->hasMorePages())
+                <a class="btn btn-sm" href="{{ $history->nextPageUrl() }}">Next</a>
+              @else
+                <button disabled>Next</button>
+              @endif
+            </div>
+          @endif
+        </div>
       </section>
     </div>
     <div>
@@ -153,10 +147,7 @@
               <li><span class="mono muted small">{{ $c->created_at?->format('H:i') }}</span><span><b>{{ $c->pc?->name ?? 'All PCs' }}</b> {{ str_replace('_', ' ', $c->kind) }}</span><span class="chip {{ $c->status === 'done' || $c->status === 'acked' ? 'ok' : 'plain' }}">{{ ucfirst($c->status ?? 'Sent') }}</span></li>
             @endforeach
           @else
-            <li><span class="mono muted small">12:02</span><span><b>PC-04</b> cut off network</span><span class="chip ok">Done</span></li>
-            <li><span class="mono muted small">11:58</span><span><b>Rupom2</b> snapshot</span><span class="chip ok">Done</span></li>
-            <li><span class="mono muted small">11:41</span><span><b>PC-09</b> rescan</span><span class="chip ok">Done</span></li>
-            <li><span class="mono muted small">11:19</span><span><b>All PCs</b> apply Exam profile</span><span class="chip ok">Done</span></li>
+            <li class="muted small" style="padding:12px 0">No commands dispatched yet.</li>
           @endif
         </ul>
       </section>
@@ -173,15 +164,9 @@
           <div class="form-grid">
             <label class="field"><span>Policy profile</span>
               <select name="profile_id" class="select" required>
-                @if(!empty($profiles) && count($profiles))
-                  @foreach($profiles as $prof)
-                    <option value="{{ $prof->id }}">{{ $prof->name }}</option>
-                  @endforeach
-                @else
-                  <option value="1">Exam: strict</option>
-                  <option value="2">Test: AI blocked</option>
-                  <option value="3">Practice: AI allowed</option>
-                @endif
+                @foreach($profiles ?? [] as $prof)
+                  <option value="{{ $prof->id }}">{{ $prof->name }}</option>
+                @endforeach
               </select>
             </label>
             <label class="field"><span>Duration (minutes)</span><input name="duration_min" class="input" type="number" min="10" value="90" placeholder="90"></label>

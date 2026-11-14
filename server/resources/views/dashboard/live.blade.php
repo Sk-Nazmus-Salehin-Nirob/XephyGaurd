@@ -29,7 +29,7 @@
           'ip' => $p['ip'] ?? '—',
           'os' => trim(($p['os'] ?? 'Linux') . ' ' . ($p['os_version'] ?? '')),
           'session' => ($scr['session_type'] ?? 'x11') === 'wayland' ? 'wayland' : (($p['os'] ?? '') === 'windows' ? 'win' : 'x11'),
-          'agent' => $p['agent_version'] ?? '0.2.0',
+          'agent' => $p['agent_version'] ?? '—',
           'user' => $user !== '' && $user !== null ? $user : 'No one signed in',
           'app' => $p['app'] ?: '—',
           'last' => $p['last_event'] ?: 'Active',
@@ -37,8 +37,7 @@
           'status' => $uiStatus,
           'isolated' => (bool) ($p['isolated'] ?? false),
           'monitors' => (int) ($scr['monitors'] ?? 1) ?: 1,
-          'x' => $seat ? (int) $seat->x : null,
-          'y' => $seat ? (int) $seat->y : null,
+          'seat' => $seat ? ['x' => (int) $seat->x, 'y' => (int) $seat->y] : null,
           'scene' => $uiStatus === 'offline' ? 'off' : ($uiStatus === 'idle' ? 'idle' : ($uiStatus === 'alert' ? 'flag' : $scenes[$idx % count($scenes)])),
           'caps' => [
               'snapshot' => (bool) ($scr['snapshot'] ?? ($uiStatus !== 'offline')),
@@ -48,7 +47,7 @@
               'secure' => (bool) ($scr['secure_desktop'] ?? (($p['os'] ?? '') === 'windows')),
           ],
       ];
-  })->all() : null;
+  })->all() : [];
 
   $liveAlerts = isset($recentAlerts) && count($recentAlerts) ? collect($recentAlerts)->map(function ($a) {
       return [
@@ -60,20 +59,22 @@
           'title' => $a['title'] ?? $a['rule_id'],
           'rule' => $a['rule_id'] ?? '',
           'at' => $a['occurred_at'] ?? '',
-          'ago' => 1,
-          'acked' => false,
+          'ago' => (int) ($a['ago_min'] ?? 0),
+          'acked' => (bool) ($a['acked'] ?? false),
+          'by' => $a['by'] ?? '',
+          'note' => $a['note'] ?? '',
       ];
-  })->all() : null;
+  })->all() : [];
 @endphp
-@if($livePcs !== null)
 <script>
 window.XG_LIVE = {
-  lab: @json(['cols' => $lab->grid_cols ?? 6, 'rows' => $lab->grid_rows ?? 4]),
+  cols: @json((int) ($lab->grid_cols ?? 6)),
+  rows: @json((int) ($lab->grid_rows ?? 4)),
+  lab: @json(['cols' => (int) ($lab->grid_cols ?? 6), 'rows' => (int) ($lab->grid_rows ?? 4)]),
   pcs: @json($livePcs),
-  alerts: @json($liveAlerts ?? []),
+  alerts: @json($liveAlerts),
 };
 </script>
-@endif
 <div class="doc" x-data="labView" @keydown.escape.window="clear()">
 
   <div class="optbar">
@@ -82,7 +83,8 @@ window.XG_LIVE = {
       <span class="mode {{ $session->mode }}">{{ str_replace('_', ' ', ucfirst($session->mode)) }}</span>
       <span class="osub">{{ $session->course }}{{ $session->ends_at ? ' · ' . max(0, (int) now()->diffInMinutes($session->ends_at, false)) . ' min left' : '' }}</span>
     @else
-      <span class="mode exam">Exam</span><span class="osub">CSER · 41 min left</span>
+      <span class="mode always">Always-on</span><span class="osub">No active session</span>
+      <a class="btn btn-sm btn-quiet" href="sessions.html#start">Start session</a>
     @endif
     <div class="seg" style="margin-left:12px" role="group" aria-label="View">
       <button :aria-pressed="view === 'map'" @click="view = 'map'"><svg class="i i-sm" aria-hidden="true"><use href="#i-live"/></svg> Map</button>
@@ -118,7 +120,7 @@ window.XG_LIVE = {
         <button type="submit" class="btn btn-danger">End session</button>
       </form>
     @else
-      <button class="btn btn-danger" @click="if(confirm('End the session? Restrictions lift immediately.')) $store.toasts.add('Session ended.', 'watch')">End session</button>
+      <a class="btn btn-solid" href="sessions.html#start">Start a session</a>
     @endif
   </div>
 
@@ -298,7 +300,7 @@ window.XG_LIVE = {
           <div class="screenbox">
             <canvas x-ref="live" width="960" height="540" x-show="screenOk"></canvas>
             <div class="badge" x-show="screenOk"><span class="chip" x-show="screenMode === 'live'"><i class="dot alert"></i> Live</span><span class="chip" x-show="screenMode === 'snapshot'" x-text="'Snapshot · ' + snapAt"></span></div>
-            <div class="idle" x-show="!screenOk" style="aspect-ratio:16/9"><div><b style="color:#fff;font-size:15px" x-text="active.status === 'offline' ? 'This PC is offline' : 'Screen view isn’t available'"></b><p style="margin-top:6px" x-text="active.status === 'offline' ? 'No heartbeat for 25 minutes. Screens appear again when the agent reconnects.' : 'This PC uses a Wayland session, which doesn’t allow screen capture.'"></p></div></div>
+            <div class="idle" x-show="!screenOk" style="aspect-ratio:16/9"><div><b style="color:#fff;font-size:15px" x-text="active.status === 'offline' ? 'This PC is offline' : 'Screen view isn’t available'"></b><p style="margin-top:6px" x-text="active.status === 'offline' ? 'Waiting for the agent heartbeat. Screens appear again when the agent reconnects.' : 'This PC uses a Wayland session, which doesn’t allow screen capture.'"></p></div></div>
           </div>
           <div class="note warn" style="margin-top:14px" x-show="active.session === 'wayland'"><svg class="i i-sm" aria-hidden="true"><use href="#i-warn"/></svg><span>Choose “Ubuntu on Xorg” on the login screen to enable screen view on this PC.</span></div>
           <div style="margin-top:16px"><div class="label">What this PC can do</div>

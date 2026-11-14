@@ -11,9 +11,9 @@
           's' => $e->source ?? 'built-in',
           'off' => !$e->enabled,
       ];
-  })->values()->all() : null;
+  })->values()->all() : [];
 
-  $liveCounts = isset($counts) && $counts->count() ? [
+  $liveCounts = isset($counts) ? [
       'all' => (int) $counts->sum(),
       'ai' => (int) ($counts['ai'] ?? 0),
       'ide' => (int) ($counts['ide'] ?? 0),
@@ -21,7 +21,7 @@
       'doh' => (int) ($counts['doh'] ?? 0),
       'vpn' => (int) ($counts['vpn'] ?? 0),
       'custom' => (int) ($counts['custom'] ?? 0),
-  ] : null;
+  ] : ['all' => 0, 'ai' => 0, 'ide' => 0, 'marketplace' => 0, 'doh' => 0, 'vpn' => 0, 'custom' => 0];
 
   $liveRules = isset($rules) && $rules->count() ? $rules->map(function ($r) {
       return [
@@ -34,7 +34,7 @@
           'definition' => json_encode($r->definition ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
           'actions' => array_values($r->actions['test'] ?? ['log', 'alert']),
       ];
-  })->values()->all() : null;
+  })->values()->all() : [];
 
   $liveVersions = isset($versions) && $versions->count() ? $versions->map(function ($v) {
       return [
@@ -44,12 +44,11 @@
           'when' => $v->created_at?->diffForHumans() ?? 'Recently',
           'active' => (bool) $v->active,
       ];
-  })->values()->all() : null;
+  })->values()->all() : [];
 @endphp
 <script>
 window.XG_SIG_PAGE = {
   cat: @json(!empty($category) ? $category : 'all'),
-  hasLiveSites: @json($liveSites !== null),
   counts: @json($liveCounts),
   sites: @json($liveSites),
   rules: @json($liveRules),
@@ -59,33 +58,10 @@ window.XG_SIG_PAGE = {
 <div class="doc" x-data="{
   tab: 'sites', cat: window.XG_SIG_PAGE.cat, q: '', newDomain: '', newCat: 'custom', rq: '', rk: 'all', importOpen: false, ruleModal: false,
   ruleForm: { rule_id: '', kind: 'process', severity: 'high', description: '', definition: '{}', actions: ['log', 'alert'] },
-  counts: window.XG_SIG_PAGE.counts !== null ? window.XG_SIG_PAGE.counts : { all: 285, ai: 169, ide: 47, marketplace: 8, doh: 38, vpn: 23, custom: 0 },
-  sites: window.XG_SIG_PAGE.sites !== null ? window.XG_SIG_PAGE.sites : [
-    { id: 1, real: false, d: 'ai.google.dev', c: 'ai', s: 'built-in', off: false }, { id: 2, real: false, d: 'ai21.com', c: 'ai', s: 'built-in', off: false },
-    { id: 3, real: false, d: 'aistudio.google.com', c: 'ai', s: 'built-in', off: false }, { id: 4, real: false, d: 'chatgpt.com', c: 'ai', s: 'built-in', off: false },
-    { id: 5, real: false, d: 'claude.ai', c: 'ai', s: 'built-in', off: false }, { id: 6, real: false, d: 'cdn.grok.com', c: 'ai', s: 'built-in', off: false },
-    { id: 7, real: false, d: 'api.githubcopilot.com', c: 'ide', s: 'built-in', off: false }, { id: 8, real: false, d: 'codeium.com', c: 'ide', s: 'built-in', off: true },
-    { id: 9, real: false, d: 'replit.com', c: 'marketplace', s: 'built-in', off: false }, { id: 10, real: false, d: 'dns.google', c: 'doh', s: 'built-in', off: false },
-    { id: 11, real: false, d: 'cloudflare-dns.com', c: 'doh', s: 'built-in', off: false }, { id: 12, real: false, d: 'nordvpn.com', c: 'vpn', s: 'built-in', off: false }
-  ],
-  rules: window.XG_SIG_PAGE.rules !== null ? window.XG_SIG_PAGE.rules : [
-    { dbId: null, id: 'proc.ollama', kind: 'process', sev: 'critical', desc: 'Ollama local AI server', on: true, definition: '{}', actions: ['log', 'warn', 'kill', 'alert'] },
-    { dbId: null, id: 'proc.llamacpp', kind: 'process', sev: 'critical', desc: 'llama.cpp local server', on: true, definition: '{}', actions: ['log', 'warn', 'kill', 'alert'] },
-    { dbId: null, id: 'proc.lmstudio', kind: 'process', sev: 'critical', desc: 'LM Studio local AI', on: true, definition: '{}', actions: ['log', 'warn', 'kill', 'alert'] },
-    { dbId: null, id: 'web.grok', kind: 'traffic', sev: 'high', desc: 'Grok (xAI) stream', on: true, definition: '{}', actions: ['log', 'alert'] },
-    { dbId: null, id: 'web.chatgpt', kind: 'traffic', sev: 'high', desc: 'ChatGPT stream', on: true, definition: '{}', actions: ['log', 'alert'] },
-    { dbId: null, id: 'net.second_route', kind: 'network', sev: 'critical', desc: 'A second network route appeared', on: true, definition: '{}', actions: ['log', 'alert', 'isolate'] },
-    { dbId: null, id: 'hw.adapter_added', kind: 'device', sev: 'critical', desc: 'Extra network adapter or tethered phone', on: true, definition: '{}', actions: ['log', 'alert'] },
-    { dbId: null, id: 'dev.usb_device', kind: 'device', sev: 'low', desc: 'External USB device attached', on: true, definition: '{}', actions: ['log'] },
-    { dbId: null, id: 'tamper.helper_terminated', kind: 'agent', sev: 'high', desc: 'Session helper was ended', on: true, definition: '{}', actions: ['log', 'alert'] },
-    { dbId: null, id: 'tamper.machine_silent', kind: 'agent', sev: 'high', desc: 'No heartbeat from the agent', on: true, definition: '{}', actions: ['log', 'alert'] },
-    { dbId: null, id: 'paste.large', kind: 'clipboard', sev: 'low', desc: 'Paste above the size limit in Settings', on: true, definition: '{}', actions: ['log'] },
-    { dbId: null, id: 'ext.ai_assistant', kind: 'extension', sev: 'medium', desc: 'AI assistant browser extension', on: false, definition: '{}', actions: ['log', 'alert'] }
-  ],
-  versions: window.XG_SIG_PAGE.versions !== null ? window.XG_SIG_PAGE.versions : [
-    { id: null, v: '2026.11.08-b2a25a', note: 'Added Grok and LM Studio rules', when: 'Today 09:14', active: true },
-    { id: null, v: '2026.11.05-5ac910', note: 'Baseline profiles and rules', when: '3 days ago', active: false }
-  ],
+  counts: window.XG_SIG_PAGE.counts,
+  sites: window.XG_SIG_PAGE.sites || [],
+  rules: window.XG_SIG_PAGE.rules || [],
+  versions: window.XG_SIG_PAGE.versions || [],
   lab(k) { return ({ all: 'All', ai: 'AI', ide: 'Editor', marketplace: 'Marketplace', doh: 'Encrypted DNS', vpn: 'VPN', custom: 'Custom' })[k] || k; },
   get catKeys() { return Object.keys(this.counts); },
   get shown() { const q = this.q.toLowerCase(); return this.sites.filter(s => (this.cat === 'all' || s.c === this.cat) && (!q || s.d.includes(q))); },
@@ -139,7 +115,7 @@ window.XG_SIG_PAGE = {
       <div class="pills"><template x-for="k in catKeys" :key="k"><button class="pill" :aria-pressed="cat === k" @click="cat = k"><span x-text="lab(k)"></span> <span class="n" x-text="counts[k]"></span></button></template></div>
       <span class="grow"></span><input class="input input-sm" style="width:220px" placeholder="Search sites" x-model="q"><button class="btn btn-sm" @click="importOpen = !importOpen"><svg class="i i-sm" aria-hidden="true"><use href="#i-upload"/></svg> Import list</button>
     </div>
-    <form method="post" action="{{ route('blocklist.add') }}" class="row" style="padding:12px 20px;background:var(--surface-2);border-bottom:1px solid var(--border)" @submit="if(!window.XG_SIG_PAGE.hasLiveSites) { $event.preventDefault(); addSite(); }">
+    <form method="post" action="{{ route('blocklist.add') }}" class="row" style="padding:12px 20px;background:var(--surface-2);border-bottom:1px solid var(--border)">
       @csrf
       <input name="value" class="input input-sm mono" style="flex:1;min-width:220px" placeholder="Block a site, e.g. example.com" x-model="newDomain" required>
       <select name="category" class="select select-sm" style="width:150px" x-model="newCat"><option value="custom">Custom</option><option value="ai">AI</option><option value="ide">Editor</option><option value="marketplace">Marketplace</option><option value="doh">Encrypted DNS</option><option value="vpn">VPN</option></select>
@@ -161,7 +137,9 @@ window.XG_SIG_PAGE = {
         <td class="right nw">
           <button type="button" class="btn btn-sm btn-quiet" x-show="s.s !== 'built-in'" @click="deleteSite(s)" title="Remove entry" style="margin-right:8px"><svg class="i i-sm" aria-hidden="true"><use href="#i-trash"/></svg></button>
           <label class="switch" style="vertical-align:middle"><input type="checkbox" :checked="!s.off" @change="toggleSite(s)" :aria-label="'Block ' + s.d"><i></i></label>
-        </td></tr></template></tbody>
+        </td></tr></template>
+        <template x-if="!shown.length"><tr><td colspan="4" class="muted" style="padding:18px 16px">No blocklist domains match this filter.</td></tr></template>
+      </tbody>
     </table></div><div class="tbl-foot">Changes apply to PCs within seconds.</div></section>
   </section>
 
@@ -174,7 +152,9 @@ window.XG_SIG_PAGE = {
     </div>
     <section class="panel"><div class="table-wrap"><table class="tbl">
       <thead><tr><th>Rule</th><th>Severity</th><th>What it catches</th><th class="right">Enabled</th></tr></thead>
-      <tbody><template x-for="r in rshown" :key="r.id"><tr :style="!r.on && 'opacity:.5'"><td><div class="mono" style="font-weight:500" x-text="r.id"></div><div class="tiny muted" style="text-transform:capitalize" x-text="r.kind"></div></td><td><span class="sev" :class="r.sev" x-text="r.sev"></span></td><td x-text="r.desc"></td><td class="right nw"><button type="button" class="btn btn-sm btn-quiet" @click="openRuleModal(r)" style="margin-right:8px">Edit</button><label class="switch" style="vertical-align:middle"><input type="checkbox" x-model="r.on" @change="toggleRule(r)" :aria-label="'Enable ' + r.id"><i></i></label></td></tr></template></tbody>
+      <tbody><template x-for="r in rshown" :key="r.id"><tr :style="!r.on && 'opacity:.5'"><td><div class="mono" style="font-weight:500" x-text="r.id"></div><div class="tiny muted" style="text-transform:capitalize" x-text="r.kind"></div></td><td><span class="sev" :class="r.sev" x-text="r.sev"></span></td><td x-text="r.desc"></td><td class="right nw"><button type="button" class="btn btn-sm btn-quiet" @click="openRuleModal(r)" style="margin-right:8px">Edit</button><label class="switch" style="vertical-align:middle"><input type="checkbox" x-model="r.on" @change="toggleRule(r)" :aria-label="'Enable ' + r.id"><i></i></label></td></tr></template>
+        <template x-if="!rshown.length"><tr><td colspan="4" class="muted" style="padding:18px 16px">No detection rules match this filter.</td></tr></template>
+      </tbody>
     </table></div><div class="tbl-foot">Showing <span x-text="rshown.length"></span> of <span x-text="rules.length"></span> rules</div></section>
   </section>
 
@@ -191,8 +171,9 @@ window.XG_SIG_PAGE = {
           @csrf
           <button type="submit" class="btn btn-sm">Roll back</button>
         </form>
-        <button x-show="!v.active && !v.id" type="button" class="btn btn-sm" @click="if(confirm('Roll every PC back to this version?')) $store.toasts.add('Rolled back.', 'watch')">Roll back</button>
-      </td></tr></template></tbody></table></section>
+      </td></tr></template>
+      <template x-if="!versions.length"><tr><td colspan="4" class="muted" style="padding:18px 16px">No published signature versions yet.</td></tr></template>
+    </tbody></table></section>
   </section>
 
   <!-- Add / Edit Rule Modal -->

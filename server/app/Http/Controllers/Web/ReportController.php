@@ -46,22 +46,18 @@ class ReportController extends Controller
         ];
     }
 
-    public function show(string|int $session)
+    public function show(LabSession $session)
     {
-        $model = LabSession::find($session);
-        if (! $model) {
-            if (in_array((int) $session, [1, 2], true) && LabSession::count() === 0) {
-                return $this->showByNumber((int) $session);
-            }
-            abort(404);
-        }
-
-        return view('reports.session', $this->data($model));
+        return view('reports.session', $this->data($session));
     }
 
     public function showByNumber(int $num)
     {
-        return view($num === 2 ? 'reports.session-2' : 'reports.session');
+        $session = LabSession::find($num);
+
+        return $session
+            ? view('reports.session', $this->data($session))
+            : view('reports.session');
     }
 
     public function student(LabSession $session, Student $student)

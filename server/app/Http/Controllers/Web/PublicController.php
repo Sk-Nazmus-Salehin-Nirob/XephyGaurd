@@ -57,7 +57,7 @@ class PublicController extends Controller
         $lab = Lab::current();
         $ca = CertificateAuthority::fromConfig();
         $ccc = $this->resolveCccHost($lab?->ccc_ip);
-        $setupFile = self::resolveWindowsInstallerName() ?: 'XephyGuard-Setup.exe';
+        $setupFile = self::resolveWindowsInstallerName();
         $files = collect(glob(storage_path('app/public/downloads/*')) ?: [])->map(fn ($p) => [
             'name' => basename($p),
             'size_mb' => round(filesize($p) / 1048576, 1),
@@ -65,7 +65,7 @@ class PublicController extends Controller
 
         return response()->view('public.downloads', [
             'ccc' => $ccc,
-            'key' => $lab?->enrollKey() ?: 'XG-A77CFB-6554C8-489B53',
+            'key' => $lab?->enrollKey(),
             'fingerprint' => $ca->exists() ? $ca->fingerprint() : null,
             'setupFile' => $setupFile,
             'files' => $files,
@@ -171,7 +171,7 @@ JS;
     {
         return response()->view('public.share', [
             'text' => (string) Setting::get('shared_clipboard', ''),
-            'updatedAt' => (string) Setting::get('shared_clipboard_at', 'Today 12:01 by KUET admin'),
+            'updatedAt' => (string) Setting::get('shared_clipboard_at', 'Never'),
             'history' => (array) Setting::get('shared_clipboard_history', []),
         ]);
     }

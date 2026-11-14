@@ -47,10 +47,10 @@ window.XG_SETTINGS_PAGE = {
       <section class="section" id="network"><div class="panel-head"><h2 class="h2">Network</h2></div>
         <div class="panel-body stack" style="max-width:760px;--gap:20px">
           <div class="form-grid">
-            <label class="field"><span>Lab name</span><input name="lab_name" class="input" value="{{ $v['lab_name'] ?? 'KUET CSE Computer Lab 1' }}" required></label>
+            <label class="field"><span>Lab name</span><input name="lab_name" class="input" value="{{ $v['lab_name'] ?? '' }}" required></label>
             <label class="field"><span>Time zone</span>
               <select name="timezone" class="select">
-                @php $tz = $v['timezone'] ?? 'Asia/Dhaka'; @endphp
+                @php $tz = $v['timezone'] ?? 'UTC'; @endphp
                 <option value="Asia/Dhaka" @selected($tz === 'Asia/Dhaka')>Asia/Dhaka</option>
                 <option value="UTC" @selected($tz === 'UTC')>UTC</option>
                 @if(!in_array($tz, ['Asia/Dhaka', 'UTC'], true))
@@ -62,7 +62,7 @@ window.XG_SETTINGS_PAGE = {
           <div><div class="label">How traffic reaches this server</div><div class="stack" style="--gap:8px">
             <label class="opt"><input type="radio" name="network_mode" value="gateway" x-model="mode"><span><b>Gateway mode</b><small>This server is the lab’s default gateway. Students can’t get around blocking with browser proxy settings.</small></span></label>
             <label class="opt"><input type="radio" name="network_mode" value="proxy_only" x-model="mode"><span><b>Proxy only</b><small>The router sends web traffic here. Easier to set up, easier to get around.</small></span></label></div></div>
-          <div class="form-grid"><label class="field"><span>Server address</span><input name="ccc_ip" class="input mono" value="{{ $v['ccc_ip'] ?? '192.168.0.51' }}" required></label><label class="field"><span>Lab subnet</span><input name="lab_subnet" class="input mono" value="{{ $v['lab_subnet'] ?? '192.168.0.0/24' }}" required></label></div>
+          <div class="form-grid"><label class="field"><span>Server address</span><input name="ccc_ip" class="input mono" value="{{ $v['ccc_ip'] ?? request()->getHost() }}" required></label><label class="field"><span>Lab subnet</span><input name="lab_subnet" class="input mono" value="{{ $v['lab_subnet'] ?? '' }}" required></label></div>
         </div></section>
       <section class="section" id="search"><div class="panel-head"><h2 class="h2">Search AI summaries</h2></div>
         <div class="panel-body stack" style="max-width:760px;--gap:18px">

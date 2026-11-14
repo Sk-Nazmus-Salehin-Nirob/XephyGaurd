@@ -22,7 +22,7 @@
           'titles' => $tc === 'app_only' ? 'app' : $tc,
           'kill' => implode("\n", $rules),
       ];
-  })->all() : null;
+  })->all() : [];
 
   $liveEntries = isset($entries) && $entries->count() ? $entries->values()->map(function ($e) use ($daysMap) {
       return [
@@ -32,44 +32,34 @@
           'from' => substr((string) $e->start_time, 0, 5),
           'to' => substr((string) $e->end_time, 0, 5),
           'course' => $e->course,
-          'profile' => $e->profile?->name ?? 'Test: AI blocked',
+          'profile' => $e->profile?->name ?? 'Unassigned',
           'profile_id' => $e->profile_id,
           'valid_from' => $e->valid_from?->format('Y-m-d') ?? '',
           'valid_until' => $e->valid_until?->format('Y-m-d') ?? '',
           'paused' => !$e->enabled,
       ];
-  })->all() : null;
+  })->all() : [];
 @endphp
 <script>
 window.XG_PROFILES_PAGE = {
-  hasLive: @json($liveProfiles !== null),
   profiles: @json($liveProfiles),
   items: @json($liveEntries),
 };
 </script>
 <div class="doc" x-data="{
-  tab: 'profiles', cur: window.XG_PROFILES_PAGE.hasLive ? 0 : 3, hr: 44, start: 8, end: 18, days: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], addOpen: false,
-  profiles: window.XG_PROFILES_PAGE.profiles !== null ? window.XG_PROFILES_PAGE.profiles : [
-    { id: null, builtin: true, name: 'Always-on', mode: 'always', desc: 'Quiet safety net outside class. Nothing is blocked.', block: [], strict: false, aiov: false, collect: ['artifacts'], titles: 'off', kill: 'proc.ollama\nproc.llamacpp' },
-    { id: null, builtin: true, name: 'Practice: AI allowed', mode: 'practice', desc: 'Normal class. AI is reachable and use is recorded.', block: [], strict: false, aiov: false, collect: ['window', 'clipboard', 'keys', 'artifacts'], titles: 'app', kill: '' },
-    { id: null, builtin: true, name: 'Practice: AI blocked', mode: 'practice', desc: 'Docs stay open. AI chat sites and assistants are blocked.', block: ['ai', 'ide', 'doh'], strict: false, aiov: true, collect: ['window', 'clipboard', 'keys', 'artifacts'], titles: 'app', kill: 'proc.ollama' },
-    { id: null, builtin: true, name: 'Test: AI blocked', mode: 'test', desc: 'Full AI blocklist, assistant suppression and strict outbound rules.', block: ['ai', 'ide', 'marketplace', 'vpn', 'doh'], strict: true, aiov: true, collect: ['window', 'clipboard', 'keys', 'files', 'artifacts'], titles: 'full', kill: 'proc.ollama\nproc.llamacpp\nproc.lmstudio' },
-    { id: null, builtin: true, name: 'Exam: strict', mode: 'exam', desc: 'Everything in Test, plus kiosk mode and an allow-list only.', block: ['ai', 'ide', 'marketplace', 'vpn', 'doh', 'custom'], strict: true, aiov: true, collect: ['window', 'clipboard', 'keys', 'files', 'gpu', 'artifacts'], titles: 'full', kill: 'proc.ollama\nproc.llamacpp\nproc.lmstudio' }
-  ],
+  tab: 'profiles', cur: 0, hr: 44, start: 8, end: 18, days: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], addOpen: false,
+  profiles: window.XG_PROFILES_PAGE.profiles || [],
   cats: [['ai', 'AI chat sites'], ['ide', 'Editor assistants'], ['marketplace', 'Code marketplaces'], ['vpn', 'VPNs and proxies'], ['doh', 'Encrypted DNS'], ['custom', 'Custom list']],
   coll: [['window', 'Active window'], ['clipboard', 'Paste size'], ['keys', 'Typing pace'], ['files', 'File activity'], ['gpu', 'GPU use'], ['artifacts', 'Installed AI files']],
-  get p() { return this.profiles[this.cur] || this.profiles[0]; },
+  get p() { return this.profiles[this.cur] || null; },
   has(arr, k) { return (arr || []).includes(k); },
   flip(arr, k) { const i = arr.indexOf(k); i >= 0 ? arr.splice(i, 1) : arr.push(k); },
   newProfile() {
     this.profiles.push({ id: null, builtin: false, name: 'Custom profile ' + (this.profiles.length + 1), mode: 'test', desc: 'Custom policy profile.', block: ['ai', 'ide'], strict: false, aiov: true, collect: ['window', 'clipboard', 'keys', 'artifacts'], titles: 'app', kill: 'proc.ollama' });
     this.cur = this.profiles.length - 1;
   },
-  items: window.XG_PROFILES_PAGE.items !== null ? window.XG_PROFILES_PAGE.items : [
-    { id: 1, real: false, day: 'Sun', from: '09:00', to: '11:00', course: 'CSE 2102', profile: 'Practice: AI allowed', valid_from: '', valid_until: '', paused: false },
-    { id: 2, real: false, day: 'Tue', from: '11:00', to: '13:00', course: 'CSER', profile: 'Exam: strict', valid_from: '', valid_until: '', paused: false }
-  ],
-  form: { day: 'Sun', from: '09:00', to: '11:00', course: '', profile: 'Test: AI blocked', valid_from: '', valid_until: '' },
+  items: window.XG_PROFILES_PAGE.items || [],
+  form: { day: 'Sun', from: '09:00', to: '11:00', course: '', profile: (window.XG_PROFILES_PAGE.profiles && window.XG_PROFILES_PAGE.profiles[0]?.name) || '', valid_from: '', valid_until: '' },
   dayNum(d) { return ({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 })[d] || 7; },
   modeOf(p) { return (p || '').startsWith('Test') ? 'test' : (p || '').startsWith('Exam') ? 'exam' : (p || '').startsWith('Practice') ? 'practice' : 'always'; },
   top(t) { const [h, m] = t.split(':'); return ((+h - this.start) + (+m) / 60) * this.hr; },
@@ -99,10 +89,13 @@ window.XG_PROFILES_PAGE = {
   <div x-show="tab === 'profiles'" class="cols-side" style="grid-template-columns:300px minmax(0,1fr)">
     <div class="panel" style="min-height:100%">
       <div class="panel-head"><span class="h3">Profiles</span><button type="button" class="btn btn-sm" @click="newProfile()"><svg class="i i-sm" aria-hidden="true"><use href="#i-plus"/></svg> New</button></div>
-      <ul class="plist"><template x-for="(pr, i) in profiles" :key="i"><li :class="cur === i && 'on'" @click="cur = i"><div class="grow" style="min-width:0"><div class="t" x-text="pr.name"></div><div class="d" x-text="pr.desc"></div></div><span class="mode" :class="pr.mode" x-text="pr.mode === 'always' ? 'Always' : pr.mode" style="text-transform:capitalize"></span></li></template></ul>
+      <div class="empty-state" x-show="!profiles.length"><b>No profiles yet</b>Click New to create one.</div>
+      <ul class="plist" x-show="profiles.length"><template x-for="(pr, i) in profiles" :key="i"><li :class="cur === i && 'on'" @click="cur = i"><div class="grow" style="min-width:0"><div class="t" x-text="pr.name"></div><div class="d" x-text="pr.desc"></div></div><span class="mode" :class="pr.mode" x-text="pr.mode === 'always' ? 'Always' : pr.mode" style="text-transform:capitalize"></span></li></template></ul>
     </div>
     <div>
-      <form method="post" :action="p.id ? '/profiles/' + p.id : '/profiles'" @submit="if(!p.id && !window.XG_PROFILES_PAGE.hasLive) { $event.preventDefault(); $store.toasts.add('Profile saved. It applies to the next session.', 'ok'); }">
+      <template x-if="p">
+      <div>
+      <form method="post" :action="p.id ? '/profiles/' + p.id : '/profiles'">
         @csrf
         <input type="hidden" name="mode" :value="p.mode === 'always' ? 'always_on' : p.mode">
         <input type="hidden" name="title_capture" :value="p.titles === 'app' ? 'app_only' : p.titles">
@@ -137,6 +130,9 @@ window.XG_PROFILES_PAGE = {
         </div>
       </form>
       <form id="xg-del-profile-form" method="post" :action="'/profiles/' + p.id" style="display:none">@csrf @method('DELETE')</form>
+      </div>
+      </template>
+      <div class="panel panel-pad empty-state" x-show="!p"><b>No profile selected</b>Create a profile to configure policy rules.</div>
     </div>
   </div>
 
@@ -154,20 +150,16 @@ window.XG_PROFILES_PAGE = {
       <div class="panel-head"><h2 class="h2">Schedule</h2></div>
       <template x-for="i in items" :key="i.id"><div class="row" style="padding:12px 20px;border-bottom:1px solid var(--border);flex-wrap:nowrap" :style="i.paused && 'opacity:.55'"><div class="grow"><div style="font-weight:500" x-text="i.course"></div><div class="small muted" x-text="i.day + ' ' + i.from + '–' + i.to + ' · ' + i.profile + (i.valid_from || i.valid_until ? ' (' + (i.valid_from || '…') + ' → ' + (i.valid_until || '…') + ')' : '')"></div></div><button class="btn btn-sm btn-quiet" @click="toggleSlot(i)" x-text="i.paused ? 'Resume' : 'Pause'"></button><button class="btn btn-sm btn-quiet" @click="removeSlot(i)" aria-label="Remove"><svg class="i i-sm" aria-hidden="true"><use href="#i-trash"/></svg></button></div></template>
       <div class="empty-state" x-show="!items.length"><b>No classes yet</b>Add one to start sessions automatically.</div>
-      <form x-show="addOpen" x-cloak method="post" action="{{ route('timetable.store') }}" class="panel-body stack" style="background:var(--surface-2);border-top:1px solid var(--border)" @submit="if(!window.XG_PROFILES_PAGE.hasLive) { $event.preventDefault(); add(); }">
+      <form x-show="addOpen" x-cloak method="post" action="{{ route('timetable.store') }}" class="panel-body stack" style="background:var(--surface-2);border-top:1px solid var(--border)">
         @csrf
         <input type="hidden" name="weekday" :value="dayNum(form.day)">
         <div class="form-grid"><label class="field"><span>Day</span><select class="select" x-model="form.day"><template x-for="d in days"><option x-text="d"></option></template></select></label><label class="field"><span>Course</span><input name="course" class="input" x-model="form.course" required></label>
         <label class="field"><span>Starts</span><input name="start_time" class="input" type="time" x-model="form.from"></label><label class="field"><span>Ends</span><input name="end_time" class="input" type="time" x-model="form.to"></label></div>
         <label class="field"><span>Profile</span>
-          <select name="profile_id" class="select" @change="form.profile = $event.target.options[$event.target.selectedIndex].text">
-            @if(!empty($profiles) && $profiles->count())
-              @foreach($profiles as $prof)
-                <option value="{{ $prof->id }}">{{ $prof->name }}</option>
-              @endforeach
-            @else
-              <template x-for="pr in profiles" :key="pr.name"><option :value="pr.id || 1" x-text="pr.name"></option></template>
-            @endif
+          <select name="profile_id" class="select" required @change="form.profile = $event.target.options[$event.target.selectedIndex].text">
+            @foreach($profiles ?? [] as $prof)
+              <option value="{{ $prof->id }}">{{ $prof->name }}</option>
+            @endforeach
           </select>
         </label>
         <div class="form-grid">

@@ -9,7 +9,6 @@
 <link rel="icon" href="favicon.ico">
 <script>try{var m=localStorage.getItem('xg-theme')||'system';var d=m==='dark'||(m==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
 <link rel="stylesheet" href="css/xg.css">
-<script src="js/data.js"></script>
 <script src="js/app.js"></script>
 <script defer src="js/alpine.min.js"></script>
 </head>
@@ -23,7 +22,7 @@
     <div class="note warn"><svg class="i i-sm" aria-hidden="true"><use href="#i-warn"/></svg><span>{{ $errors->first() }}</span></div>
     @endif
     <form class="stack" method="post" action="{{ url('/login') }}">@csrf
-      <label class="field"><span>Email</span><input class="input" style="height:36px" name="email" type="email" value="{{ old('email', 'tahmid.tts@gmail.com') }}" autocomplete="username" required></label>
+      <label class="field"><span>Email</span><input class="input" style="height:36px" name="email" type="email" value="{{ old('email') }}" placeholder="name@example.edu" autocomplete="username" required></label>
       <label class="field"><span>Password</span><input class="input" style="height:36px" name="password" type="password" placeholder="••••••••••" autocomplete="current-password" required></label>
       <label class="check"><input type="checkbox" name="remember" value="1"> Keep me signed in on this computer</label>
       <button class="btn btn-solid btn-block">Sign in</button>

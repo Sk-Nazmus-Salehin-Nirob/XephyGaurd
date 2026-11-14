@@ -8,7 +8,6 @@
 <link rel="icon" href="favicon.ico">
 <script>try{var m=localStorage.getItem('xg-theme')||'system';var d=m==='dark'||(m==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
 <link rel="stylesheet" href="css/xg.css">
-<script src="js/data.js"></script>
 <script src="js/app.js"></script>
 <script defer src="js/alpine.min.js"></script>
 </head>
@@ -40,7 +39,9 @@
     </ul>
     <h2>A person decides</h2>
     <blockquote class="quote">XephyGuard only raises a hand. No score can penalise a student on its own, and every flag is checked by a faculty member first.</blockquote>
-    <p class="muted small" style="margin-top:28px">Department of Computer Science and Engineering · {{ $lab?->name ?? 'CSE Computer Lab 1' }}</p>
+    @if(!empty($lab?->name))
+      <p class="muted small" style="margin-top:28px">{{ $lab->name }}</p>
+    @endif
   </div>
 </div></div>
 

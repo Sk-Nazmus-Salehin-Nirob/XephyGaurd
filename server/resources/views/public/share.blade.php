@@ -2,18 +2,14 @@
 @section('title', 'Shared clipboard')
 @section('content')
 @php
-  $defaultHist = [
-      ['t' => '12:01', 'v' => 'g++ -std=c++17 main.cpp -o main && ./main', 'cmd' => true],
-      ['t' => '11:34', 'v' => 'Exam sheet: files.kuet.ac.bd/cser/q1.pdf', 'cmd' => false],
-      ['t' => '11:20', 'v' => 'Use the provided header file only.', 'cmd' => false],
-  ];
-  $initialHist = !empty($history) ? $history : $defaultHist;
+  $initialHist = !empty($history) ? $history : [];
 @endphp
 <script>
 window.XG_SHARE = {
   text: @json($text ?? ''),
-  last: @json($updatedAt ?? 'Today 12:01 by KUET admin'),
+  last: @json($updatedAt ?? 'Never'),
   hist: @json($initialHist),
+  userName: @json(auth()->user()?->name ?? 'Staff'),
 };
 </script>
 <div class="doc" x-data="{
@@ -40,15 +36,16 @@ window.XG_SHARE = {
     if (window.xgApi) {
       const r = await window.xgApi('/share', { method: 'POST', body: JSON.stringify({ text: v, cmd: this.cmd }) });
       if (r && r.ok && r.data && r.data.updated_at) this.last = r.data.updated_at;
-      else this.last = 'Today ' + nowT + ' by KUET admin';
+      else this.last = 'Today ' + nowT + ' by ' + window.XG_SHARE.userName;
     } else {
-      this.last = 'Today ' + nowT + ' by KUET admin';
+      this.last = 'Today ' + nowT + ' by ' + window.XG_SHARE.userName;
     }
     this.text = '';
     this.editing = false;
     $store.toasts.add('Shared with all online PCs.', 'ok');
   }
-}"><div class="optbar"><span class="otitle">Shared clipboard</span><span class="osub">Send text, commands or links to every PC in one step.</span><span class="grow"></span></div><div class="canvas narrow">
+}">
+  <div class="optbar"><span class="otitle">Shared clipboard</span><span class="osub">Send text, commands or links to every PC in one step.</span><span class="grow"></span></div><div class="canvas narrow">
   
   <section class="panel" style="border-radius:0">
     <div class="panel-head"><h2 class="h2">New share</h2><span class="small muted" x-text="'Last: ' + last"></span></div>
@@ -61,6 +58,7 @@ window.XG_SHARE = {
   <section class="panel" style="border-radius:0">
     <div class="panel-head"><h2 class="h2">Recent shares</h2></div>
     <template x-for="h in hist" :key="h.t + h.v"><div class="row" style="padding:12px 20px;border-bottom:1px solid var(--border);--gap:14px;flex-wrap:nowrap"><span class="mono small muted" x-text="h.t"></span><span class="grow" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :class="h.cmd && 'mono small'" x-text="h.v"></span><button class="btn btn-sm" @click="xgCopy(h.v, 'Copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg> Copy</button></div></template>
+    <div class="empty-state" x-show="!hist.length"><b>Nothing shared yet</b>Items you share appear here for quick reuse.</div>
   </section>
 </div></div>
 @endsection

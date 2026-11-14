@@ -273,7 +273,7 @@ window.xgApi = async function (url, opts = {}) {
     } else {
       ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = `600 ${22 * u}px Inter, sans-serif`; ctx.textAlign = 'center';
-      if (pc.status !== 'offline') ctx.fillText('12:08', w / 2, h * .46);
+      if (pc.status !== 'offline') ctx.fillText(new Date().toTimeString().slice(0, 5), w / 2, h * .46);
       ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.font = `${8 * u}px Inter, sans-serif`;
       ctx.fillText(pc.status === 'offline' ? 'No signal' : 'Locked', w / 2, h * .46 + 14 * u);
     }
@@ -288,10 +288,10 @@ window.xgApi = async function (url, opts = {}) {
   };
 
   setInterval(() => {
-    if (document.hidden || !window.XG) return;
-    const pool = (window.XG_LIVE && window.XG_LIVE.pcs && window.XG_LIVE.pcs.length) ? window.XG_LIVE.pcs : XG.pcs;
+    if (document.hidden) return;
+    const pool = (window.XG_LIVE && Array.isArray(window.XG_LIVE.pcs)) ? window.XG_LIVE.pcs : [];
     document.querySelectorAll('canvas[data-pc]').forEach(c => {
-      const p = pool.find(x => x.id == c.dataset.pc) || XG.pcs.find(x => x.id == c.dataset.pc);
+      const p = pool.find(x => x.id == c.dataset.pc);
       if (p) xgDraw(c, p, performance.now());
     });
   }, 1000);
@@ -364,8 +364,8 @@ document.addEventListener('alpine:init', () => {
       { g: 'Actions', t: 'Switch theme', icon: 'sun', run: () => Alpine.store('theme').toggle() }
     ],
     get items() {
-      const pool = (window.XG_LIVE && window.XG_LIVE.pcs && window.XG_LIVE.pcs.length) ? window.XG_LIVE.pcs : (window.XG ? XG.pcs : []);
-      const pcs = pool.map(p => ({ g: 'PCs', t: p.name, icon: 'live', href: 'index.html#pc=' + p.id, k: p.user }));
+      const pool = (window.XG_LIVE && Array.isArray(window.XG_LIVE.pcs)) ? window.XG_LIVE.pcs : [];
+      const pcs = pool.map(p => ({ g: 'PCs', t: p.name, icon: 'live', href: 'index.html#pc=' + p.id, k: p.user || '—' }));
       const q = this.q.trim().toLowerCase();
       const all = this.base.concat(pcs);
       return q ? all.filter(i => (i.t + ' ' + (i.k || '')).toLowerCase().includes(q)).slice(0, 12) : this.base.slice(0, 8);
@@ -378,15 +378,15 @@ document.addEventListener('alpine:init', () => {
   /* ---------- Live lab ---------- */
   Alpine.data('labView', () => ({
     view: 'map',
-    cols: (window.XG_LIVE && window.XG_LIVE.cols) || 6,
-    rows: (window.XG_LIVE && window.XG_LIVE.rows) || 3,
+    cols: (window.XG_LIVE && (window.XG_LIVE.cols || (window.XG_LIVE.lab && window.XG_LIVE.lab.cols))) || 6,
+    rows: (window.XG_LIVE && (window.XG_LIVE.rows || (window.XG_LIVE.lab && window.XG_LIVE.lab.rows))) || 3,
     editing: false, dragId: null, dropKey: null,
-    pcs: (window.XG_LIVE && window.XG_LIVE.pcs && window.XG_LIVE.pcs.length) ? structuredClone(window.XG_LIVE.pcs) : structuredClone(XG.pcs),
-    alerts: (window.XG_LIVE && window.XG_LIVE.alerts && window.XG_LIVE.alerts.length) ? structuredClone(window.XG_LIVE.alerts) : structuredClone(XG.alerts),
+    pcs: (window.XG_LIVE && Array.isArray(window.XG_LIVE.pcs)) ? structuredClone(window.XG_LIVE.pcs) : [],
+    alerts: (window.XG_LIVE && Array.isArray(window.XG_LIVE.alerts)) ? structuredClone(window.XG_LIVE.alerts) : [],
     serverDetails: {},
-    activePcId: null, inspector: false, tab: 'screen', screenMode: 'snapshot', monitor: 0, snapT: 4200, snapAt: '12:07:41',
+    activePcId: null, inspector: false, tab: 'screen', screenMode: 'snapshot', monitor: 0, snapT: 4200, snapAt: '',
     screenStreaming: false, screenHasFrame: false, screenStatus: '', screenAuditId: null, screenViewer: null, screenRenewTimer: null,
-    tile: 240, flagged: false, blur: false, pinned: [1], dock: { att: true, props: true, list: true }, pcFilter: 'all',
+    tile: 240, flagged: false, blur: false, pinned: [], dock: { att: true, props: true, list: true }, pcFilter: 'all',
     messageModal: false, messageTarget: null, messageText: '', showDone: false, closeModal: false, closeName: '', closePid: null,
 
     init() {
@@ -426,7 +426,20 @@ document.addEventListener('alpine:init', () => {
       try {
         const d = await window.xgApi(`/pcs/${id}`);
         if (!d || !d.pc) return;
-        const base = XG.detail(this.active);
+        const base = {
+          events: [],
+          processes: [],
+          aiTraffic: [],
+          tabs: [],
+          extensions: [],
+          artifacts: [],
+          adapters: [],
+          ports: [],
+          devices: [],
+          netEvents: [],
+          keyrate: [],
+          pastes: [],
+        };
         const mapped = {
           events: (d.timeline && d.timeline.length)
             ? d.timeline.map(e => ({ time: e.at, sev: e.type === 'rule_hit' || e.type === 'tamper' ? 'high' : 'info', label: e.summary }))
@@ -471,7 +484,14 @@ document.addEventListener('alpine:init', () => {
 
     /* derived */
     get active() { return this.pcs.find(p => p.id === this.activePcId) || {}; },
-    get det() { return this.activePcId ? (this.serverDetails[this.activePcId] || XG.detail(this.active)) : null; },
+    get det() {
+      if (!this.activePcId) return null;
+      return this.serverDetails[this.activePcId] || {
+        events: [], processes: [], aiTraffic: [], tabs: [], extensions: [],
+        artifacts: [], adapters: [], ports: [], devices: [], netEvents: [],
+        keyrate: [], pastes: [],
+      };
+    },
     get counts() { const c = { ok: 0, idle: 0, watch: 0, alert: 0, off: 0 }; this.pcs.filter(p => p.seat).forEach(p => c[this.kind(p)]++); return c; },
     get total() { return this.pcs.filter(p => p.seat).length; },
     get online() { return this.pcs.filter(p => p.seat && p.status !== 'offline').length; },
@@ -499,14 +519,14 @@ document.addEventListener('alpine:init', () => {
         ['typing', 'Typing', 'keyboard', ''], ['pastes', 'Pastes', 'clipboard', d.pastes.length || '']];
     },
     pct(n) { return Math.max(0, n / Math.max(1, this.total) * 100); },
-    kind(p) { if (p.isolated || p.status === 'alert') return 'alert'; return ({ active: 'ok', clean: 'ok', idle: 'idle', warning: 'watch', offline: 'off' })[p.status] || 'ok'; },
+    kind(p) { if (p.isolated || p.status === 'alert') return 'alert'; return ({ active: 'ok', clean: 'ok', normal: 'ok', idle: 'idle', warning: 'watch', watch: 'watch', offline: 'off' })[p.status] || 'ok'; },
     seatClass(p) { if (!p) return 'empty'; const k = p.isolated ? 'iso' : this.kind(p); return 's-' + k + (this.editing ? ' editing' : ''); },
     tileClass(p) { const k = p.isolated ? 'iso' : this.kind(p); return { alert: 't-alert', watch: 't-watch', iso: 't-iso', off: 't-off' }[k] || ''; },
     dotOf(p) { if (p.isolated) return 'iso'; return ({ ok: 'ok', idle: '', watch: 'watch', alert: 'alert', off: 'off' })[this.kind(p)] || ''; },
     scoreClass(p) { return typeof p.score !== 'number' ? '' : (p.score < 70 ? 'low' : (p.score < 95 ? 'mid' : '')); },
     ringColor(p) { return typeof p.score !== 'number' ? 'var(--off)' : (p.score < 70 ? 'var(--alert)' : (p.score < 95 ? 'var(--watch)' : 'var(--ok)')); },
-    statusText(p) { return p.isolated ? 'Isolated' : ({ active: 'Online', clean: 'Online', idle: 'Not in use', warning: 'Needs a look', alert: 'Alert', offline: 'Offline' })[p.status]; },
-    pc(id) { return this.pcs.find(p => p.id === id) || XG.pcs.find(p => p.id === id); },
+    statusText(p) { return p.isolated ? 'Isolated' : ({ active: 'Online', clean: 'Online', normal: 'Online', idle: 'Not in use', warning: 'Needs a look', watch: 'Needs a look', alert: 'Alert', offline: 'Offline' })[p.status] || 'Online'; },
+    pc(id) { return this.pcs.find(p => p.id === id); },
 
     /* selection / inspector */
     select(id) { if (this.editing) return; this.activePcId = id; this.fetchDetail(id); },
@@ -630,7 +650,7 @@ document.addEventListener('alpine:init', () => {
     async ackGroup(g) {
       g.items.forEach(a => {
         const x = this.alerts.find(y => y.id === a.id);
-        if (x) { x.acked = true; x.by = 'KUET admin'; }
+        if (x) { x.acked = true; x.by = window.XG_USER_NAME || 'Staff'; }
         window.xgApi(`/alerts/${a.id}/ack`, { method: 'POST', body: JSON.stringify({}) }).catch(() => {});
       });
       Alpine.store('toasts').add(`${g.pc}: ${g.count > 1 ? g.count + ' alerts' : 'alert'} marked as reviewed.`, 'ok');

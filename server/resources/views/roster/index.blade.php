@@ -13,25 +13,18 @@
           'ex' => $s->exempt ? ($s->exempt_reason ?? 'Accommodation') : '',
           'exOpen' => false,
       ];
-  })->values()->all() : null;
+  })->values()->all() : [];
 @endphp
 <script>
 window.XG_ROSTER_PAGE = {
   pseudo: @json((bool) ($pseudonymize ?? true)),
   rows: @json($liveRows),
-  total: @json(isset($students) && $students->total() ? $students->total() : 65),
+  total: @json(isset($students) ? $students->total() : 0),
 };
 </script>
 <div class="doc" x-data="{
   q: '', pseudo: window.XG_ROSTER_PAGE.pseudo,
-  rows: window.XG_ROSTER_PAGE.rows !== null ? window.XG_ROSTER_PAGE.rows : [
-    { dbId: null, id: '2107001', name: 'Rupom Hasan', login: 'std_210701', token: 'c8f92a10b4de', consent: 'granted', ex: '', exOpen: false },
-    { dbId: null, id: '2107002', name: 'Sadia Islam', login: 'std_210712', token: '9b231ff08a71', consent: 'granted', ex: '', exOpen: false },
-    { dbId: null, id: '2107003', name: 'Imran Hossain', login: 'std_210713', token: '27d0e4b9c613', consent: 'granted', ex: '', exOpen: false },
-    { dbId: null, id: '2107004', name: 'Nusrat Jahan', login: 'std_210714', token: 'e41b7a02d958', consent: 'declined', ex: '', exOpen: false },
-    { dbId: null, id: '2107007', name: 'Siyam Ahmed', login: 'std_210712', token: '5a31de6701ba', consent: 'declined', ex: 'Speech-to-text tool', exOpen: false },
-    { dbId: null, id: '2107009', name: 'Farhana Akter', login: 'std_210719', token: '0f6c8d31ae72', consent: 'granted', ex: '', exOpen: false }
-  ],
+  rows: window.XG_ROSTER_PAGE.rows || [],
   get shown() { const q = this.q.toLowerCase(); return this.rows.filter(r => !q || (r.id + r.name + r.login).toLowerCase().includes(q)); },
   togglePseudo() {
     if (window.xgApi) window.xgApi('/roster/pseudonymize', { method: 'POST', body: JSON.stringify({ enabled: this.pseudo }) });
@@ -70,9 +63,27 @@ window.XG_ROSTER_PAGE = {
           <template x-if="r.ex && !r.exOpen"><span class="row"><span class="chip info" x-text="r.ex"></span><button class="btn btn-sm btn-quiet" @click="saveExempt(r, false)">Remove</button></span></template>
           <template x-if="!r.ex && !r.exOpen"><button class="link-btn" @click="r.exOpen = true">Add</button></template>
           <template x-if="r.exOpen"><span class="row"><input class="input input-sm" style="width:200px" placeholder="What does the student need?" x-model="r.ex" @keydown.enter="saveExempt(r, true)"><button class="btn btn-sm" @click="saveExempt(r, true)">Save</button></span></template>
-        </td></tr></template></tbody>
+        </td></tr></template>
+        <template x-if="!shown.length"><tr><td colspan="6" class="muted" style="padding:18px 16px">No students in roster yet. Import a CSV to map lab logins.</td></tr></template>
+      </tbody>
     </table></div>
-    <div class="tbl-foot"><span x-text="'Showing ' + shown.length + ' of ' + window.XG_ROSTER_PAGE.total + ' students'"></span><div class="pager"><button aria-current="page">1</button><button>2</button><button>3</button></div></div>
+    <div class="tbl-foot">
+      <span x-text="'Showing ' + shown.length + ' of ' + window.XG_ROSTER_PAGE.total + ' students'"></span>
+      @if(isset($students) && $students->hasPages())
+        <div class="pager">
+          @if($students->onFirstPage())
+            <button disabled>Prev</button>
+          @else
+            <a class="btn btn-sm" href="{{ $students->previousPageUrl() }}">Prev</a>
+          @endif
+          @if($students->hasMorePages())
+            <a class="btn btn-sm" href="{{ $students->nextPageUrl() }}">Next</a>
+          @else
+            <button disabled>Next</button>
+          @endif
+        </div>
+      @endif
+    </div>
   </section>
 </div></div>
 @endsection

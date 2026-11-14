@@ -2,10 +2,10 @@
 @section('title', 'Add a PC')
 @section('content')
 @php
-  $cccHost = $ccc ?? '192.168.0.51';
-  $portSuffix = request()->getPort() && !in_array(request()->getPort(), [80, 443], true) ? ':' . request()->getPort() : ':8000';
+  $cccHost = $ccc ?: request()->getHost();
+  $portSuffix = request()->getPort() && !in_array(request()->getPort(), [80, 443], true) ? ':' . request()->getPort() : '';
   $baseUrl = (request()->isSecure() ? 'https://' : 'http://') . $cccHost . $portSuffix;
-  $exeName = $setupFile ?? 'XephyGuard-Setup.exe';
+  $exeName = $setupFile ?? '';
 
   $livePending = isset($pending) && $pending->count() ? $pending->map(function ($e) {
       return [
@@ -17,7 +17,7 @@
           'mac' => collect($e->macs ?? [])->first() ?? '—',
           'name' => $e->hostname,
       ];
-  })->values()->all() : null;
+  })->values()->all() : [];
 
   $livePcs = isset($pcs) && $pcs->count() ? $pcs->map(function ($p) {
       return [
@@ -27,24 +27,23 @@
           'host' => $p->hostname,
           'os' => trim($p->os . ' ' . ($p->os_version ?? '')),
           'ip' => $p->ip ?? '—',
-          'agent' => $p->agent?->version ?? '0.2.0',
+          'agent' => $p->agent?->version ?? '—',
           'status' => $p->online() ? 'normal' : 'offline',
           'lastSeen' => $p->last_seen_at ? $p->last_seen_at->diffForHumans() : 'Never',
-          'certExpires' => $p->agent?->cert_expires_at ? $p->agent->cert_expires_at->format('Y-m-d') : '2027-11-14',
+          'certExpires' => $p->agent?->cert_expires_at ? $p->agent->cert_expires_at->format('Y-m-d') : '—',
           'retired' => $p->retired_at !== null,
           'editingName' => false,
       ];
-  })->values()->all() : null;
+  })->values()->all() : [];
 @endphp
 <script>
 window.XG_ENROLL_PAGE = {
-  auto: @json((bool) ($lab?->auto_approve ?? true)),
-  key: @json($key ?? 'XG-A77CFB-6554C8-489B53'),
-  fp: @json($fingerprint ?? 'B2:8E:59:71:6C:33:9A:81:40:DE:FD:31:07:95:2E:8C:31:F9:67:8B:10:98:99:A2:05:4B:37:F1:C0:01:22:98'),
-  macs: @json(!empty($lab?->auto_approve_macs) ? implode("\n", $lab->auto_approve_macs) : "70:85:c2:55:1a:40\nb4:2e:99:11:80:cc"),
+  auto: @json((bool) ($lab?->auto_approve ?? false)),
+  key: @json($key ?? ''),
+  fp: @json($fingerprint ?? ''),
+  macs: @json(implode("\n", $lab?->auto_approve_macs ?? [])),
   exeName: @json($exeName),
   baseUrl: @json($baseUrl),
-  hasLivePending: @json($livePending !== null),
   pending: @json($livePending),
   enrolled: @json($livePcs),
 };
@@ -55,14 +54,16 @@ window.XG_ENROLL_PAGE = {
   key: window.XG_ENROLL_PAGE.key,
   fp: window.XG_ENROLL_PAGE.fp,
   macs: window.XG_ENROLL_PAGE.macs,
-  pending: window.XG_ENROLL_PAGE.pending !== null ? window.XG_ENROLL_PAGE.pending : [
-    { id: 1, real: false, host: 'LAB-PC-DESK25', os: 'Windows 11 Pro', ip: '192.168.0.125', mac: '70:85:C2:55:1A:40', name: 'PC-25' },
-    { id: 2, real: false, host: 'DESKTOP-KUET-09', os: 'Ubuntu 24.04 LTS', ip: '192.168.0.126', mac: 'B4:2E:99:11:80:CC', name: 'PC-26' }
-  ],
-  enrolled: window.XG_ENROLL_PAGE.enrolled !== null ? window.XG_ENROLL_PAGE.enrolled : XG.pcs.map(p => ({ ...p, real: false, lastSeen: p.status === 'offline' ? '25m ago' : 'Just now', certExpires: '2027-11-14', retired: false, editingName: false })),
-  get cmd() { return this.os === 'win'
-      ? window.XG_ENROLL_PAGE.exeName + ' /S /KEY=' + this.key + ' /CCC=' + window.XG_ENROLL_PAGE.baseUrl + ' /CAFP=' + this.fp
-      : 'curl -fsSL ' + window.XG_ENROLL_PAGE.baseUrl + '/install/linux.sh | sudo bash -s -- --key ' + this.key; },
+  pending: window.XG_ENROLL_PAGE.pending || [],
+  enrolled: window.XG_ENROLL_PAGE.enrolled || [],
+  get cmd() {
+    const keyPart = this.key || '<ROTATE_KEY_FIRST>';
+    if (this.os === 'win') {
+      const exe = window.XG_ENROLL_PAGE.exeName || 'XephyGuard-Setup.exe';
+      return exe + ' /S /KEY=' + keyPart + ' /CCC=' + window.XG_ENROLL_PAGE.baseUrl + (this.fp ? ' /CAFP=' + this.fp : '');
+    }
+    return 'curl -fsSL ' + window.XG_ENROLL_PAGE.baseUrl + '/install/linux.sh | sudo bash -s -- --key ' + keyPart;
+  },
   get shown() { const q = this.q.toLowerCase(); return this.enrolled.filter(p => !q || (p.name + p.host + p.ip).toLowerCase().includes(q)); },
   approve(p) {
     if (p.real && window.xgApi) window.xgApi('/enroll/' + p.id + '/approve', { method: 'POST', body: JSON.stringify({ name: p.name }) });
@@ -94,8 +95,8 @@ window.XG_ENROLL_PAGE = {
       <div class="panel-body stack">
         <div><div class="cmd-label">Lab enrolment key</div>
           <div class="key">
-            <code x-text="key"></code>
-            <button type="button" class="btn btn-sm" @click="xgCopy(key, 'Key copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg> Copy</button>
+            <code x-text="key || 'Not set'"></code>
+            <button type="button" class="btn btn-sm" x-show="key" @click="xgCopy(key, 'Key copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg> Copy</button>
             <form method="post" action="{{ route('enroll.rotate') }}" style="display:inline" onsubmit="return confirm('The old key stops working for new installs. Continue?')">
               @csrf
               <button type="submit" class="btn btn-sm btn-quiet">Rotate</button>
@@ -115,7 +116,7 @@ window.XG_ENROLL_PAGE = {
       <div class="panel-head">
         <h2 class="h2">2. Approve new PCs</h2>
         <span class="chip alert" x-show="pending.length" x-text="pending.length + ' waiting'"></span>
-        <form method="post" action="{{ route('enroll.approve_all') }}" x-show="pending.length" style="display:inline" @submit="if(!window.XG_ENROLL_PAGE.hasLivePending) { $event.preventDefault(); pending = []; $store.toasts.add('Approved everything waiting.', 'ok'); }">
+        <form method="post" action="{{ route('enroll.approve_all') }}" x-show="pending.length" style="display:inline">
           @csrf
           <button type="submit" class="btn btn-sm">Approve all</button>
         </form>
@@ -154,10 +155,12 @@ window.XG_ENROLL_PAGE = {
           </template>
         </td>
         <td class="mono small" x-text="p.host"></td><td x-text="p.os"></td><td class="mono small" x-text="p.ip"></td>
-        <td><span class="mono small" x-text="'v' + p.agent"></span></td>
-        <td class="small muted" x-text="p.lastSeen || 'Just now'"></td>
-        <td class="mono small muted" x-text="p.certExpires || '2027-11-14'"></td>
-        <td class="right"><button class="btn btn-sm btn-quiet" x-show="!p.retired" @click="retirePc(p)">Retire</button><span class="small muted" x-show="p.retired">Retired</span></td></tr></template></tbody>
+        <td><span class="mono small" x-text="p.agent && p.agent !== '—' ? 'v' + p.agent : '—'"></span></td>
+        <td class="small muted" x-text="p.lastSeen || 'Never'"></td>
+        <td class="mono small muted" x-text="p.certExpires || '—'"></td>
+        <td class="right"><button class="btn btn-sm btn-quiet" x-show="!p.retired" @click="retirePc(p)">Retire</button><span class="small muted" x-show="p.retired">Retired</span></td></tr></template>
+        <template x-if="!shown.length"><tr><td colspan="8" class="muted" style="padding:18px 16px">No enrolled PCs match this filter.</td></tr></template>
+      </tbody>
     </table></div>
   </section>
 </div></div>

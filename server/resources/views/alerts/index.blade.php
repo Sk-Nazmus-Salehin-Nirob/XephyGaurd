@@ -12,24 +12,24 @@
           'title' => $a->title ?: $a->rule_id,
           'rule' => $a->rule_id ?? '',
           'at' => $a->occurred_at?->format('H:i:s') ?? '',
-          'ago' => $a->occurred_at ? max(0, (int) $a->occurred_at->diffInMinutes(now())) : 1,
+          'ago' => $a->occurred_at ? max(0, (int) $a->occurred_at->diffInMinutes(now())) : 0,
           'acked' => $a->acknowledged_at !== null,
-          'by' => $a->acknowledger?->name ?? 'KUET admin',
+          'by' => $a->acknowledger?->name ?? 'Staff',
           'note' => $a->comment ?? '',
       ];
-  })->values()->all() : null;
+  })->values()->all() : [];
 @endphp
 <script>
 window.XG_ALERTS_PAGE = {
   sev: @json($filters['severity'] ?? ''),
   unacked: @json((bool) ($filters['open'] ?? false)),
-  byName: @json(auth()->user()?->name ?? 'KUET admin'),
+  byName: @json(auth()->user()?->name ?? 'Staff'),
   items: @json($liveAlerts),
 };
 </script>
 <div class="doc" x-data="{
   sev: window.XG_ALERTS_PAGE.sev, unacked: window.XG_ALERTS_PAGE.unacked, grouped: true, q: '', openKey: null, notes: {},
-  all: window.XG_ALERTS_PAGE.items !== null ? window.XG_ALERTS_PAGE.items : structuredClone(XG.alerts),
+  all: window.XG_ALERTS_PAGE.items || [],
   get filtered() { const q = this.q.toLowerCase(); return this.all.filter(a => (!this.sev || a.sev === this.sev) && (!this.unacked || !a.acked) && (!q || (a.pc + a.title + a.rule).toLowerCase().includes(q))); },
   get rows() { return this.grouped ? xgGroup(this.filtered) : this.filtered.map(a => ({ ...a, key: 'a' + a.id, count: 1, items: [a] })); },
   get waiting() { return xgGroup(this.all.filter(a => !a.acked)).length; },
@@ -48,16 +48,10 @@ window.XG_ALERTS_PAGE = {
   }
 }"><div class="optbar"><span class="otitle">Alerts</span><span class="osub"><span x-text="waiting"></span> waiting for review. Repeated alerts are grouped.</span><span class="grow"></span>
       <select class="select select-sm" style="width:260px" aria-label="Session" onchange="if(this.value!==undefined) location.href='/alerts'+(this.value?'?session='+this.value:'')">
-        @if(!empty($sessions) && count($sessions))
-          <option value="" @selected(empty($filters['session']))>All sessions</option>
-          @foreach($sessions as $s)
-            <option value="{{ $s->id }}" @selected(($filters['session'] ?? null) == $s->id)>{{ ucfirst(str_replace('_', ' ', $s->mode)) }} · {{ $s->course }} ({{ $s->starts_at?->format('M d') }})</option>
-          @endforeach
-        @else
-          <option value="">Exam · CSER (running)</option>
-          <option value="">All sessions</option>
-          <option value="">CSE 1101 practice · Nov 07</option>
-        @endif
+        <option value="" @selected(empty($filters['session']))>All sessions</option>
+        @foreach($sessions ?? [] as $s)
+          <option value="{{ $s->id }}" @selected(($filters['session'] ?? null) == $s->id)>{{ ucfirst(str_replace('_', ' ', $s->mode)) }} · {{ $s->course }}{{ $s->starts_at ? ' (' . $s->starts_at->format('M d') . ')' : '' }}</option>
+        @endforeach
       </select>
     </div><div class="canvas ">
   
@@ -87,7 +81,7 @@ window.XG_ALERTS_PAGE = {
       <div x-show="openKey === r.key" x-cloak>
         <template x-if="r.count > 1"><div><template x-for="i in r.items" :key="i.id"><div class="msg-sub"><span class="mono muted" x-text="i.at"></span><span x-text="i.title"></span><span class="muted" x-text="xgAgo(i.ago)"></span></div></template></div></template>
         <div class="msg-detail" style="padding-left:20px">
-          <template x-if="r.acked"><div class="note"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg><div><b x-text="'Reviewed by ' + (r.by || 'KUET admin')"></b><br><span x-text="r.note || 'No note.'"></span></div></div></template>
+          <template x-if="r.acked"><div class="note"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg><div><b x-text="'Reviewed by ' + (r.by || 'Staff')"></b><br><span x-text="r.note || 'No note.'"></span></div></div></template>
           <template x-if="!r.acked">
             <div class="stack" style="--gap:10px;max-width:640px">
               <label class="field"><span>Note (optional)</span><textarea class="textarea" rows="2" placeholder="What did you find out?" x-model="notes[r.key]"></textarea></label>
