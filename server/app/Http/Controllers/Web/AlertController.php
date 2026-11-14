@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Web;
 use App\Http\Controllers\Controller;
 use App\Models\Alert;
 use App\Models\LabSession;
+use App\Models\Pc;
+use App\Models\SessionPc;
 use App\Services\Audit;
 use App\Services\EventIngestor;
 use Illuminate\Http\Request;
@@ -13,19 +15,32 @@ class AlertController extends Controller
 {
     public function index(Request $request)
     {
-        $q = Alert::query()->with(['pc:id,name', 'acknowledger:id,name'])->latest('occurred_at');
-        if ($s = $request->integer('session')) {
-            $q->where('lab_session_id', $s);
+        $sessionId = $request->integer('session');
+        $base = Alert::query()->when($sessionId, fn ($q) => $q->where('lab_session_id', $sessionId));
+        $openOnly = $request->boolean('open');
+
+        $sevQuery = clone $base;
+        if ($openOnly) {
+            $sevQuery->whereNull('acknowledged_at');
         }
+        $sevCounts = $sevQuery->selectRaw('severity, count(*) as n')->groupBy('severity')->pluck('n', 'severity');
+        $sevTotals = [];
+        foreach (['critical', 'high', 'medium', 'low', 'info'] as $sName) {
+            $sevTotals[$sName] = (int) ($sevCounts[$sName] ?? 0);
+        }
+
+        $q = (clone $base)->with(['pc:id,name,retired_at', 'acknowledger:id,name'])->latest('occurred_at');
         if ($sev = $request->string('severity')->toString()) {
             $q->where('severity', $sev);
         }
-        if ($request->boolean('open')) {
+        if ($openOnly) {
             $q->whereNull('acknowledged_at');
         }
 
         return view('alerts.index', [
-            'alerts' => $q->paginate(50)->withQueryString(),
+            'alerts' => $q->paginate(100)->withQueryString(),
+            'openTotal' => (clone $base)->whereNull('acknowledged_at')->count(),
+            'sevTotals' => $sevTotals,
             'sessions' => LabSession::query()->latest('starts_at')->limit(30)->get(['id', 'course', 'starts_at', 'mode']),
             'filters' => $request->only(['session', 'severity', 'open']),
         ]);
@@ -37,11 +52,48 @@ class AlertController extends Controller
         $alert->forceFill(['acknowledged_by' => $request->user()->id, 'acknowledged_at' => now(),
             'comment' => $d['comment'] ?? $alert->comment])->save();
         Audit::log('alert.ack', $alert, ['comment' => $d['comment'] ?? null]);
-        $pc = $alert->pc;
-        $ingestor->refreshLiveScore($pc, $alert->session);
+        $tile = $alert->pc ? $this->syncPcLiveState($alert->pc, $ingestor) : null;
+
+        return $request->expectsJson()
+            ? response()->json(['ok' => true, 'pc' => $tile])
+            : back()->with('status', 'Alert acknowledged.');
+    }
+
+    public function acknowledgeBatch(Request $request, EventIngestor $ingestor)
+    {
+        $d = $request->validate([
+            'ids' => 'required|array|min:1|max:500',
+            'ids.*' => 'integer',
+            'comment' => 'nullable|string|max:2000',
+        ]);
+        $alerts = Alert::query()->whereIn('id', $d['ids'])->get();
+        $now = now();
+        $userId = $request->user()->id;
+        foreach ($alerts as $alert) {
+            $alert->forceFill([
+                'acknowledged_by' => $userId,
+                'acknowledged_at' => $now,
+                'comment' => $d['comment'] ?? $alert->comment,
+            ])->save();
+            Audit::log('alert.ack', $alert, ['comment' => $d['comment'] ?? null]);
+        }
+        $pcs = Pc::query()->whereIn('id', $alerts->pluck('pc_id')->unique()->filter())->get();
+        $tiles = $pcs->map(fn (Pc $pc) => $this->syncPcLiveState($pc, $ingestor))->values()->all();
+
+        return response()->json(['ok' => true, 'pcs' => $tiles]);
+    }
+
+    private function syncPcLiveState(Pc $pc, EventIngestor $ingestor): array
+    {
+        $activeSession = LabSession::activeFor($pc->lab_id);
+        $inSession = $activeSession && SessionPc::query()
+            ->where('lab_session_id', $activeSession->id)
+            ->where('pc_id', $pc->id)
+            ->exists();
+        $ingestor->refreshLiveScore($pc, $inSession ? $activeSession : null);
         $pc->save();
         broadcast(new \App\Events\PcUpdated($pc));
 
-        return $request->expectsJson() ? response()->json(['ok' => true]) : back()->with('status', 'Alert acknowledged.');
+        return $pc->tile();
     }
 }

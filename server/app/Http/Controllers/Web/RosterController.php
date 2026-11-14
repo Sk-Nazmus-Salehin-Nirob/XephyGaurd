@@ -54,7 +54,7 @@ class RosterController extends Controller
             'form_version' => $d['form_version'] ?? '1.0', 'recorded_by' => $request->user()->id, 'recorded_at' => now()]);
         Audit::log('consent.record', $student, ['granted' => (bool) $d['granted']]);
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 
     public function exempt(Request $request, Student $student)
@@ -63,7 +63,7 @@ class RosterController extends Controller
         $student->update(['exempt' => (bool) $d['exempt'], 'exempt_reason' => $d['exempt'] ? $d['reason'] : null]);
         Audit::log('student.exempt', $student, $d);
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 
     public function pseudonymize(Request $request)
@@ -71,6 +71,6 @@ class RosterController extends Controller
         Setting::put('pseudonymize_exports', $request->boolean('enabled'));
         Audit::log('settings.pseudonymize', null, ['enabled' => $request->boolean('enabled')]);
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 }

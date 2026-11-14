@@ -18,6 +18,21 @@ Unicode true
 !ifndef BUILD_DIR
   !define BUILD_DIR "..\..\agent\build-windows\Release"
 !endif
+!ifndef DEFAULT_CCC
+  !define DEFAULT_CCC ""
+!endif
+!ifndef DEFAULT_KEY
+  !define DEFAULT_KEY ""
+!endif
+!ifndef DEFAULT_CAFP
+  !define DEFAULT_CAFP ""
+!endif
+!ifndef CCC_API_PORT
+  !define CCC_API_PORT "8443"
+!endif
+!ifndef CCC_DISCOVERY_PORT
+  !define CCC_DISCOVERY_PORT "47474"
+!endif
 
 Name "XephyGuard Agent ${VERSION}"
 OutFile "XephyGuard-Setup-${VERSION}.exe"
@@ -25,9 +40,18 @@ InstallDir "$PROGRAMFILES64\XephyGuard"
 RequestExecutionLevel admin
 ShowInstDetails show
 SetOverwrite on
+
+!define MUI_ICON "app.ico"
+!define MUI_UNICON "app.ico"
+
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "XephyGuard Agent"
+VIAddVersionKey "CompanyName" "Xerophyte Labs"
+VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 Xerophyte Labs. All rights reserved."
+VIAddVersionKey "FileDescription" "XephyGuard Academic Security Agent Setup"
 VIAddVersionKey "FileVersion" "${VERSION}"
+VIAddVersionKey "ProductVersion" "${VERSION}"
+VIAddVersionKey "OriginalFilename" "XephyGuard-Setup-${VERSION}.exe"
 
 Var KEY
 Var CCC
@@ -52,9 +76,9 @@ Function .onInit
     Abort
   ${EndIf}
   SetRegView 64
-  StrCpy $KEY ""
-  StrCpy $CCC "192.168.0.51"
-  StrCpy $CAFP "2d0709ea9d88aa7bbac511a60eb7f75cf575123756304bf2f5ef165888ebdec2"
+  StrCpy $KEY "${DEFAULT_KEY}"
+  StrCpy $CCC "${DEFAULT_CCC}"
+  StrCpy $CAFP "${DEFAULT_CAFP}"
   ${GetParameters} $0
   ${GetOptions} $0 "/ENROLLKEY=" $1
   ${If} $1 != ""
@@ -80,10 +104,6 @@ Function ServerConfigPage
   ${If} ${Silent}
   ${AndIf} $KEY != ""
     Abort
-  ${EndIf}
-
-  ${If} $KEY == ""
-    StrCpy $KEY "XG-A77CFB-6554C8-489B53"
   ${EndIf}
 
   nsDialogs::Create 1018
@@ -173,7 +193,7 @@ Section "Agent" SecAgent
   ${If} ${FileExists} "$EXEDIR\ca.crt"
     CopyFiles /SILENT "$EXEDIR\ca.crt" "$COMMONPROGRAMDATA\XephyGuard\ca.crt"
   ${EndIf}
-  nsExec::ExecToLog 'icacls "$COMMONPROGRAMDATA\XephyGuard" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"'
+  nsExec::ExecToLog 'icacls "$COMMONPROGRAMDATA\XephyGuard" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX"'
   nsExec::ExecToLog 'icacls "$INSTDIR" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX"'
 
   ; tamper manifest (expected hashes of our binaries)
@@ -182,6 +202,13 @@ Section "Agent" SecAgent
   ; lab CA -> LocalMachine\Root
   ${If} ${FileExists} "$COMMONPROGRAMDATA\XephyGuard\ca.crt"
     nsExec::ExecToLog 'certutil -addstore -f Root "$COMMONPROGRAMDATA\XephyGuard\ca.crt"'
+  ${EndIf}
+
+  ; Xerophyte Labs code signing certificate -> LocalMachine\Root & LocalMachine\TrustedPublisher
+  File /nonfatal "XerophyteLabs-CodeSigning.cer"
+  ${If} ${FileExists} "$INSTDIR\XerophyteLabs-CodeSigning.cer"
+    nsExec::ExecToLog 'certutil -addstore -f Root "$INSTDIR\XerophyteLabs-CodeSigning.cer"'
+    nsExec::ExecToLog 'certutil -addstore -f TrustedPublisher "$INSTDIR\XerophyteLabs-CodeSigning.cer"'
   ${EndIf}
 
   ; service: LocalSystem, automatic, restart on failure (5 s, 5 s, 30 s), reset after 1 day
@@ -228,10 +255,14 @@ Section "Agent" SecAgent
   FileOpen $2 "$COMMONPROGRAMDATA\XephyGuard\agent.toml" w
   FileWrite $2 "# XephyGuard agent configuration. Managed by the agent; edit only with administrator rights.$\r$\n"
   FileWrite $2 "[ccc]$\r$\n"
-  FileWrite $2 'host = "$CCC"$\r$\n'
-  FileWrite $2 "api_port = 8443$\r$\n"
-  FileWrite $2 "discovery_port = 47474$\r$\n"
-  FileWrite $2 'ca_fingerprint = "$CAFP"$\r$\n'
+  ${If} $CCC != ""
+    FileWrite $2 'host = "$CCC"$\r$\n'
+  ${EndIf}
+  FileWrite $2 "api_port = ${CCC_API_PORT}$\r$\n"
+  FileWrite $2 "discovery_port = ${CCC_DISCOVERY_PORT}$\r$\n"
+  ${If} $CAFP != ""
+    FileWrite $2 'ca_fingerprint = "$CAFP"$\r$\n'
+  ${EndIf}
   FileClose $2
 
   ; enrollment (parameters passed at deploy time via /ENROLLKEY=, /CAFP=, /CCC= or interactive dialog)

@@ -37,18 +37,19 @@ class ProfileController extends Controller
             $collect[$c] = in_array($c, $d['collect'] ?? [], true);
         }
         $ruleActions = [];
-        foreach (array_filter(array_map('trim', explode(',', $d['kill_rules'] ?? ''))) as $rid) {
+        foreach (array_filter(array_map('trim', preg_split('/[\s,]+/', (string) ($d['kill_rules'] ?? '')) ?: [])) as $rid) {
             $ruleActions[$rid] = ['log', 'warn', 'kill', 'alert'];
         }
         $data = [
             'name' => $d['name'], 'mode' => $d['mode'], 'description' => $d['description'] ?? null,
             'network' => ['block_categories' => array_values($d['block_categories'] ?? []),
-                'strict_egress' => (bool) ($d['strict_egress'] ?? false), 'google_udm14' => (bool) ($d['google_udm14'] ?? true)],
+                'strict_egress' => (bool) ($d['strict_egress'] ?? false), 'google_udm14' => (bool) ($d['google_udm14'] ?? false)],
             'agent' => array_filter(['title_capture' => $d['title_capture'], 'collect' => $collect,
                 'rule_actions' => $ruleActions ?: null]),
         ];
         $profile = $profile?->exists ? tap($profile)->update($data) : Profile::create($data);
         Audit::log('profile.save', $profile, ['name' => $profile->name]);
+        app(\App\Services\NetworkPolicyWriter::class)->write();
 
         return back()->with('status', 'Profile saved.');
     }
@@ -77,19 +78,19 @@ class ProfileController extends Controller
         return back()->with('status', 'Timetable entry added.');
     }
 
-    public function toggleEntry(TimetableEntry $entry)
+    public function toggleEntry(Request $request, TimetableEntry $entry)
     {
         $entry->update(['enabled' => ! $entry->enabled]);
         Audit::log('timetable.toggle', $entry, ['enabled' => $entry->enabled]);
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 
-    public function deleteEntry(TimetableEntry $entry)
+    public function deleteEntry(Request $request, TimetableEntry $entry)
     {
         Audit::log('timetable.delete', $entry, $entry->only(['course', 'weekday', 'start_time']));
         $entry->delete();
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 }

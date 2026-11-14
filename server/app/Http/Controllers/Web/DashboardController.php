@@ -13,32 +13,64 @@ use App\Models\PasteEvent;
 use App\Models\Pc;
 use App\Models\Profile;
 use App\Models\Seat;
+use App\Models\SessionPc;
 use App\Services\Audit;
+use App\Services\EventIngestor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function index(EventIngestor $ingestor)
     {
         $lab = Lab::current();
         $session = LabSession::activeFor($lab->id);
+        $pcs = Pc::query()->active()->where('lab_id', $lab->id)->with('agent:id,pc_id,version')->orderBy('name')->get();
+        $ingestor->reconcileLiveScores($pcs, $session);
 
         return view('dashboard.live', [
             'lab' => $lab,
             'session' => $session?->load('profile'),
             'seats' => Seat::query()->where('lab_id', $lab->id)->get(['id', 'label', 'x', 'y']),
-            'pcs' => Pc::query()->active()->where('lab_id', $lab->id)->orderBy('name')->get()->map->tile(),
+            'pcs' => $pcs->map(fn ($p) => $p->tile() + [
+                'hostname' => $p->hostname,
+                'ip' => $p->ip,
+                'os_version' => $p->os_version,
+                'capabilities' => $p->capabilities,
+                'agent_version' => $p->agent?->version,
+            ]),
             'profiles' => Profile::query()->orderBy('mode')->get(['id', 'name', 'mode']),
-            'recentAlerts' => Alert::query()->with('pc:id,name')->latest('occurred_at')->limit(30)->get()->map->broadcastPayload(),
+            'recentAlerts' => Alert::query()->whereNull('acknowledged_at')
+                ->with(['pc:id,name,retired_at', 'acknowledger:id,name'])
+                ->latest('occurred_at')->limit(500)->get()
+                ->concat(
+                    Alert::query()->whereNotNull('acknowledged_at')
+                        ->with(['pc:id,name,retired_at', 'acknowledger:id,name'])
+                        ->latest('acknowledged_at')->limit(30)->get()
+                )
+                ->map(fn ($a) => $a->broadcastPayload() + [
+                    'pc_retired' => $a->pc?->retired_at !== null,
+                    'occurred_at_iso' => $a->occurred_at?->toIso8601String(),
+                    'ago_min' => $a->occurred_at ? max(0, (int) $a->occurred_at->diffInMinutes(now())) : 0,
+                    'acked' => $a->acknowledged_at !== null,
+                    'by' => $a->acknowledger?->name ?? '',
+                    'note' => $a->comment ?? '',
+                ]),
         ]);
     }
 
     /** Detail drawer: timeline, processes, network log, key-rate chart, paste log. */
-    public function pc(Pc $pc): JsonResponse
+    public function pc(Pc $pc, EventIngestor $ingestor): JsonResponse
     {
         $session = LabSession::activeFor($pc->lab_id);
+        $inSession = $session && SessionPc::query()->where('lab_session_id', $session->id)->where('pc_id', $pc->id)->exists();
+        $prevStatus = $pc->status;
+        $prevScore = (int) $pc->live_score;
+        $ingestor->refreshLiveScore($pc, $inSession ? $session : null);
+        if ($pc->status !== $prevStatus || (int) $pc->live_score !== $prevScore) {
+            $pc->save();
+        }
         $since = $session?->started_at ?? now()->subHours(24);
         $events = Event::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)
             ->whereNotIn('type', ['key_stats', 'heartbeat', 'process_snapshot', 'extension_scan', 'artifact_scan'])->latest('occurred_at')->limit(200)->get(['type', 'occurred_at', 'data', 'user'])
@@ -58,9 +90,57 @@ class DashboardController extends Controller
             'keys' => $g->sum('keys'), 'backspaces' => $g->sum('backspaces'), 'pastes' => $g->sum('paste_chords'),
         ]);
 
+        $sessionPc = $session ? \App\Models\SessionPc::where('lab_session_id', $session->id)->where('pc_id', $pc->id)->first() : null;
+        $student = $sessionPc?->student_id ? \App\Models\Student::find($sessionPc->student_id) : \App\Models\Student::forLogin($pc->current_user);
+        $netEvents = NetEvent::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)->latest('occurred_at')
+            ->limit(100)->get(['host', 'path', 'layer', 'action', 'category', 'matched', 'occurred_at']);
+
+        $agentAiTraffic = $events->where('type', 'rule_hit')
+            ->filter(fn ($e) => ! empty($e->data['context']['domain'] ?? ''))
+            ->values()
+            ->map(fn ($e) => [
+                'at' => $e->occurred_at->format('H:i:s'),
+                'rule_id' => $e->data['rule_id'] ?? '',
+                'description' => $e->data['description'] ?? '',
+                'process' => $e->data['context']['process'] ?? ($e->data['context']['ide'] ?? ''),
+                'domain' => $e->data['context']['domain'] ?? '',
+                'remote_ip' => $e->data['context']['remote_ip'] ?? '',
+                'sent_kb' => $e->data['context']['sent_kb'] ?? 0,
+                'recv_kb' => $e->data['context']['recv_kb'] ?? 0,
+                'count' => 1,
+                'mode' => 'Observed',
+            ]);
+
+        $proxyAiTraffic = $netEvents
+            ->filter(fn ($n) => in_array($n->action, ['observed', 'blocked'], true)
+                && in_array($n->category, ['ai', 'ide', 'search_ai'], true))
+            ->groupBy(fn ($n) => ($n->host ?: $n->matched ?: '').'|'.$n->action)
+            ->values()
+            ->map(function ($group) {
+                $first = $group->first();
+
+                return [
+                    'at' => $first->occurred_at?->format('H:i:s'),
+                    'rule_id' => 'proxy.'.($first->category ?? 'ai'),
+                    'description' => match ($first->category) {
+                        'ide' => 'IDE AI backend',
+                        'search_ai' => 'Search AI',
+                        default => 'AI web service',
+                    },
+                    'process' => 'proxy ('.$first->layer.')',
+                    'domain' => $first->host ?: ($first->matched ?? ''),
+                    'remote_ip' => '',
+                    'sent_kb' => 0,
+                    'recv_kb' => 0,
+                    'count' => $group->count(),
+                    'mode' => $first->action === 'blocked' ? 'Blocked' : 'Observed',
+                ];
+            });
+
         return response()->json([
             'pc' => $pc->tile() + ['hostname' => $pc->hostname, 'os_version' => $pc->os_version, 'ip' => $pc->ip,
                 'capabilities' => $pc->capabilities, 'usage' => $pc->usage, 'agent_version' => $pc->agent?->version],
+            'student' => $student ? ['id' => $student->id, 'name' => $student->name, 'login' => $student->login] : null,
             'alerts' => Alert::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)->latest('occurred_at')
                 ->limit(50)->get(['id', 'rule_id', 'severity', 'title', 'occurred_at', 'acknowledged_at'])
                 ->map(fn ($a) => [
@@ -86,19 +166,7 @@ class DashboardController extends Controller
                     'user' => $e->user ?: ($e->data['user'] ?? ''),
                     'ai_site' => $e->data['ai_site'] ?? '',
                 ]),
-            'ai_traffic' => $events->where('type', 'rule_hit')
-                ->filter(fn ($e) => ! empty($e->data['context']['domain'] ?? ''))
-                ->values()
-                ->map(fn ($e) => [
-                    'at' => $e->occurred_at->format('H:i:s'),
-                    'rule_id' => $e->data['rule_id'] ?? '',
-                    'description' => $e->data['description'] ?? '',
-                    'process' => $e->data['context']['process'] ?? ($e->data['context']['ide'] ?? ''),
-                    'domain' => $e->data['context']['domain'] ?? '',
-                    'remote_ip' => $e->data['context']['remote_ip'] ?? '',
-                    'sent_kb' => $e->data['context']['sent_kb'] ?? 0,
-                    'recv_kb' => $e->data['context']['recv_kb'] ?? 0,
-                ]),
+            'ai_traffic' => $agentAiTraffic->concat($proxyAiTraffic)->sortByDesc('at')->values(),
             'processes' => $events->whereIn('type', ['process_start', 'process_stop'])->values()
                 ->map(fn ($e) => ['at' => $e->occurred_at->format('H:i:s'), 'type' => $e->type, 'pid' => $e->data['pid'] ?? null, 'exe' => $e->data['exe'] ?? '', 'rule' => $e->data['rule_id'] ?? '']),
             'adapters' => Event::query()->where('pc_id', $pc->id)->where('type', 'net_adapter')->latest('occurred_at')
@@ -134,12 +202,10 @@ class DashboardController extends Controller
                     'model' => $e->data['model'] ?? '',
                     'rule_id' => $e->data['rule_id'] ?? '',
                 ]),
-            'network' => NetEvent::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)->latest('occurred_at')
-                ->limit(100)->get(['host', 'path', 'layer', 'action', 'category', 'occurred_at'])
-                ->map(fn ($n) => [
-                    'host' => $n->host, 'path' => $n->path, 'layer' => $n->layer, 'action' => $n->action,
-                    'category' => $n->category, 'occurred_at' => $n->occurred_at?->format('H:i:s'),
-                ]),
+            'network' => $netEvents->map(fn ($n) => [
+                'host' => $n->host, 'path' => $n->path, 'layer' => $n->layer, 'action' => $n->action,
+                'category' => $n->category, 'occurred_at' => $n->occurred_at?->format('H:i:s'),
+            ]),
             'pastes' => PasteEvent::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)->latest('occurred_at')
                 ->limit(100)->get(['is_copy', 'chars', 'lines', 'looks_like_code', 'source_app', 'target_app', 'occurred_at'])
                 ->map(fn ($p) => [
@@ -158,7 +224,11 @@ class DashboardController extends Controller
             'process_start' => 'started '.($d['exe'] ?? '?'),
             'process_stop' => 'stopped pid '.($d['pid'] ?? '?'),
             'window_focus' => 'focus '.($d['app'] ?? '').(($d['title'] ?? '') && ($d['title'] ?? '') !== ($d['app'] ?? '') ? ': '.$d['title'] : ''),
-            'paste', 'copy' => $type.' '.($d['chars'] ?? 0).' chars / '.($d['lines'] ?? 0).' lines'.(($d['code'] ?? false) ? ' (code)' : ''),
+            'paste' => (! empty($d['src']) || ! empty($d['dst']))
+                ? ($d['src'] ?: '?').' → '.($d['dst'] ?: '?').': paste '.($d['chars'] ?? 0).' chars / '.($d['lines'] ?? 0).' lines'.(($d['code'] ?? false) ? ' (code)' : '')
+                : 'paste '.($d['chars'] ?? 0).' chars / '.($d['lines'] ?? 0).' lines'.(($d['code'] ?? false) ? ' (code)' : ''),
+            'copy' => (! empty($d['src']) ? ($d['src'].': ') : '')
+                .'copy '.($d['chars'] ?? 0).' chars / '.($d['lines'] ?? 0).' lines'.(($d['code'] ?? false) ? ' (code)' : ''),
             'listening_port' => 'port '.($d['address'] ?? '127.0.0.1').':'.($d['port'] ?? '?').' ('.($d['process'] ?? '?').') ['.($d['rule_id'] ?? '').']',
             'net_adapter' => ($d['change'] ?? '').' adapter '.($d['name'] ?? '').(! empty($d['description']) ? ' ('.$d['description'].')' : (! empty($d['driver']) ? ' ('.$d['driver'].')' : '')).(! empty($d['kind']) ? ' ['.$d['kind'].']' : ''),
             'device' => ($d['action'] ?? '').' '.($d['class'] ?? 'usb').' '.(($d['model'] ?? '') ?: (($d['vendor'] ?? '') ? ($d['vendor'].':'.($d['product'] ?? '')) : '')).(! empty($d['rule_id']) ? ' ['.$d['rule_id'].']' : ''),

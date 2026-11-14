@@ -46,31 +46,36 @@ class SignatureController extends Controller
 
     public function import(Request $request, BlocklistService $svc, NetworkPolicyWriter $net)
     {
-        $d = $request->validate(['category' => 'required|in:'.implode(',', BlocklistEntry::CATEGORIES),
-            'file' => 'required|file|max:4096', 'source' => 'nullable|string|max:24']);
-        $n = $svc->import($d['category'], $request->file('file')->get(), 'import:'.($d['source'] ?? 'file'), $request->user()->id);
+        $d = $request->validate([
+            'category' => 'required|in:'.implode(',', BlocklistEntry::CATEGORIES),
+            'file' => 'required_without:text|nullable|file|max:4096',
+            'text' => 'required_without:file|nullable|string|max:200000',
+            'source' => 'nullable|string|max:24',
+        ]);
+        $raw = $request->hasFile('file') ? $request->file('file')->get() : (string) ($d['text'] ?? '');
+        $n = $svc->import($d['category'], $raw, 'import:'.($d['source'] ?? 'file'), $request->user()->id);
         Audit::log('blocklist.import', null, ['category' => $d['category'], 'added' => $n]);
         $net->write();
 
         return back()->with('status', "$n entries imported.");
     }
 
-    public function toggleEntry(BlocklistEntry $entry, NetworkPolicyWriter $net)
+    public function toggleEntry(Request $request, BlocklistEntry $entry, NetworkPolicyWriter $net)
     {
         $entry->update(['enabled' => ! $entry->enabled]);
         Audit::log('blocklist.toggle', $entry, ['value' => $entry->value, 'enabled' => $entry->enabled]);
         $net->write();
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 
-    public function deleteEntry(BlocklistEntry $entry, NetworkPolicyWriter $net)
+    public function deleteEntry(Request $request, BlocklistEntry $entry, NetworkPolicyWriter $net)
     {
         Audit::log('blocklist.delete', $entry, $entry->only(['category', 'value']));
         $entry->delete();
         $net->write();
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 
     public function saveRule(Request $request)
@@ -91,18 +96,22 @@ class SignatureController extends Controller
         return back()->with('status', 'Rule saved. Press "Publish" to push it to agents.');
     }
 
-    public function toggleRule(Rule $rule)
+    public function toggleRule(Request $request, Rule $rule)
     {
         $rule->update(['enabled' => ! $rule->enabled]);
         Audit::log('rule.toggle', $rule, ['enabled' => $rule->enabled]);
 
-        return back();
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }
 
     /** Compile + sign a new bundle and tell every agent to refresh (hot reload). */
     public function publish(Request $request, SignatureCompiler $compiler, CommandBus $bus)
     {
-        $v = $compiler->publish($request->user()->id, $request->string('note')->toString() ?: null);
+        try {
+            $v = $compiler->publish($request->user()->id, $request->string('note')->toString() ?: null);
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
         $n = $bus->sendMany(Pc::query()->active()->get(), 'policy_updated');
         Audit::log('signatures.publish', $v, ['version' => $v->version, 'agents' => $n]);
 

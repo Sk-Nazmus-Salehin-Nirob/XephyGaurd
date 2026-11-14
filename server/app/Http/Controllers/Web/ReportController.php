@@ -51,6 +51,15 @@ class ReportController extends Controller
         return view('reports.session', $this->data($session));
     }
 
+    public function showByNumber(int $num)
+    {
+        $session = LabSession::find($num);
+
+        return $session
+            ? view('reports.session', $this->data($session))
+            : view('reports.session');
+    }
+
     public function student(LabSession $session, Student $student)
     {
         $data = $this->data($session);

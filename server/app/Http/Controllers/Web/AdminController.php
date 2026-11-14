@@ -32,9 +32,15 @@ class AdminController extends Controller
     public function settings()
     {
         $keys = ['lab_name', 'network_mode', 'ccc_ip', 'lab_subnet', 'retention_days_raw', 'retention_days_reports',
-            'notice_text', 'paste_alert_chars'];
+            'notice_text', 'paste_alert_chars', 'timezone', 'google_search_url'];
         $values = collect($keys)->mapWithKeys(fn ($k) => [$k => Setting::get($k)])->all();
+        $lab = \App\Models\Lab::current();
+        $values['lab_name'] ??= $lab->name;
+        $values['ccc_ip'] ??= $lab->ccc_ip ?: (filter_var(request()->getHost(), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? request()->getHost() : '127.0.0.1');
+        $values['lab_subnet'] ??= $lab->subnet ?: '192.168.10.0/24';
         $values['paste_alert_chars'] ??= 800;
+        $values['timezone'] ??= config('app.timezone', 'UTC');
+        $values['google_search_url'] ??= 'https://www.google.com/search?q={searchTerms}&udm=14';
         foreach (['always_on', 'practice', 'test'] as $m) {
             $values["title_capture_$m"] = Setting::get("privacy.title_capture.$m", $m === 'always_on' ? 'off' : 'app_only');
         }
@@ -52,6 +58,7 @@ class AdminController extends Controller
             'ccc_ip' => 'required|ipv4', 'lab_subnet' => ['required', 'regex:#^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$#'],
             'retention_days_raw' => 'required|integer|min:7|max:1095', 'retention_days_reports' => 'required|integer|min:30|max:3650',
             'notice_text' => 'required|string|max:2000', 'paste_alert_chars' => 'required|integer|min:50|max:100000',
+            'timezone' => 'nullable|timezone|max:64', 'google_search_url' => ['nullable', 'string', 'max:500', 'regex:#^https?://\S+$#i'],
             'title_capture_always_on' => 'required|in:off,app_only,full', 'title_capture_practice' => 'required|in:off,app_only,full',
             'title_capture_test' => 'required|in:off,app_only,full', 'log_urls' => 'nullable|boolean', 'log_queries' => 'nullable|boolean',
             'inspect_hosts' => 'nullable|string|max:5000', 'google_hide_selectors' => 'nullable|string|max:5000',
@@ -59,10 +66,13 @@ class AdminController extends Controller
         foreach (['lab_name', 'network_mode', 'ccc_ip', 'lab_subnet', 'retention_days_raw', 'retention_days_reports', 'notice_text', 'paste_alert_chars'] as $k) {
             Setting::put($k, $d[$k]);
         }
+        Setting::put('timezone', ($d['timezone'] ?? '') ?: config('app.timezone', 'UTC'));
+        Setting::put('google_search_url', $d['google_search_url'] ?? '');
         foreach (['always_on', 'practice', 'test'] as $m) {
             Setting::put("privacy.title_capture.$m", $d["title_capture_$m"]);
         }
-        Setting::put('privacy.log_urls', ['enabled' => (bool) ($d['log_urls'] ?? false), 'query' => (bool) ($d['log_queries'] ?? false)]);
+        $logEnabled = (bool) ($d['log_urls'] ?? false);
+        Setting::put('privacy.log_urls', ['enabled' => $logEnabled, 'query' => $logEnabled && (bool) ($d['log_queries'] ?? false)]);
         $lines = fn ($s) => array_values(array_filter(array_map('trim', preg_split('/\R/', (string) $s))));
         Setting::put('inspect_hosts', $lines($d['inspect_hosts'] ?? '') ?: NetworkPolicyWriter::DEFAULT_INSPECT_HOSTS);
         Setting::put('google_hide_selectors', $lines($d['google_hide_selectors'] ?? ''));
@@ -97,13 +107,21 @@ class AdminController extends Controller
         $user = $user?->exists ? tap($user)->update($data) : User::create($data);
         Audit::log('user.save', $user, ['email' => $user->email, 'role' => $user->role, 'active' => $user->active]);
 
-        return back()->with('status', 'User saved.');
+        return $request->expectsJson()
+            ? response()->json(['ok' => true])
+            : back()->with('status', 'User saved.');
     }
 
     public function audit(Request $request)
     {
-        return view('admin.audit', ['entries' => AuditLog::query()->with('user:id,name')
-            ->when($request->string('action')->toString(), fn ($q, $a) => $q->where('action', 'like', "$a%"))
-            ->latest('id')->paginate(100)->withQueryString()]);
+        try {
+            $entries = AuditLog::query()->with('user:id,name')
+                ->when($request->string('action')->toString(), fn ($q, $a) => $q->where('action', 'like', "$a%"))
+                ->latest('id')->paginate(100)->withQueryString();
+        } catch (\Throwable) {
+            $entries = new \Illuminate\Pagination\LengthAwarePaginator([], 0, 100);
+        }
+
+        return view('admin.audit', ['entries' => $entries]);
     }
 }

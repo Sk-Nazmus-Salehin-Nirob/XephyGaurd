@@ -1,6 +1,4 @@
 """Exercises the mitmproxy addon with mitmproxy's own test helpers (recorded-style flows)."""
-import json
-
 import pytest
 
 mitmproxy = pytest.importorskip("mitmproxy")
@@ -85,6 +83,58 @@ def test_response_css_injection(addon):
     f.response = http.Response.make(200, b"<html><head></head><body>r</body></html>", {"content-type": "text/html"})
     addon.response(f)
     assert b'id="xephyguard"' in f.response.content
+
+
+def test_tls_clienthello_observes_allowed_ai_and_ide_traffic(addon):
+    from mitmproxy import tls
+    from mitmproxy.proxy import context
+
+    # Drain queue synchronously by reading emitted events after draining worker or inspecting queue before flush
+    emitted = []
+    orig_emit = addon.events.emit
+    addon.events.emit = lambda **kw: emitted.append(kw) or orig_emit(**kw)
+
+    def send_sni(ip, sni):
+        client = tutils.tclient_conn() if hasattr(tutils, "tclient_conn") else tflow.tclient_conn()
+        client.peername = (ip, 40000)
+        ctx = context.Context(client, None)
+        ch = tls.ClientHello(_client_hello_bytes(sni))
+        data = tls.ClientHelloData(ctx, ch)
+        addon.tls_clienthello(data)
+        return data
+
+    # 192.168.10.30 is in block_ai (blocks "ai", allows "ide"): Copilot backend passes but is observed!
+    d1 = send_sni("::ffff:192.168.10.30", "api.individual.githubcopilot.com")
+    assert d1.ignore_connection is True
+    # Second hit within window is deduplicated for the same (client_ip, matched)
+    send_sni("192.168.10.30", "api.individual.githubcopilot.com")
+    # Unrelated non-AI domain produces nothing when log_urls.enabled is False
+    send_sni("192.168.10.30", "github.com")
+    # Practice / no-session PC reaching ChatGPT is also observed
+    send_sni("192.168.10.99", "chat.openai.com")
+
+    assert len(emitted) == 2
+    assert emitted[0]["action"] == "observed"
+    assert emitted[0]["category"] == "ide"
+    assert emitted[0]["matched"] == "githubcopilot.com"
+    assert emitted[1]["action"] == "observed"
+    assert emitted[1]["category"] == "ai"
+    assert emitted[1]["matched"] == "openai.com"
+
+
+def test_http_request_observes_allowed_ai_path(addon):
+    emitted = []
+    orig_emit = addon.events.emit
+    addon.events.emit = lambda **kw: emitted.append(kw) or orig_emit(**kw)
+
+    # Exempt / non-session PC browsing duckduckgo AI chat via inspected/HTTP proxy
+    f = _flow("192.168.10.99", "duckduckgo.com", "/aichat?q=hi")
+    addon.request(f)
+    assert f.response is None
+    assert len(emitted) == 1
+    assert emitted[0]["action"] == "observed"
+    assert emitted[0]["category"] == "ai"
+    assert emitted[0]["matched"] == "duckduckgo.com/aichat"
 
 
 def _client_hello_bytes(sni: str) -> bytes:

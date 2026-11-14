@@ -134,4 +134,40 @@ class SessionNetworkTest extends TestCase
         $this->withToken('test-internal-token')->getJson('/api/internal/eval/results?pc_ip=192.168.10.21&since_ms='.(now()->getTimestampMs() - 60000))
             ->assertOk()->assertJsonPath('net_events.0.host', 'chatgpt.com')->assertJsonPath('pc.name', 'PC-01');
     }
+
+    public function test_observed_ai_and_ide_net_events_raise_alert_and_surface_in_dashboard(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        [$pc] = $this->enrolledPc('192.168.10.21', 'PC-01');
+        $pc->update(['last_seen_at' => now(), 'status' => 'clean']);
+        app(SessionManager::class)->start($lab, $this->profile('Practice: AI allowed, logged'), 'CS101');
+        $ts = now()->getTimestampMs();
+
+        $payload = ['events' => [
+            ['client_ip' => '::ffff:192.168.10.21', 'host' => 'api.individual.githubcopilot.com', 'layer' => 'sni',
+                'action' => 'observed', 'category' => 'ide', 'matched' => 'githubcopilot.com', 'ts' => $ts],
+            ['client_ip' => '192.168.10.21', 'host' => 'api.individual.githubcopilot.com', 'layer' => 'sni',
+                'action' => 'observed', 'category' => 'ide', 'matched' => 'githubcopilot.com', 'ts' => $ts + 1000],
+        ]];
+
+        $this->withToken('test-internal-token')->postJson('/api/internal/net-events', $payload)
+            ->assertOk()->assertJson(['stored' => 2]);
+
+        $this->assertDatabaseHas('net_events', [
+            'pc_id' => $pc->id, 'client_ip' => '192.168.10.21',
+            'host' => 'api.individual.githubcopilot.com', 'action' => 'observed', 'category' => 'ide',
+        ]);
+        // Two matching events in window deduplicate into a single high-severity alert
+        $this->assertSame(1, Alert::where('pc_id', $pc->id)->where('rule_id', 'proxy.ide_ai_observed')->count());
+        $this->assertSame('alert', $pc->fresh()->status);
+
+        $this->actingAs($this->user('assistant'))
+            ->getJson("/pcs/{$pc->id}")
+            ->assertOk()
+            ->assertJsonPath('ai_traffic.0.domain', 'api.individual.githubcopilot.com')
+            ->assertJsonPath('ai_traffic.0.mode', 'Observed')
+            ->assertJsonPath('ai_traffic.0.count', 2)
+            ->assertJsonPath('network.0.action', 'observed');
+    }
 }

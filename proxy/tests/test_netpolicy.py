@@ -107,3 +107,27 @@ def test_css_injection():
     out = inject_css(html, ["#ai", "div[data-x]"])
     assert '<style id="xephyguard">#ai,div[data-x]{display:none!important}</style></head>' in out
     assert inject_css(html, ["</style><script>"]) is None
+
+
+def test_ai_observation_matching_and_dedup(state_file, tmp_path):
+    from xg_netpolicy import generate
+    from xg_netpolicy.proxy_logic import EventShipper, PolicyCache
+
+    generate.generate(state_file, tmp_path / "net")
+    c = PolicyCache(tmp_path / "net" / "proxy.json")
+    assert c.match_ai_domain("api.openai.com") == ("openai.com", "ai")
+    assert c.match_ai_domain("api.individual.githubcopilot.com") == ("githubcopilot.com", "ide")
+    assert c.match_ai_domain("github.com") is None
+    assert c.match_ai_path("duckduckgo.com", "/aichat?q=1") == ("duckduckgo.com/aichat", "ai")
+    assert c.match_ai_path("duckduckgo.com", "/") is None
+
+    shipper = EventShipper(c, fallback=str(tmp_path / "ev.jsonl"))
+    try:
+        assert shipper.should_emit_observed("::ffff:192.168.10.30", "githubcopilot.com", window_s=30.0) is True
+        assert shipper.should_emit_observed("192.168.10.30", "githubcopilot.com", window_s=30.0) is False
+        assert shipper.should_emit_observed("192.168.10.31", "githubcopilot.com", window_s=30.0) is True
+        shipper.emit(client_ip="::ffff:192.168.10.30", host="api.githubcopilot.com", layer="sni", action="observed")
+        ev = shipper.q.get(timeout=1.0)
+        assert ev["client_ip"] == "192.168.10.30"
+    finally:
+        shipper.stop()

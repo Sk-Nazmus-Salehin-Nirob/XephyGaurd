@@ -47,6 +47,10 @@ struct Policy {
     std::set<std::string> kill_exempt;        // never kill these normalized exe names
     std::string signatures_version;
     std::string notice_text;                  // indicator / banner text
+    bool suppress_ai_overview = false;        // suppress Google Search AI overview locally via browser policies
+    std::string google_search_url;            // optional parameterized udm=14 URL template from server policy
+    std::string proxy_mode;                   // gateway | proxy_only
+    std::string proxy_pac_url;                // dynamic http://<ccc>/proxy.pac when proxy_mode == proxy_only
 
     static Policy default_for(Mode m);
     static Policy from_json(const json& j, std::string* err = nullptr);

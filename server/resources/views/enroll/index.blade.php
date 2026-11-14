@@ -1,59 +1,128 @@
-@extends('layouts.app')
+@extends('layouts.app', ['activePage' => 'enroll.html'])
 @section('title', 'Add a PC')
 @section('content')
-<div class="grid gap-4 lg:grid-cols-2">
-  <div class="card space-y-3">
-    <h2 class="text-lg font-semibold">Add a PC</h2>
-    <div><div class="label">Lab enrollment key</div>
-      <div class="flex items-center gap-2"><code class="rounded bg-slate-100 px-3 py-2 font-mono text-lg">{{ $key ?? '—' }}</code>
-        @if (auth()->user()->hasRole('admin'))<form method="post" action="{{ route('enroll.rotate') }}" onsubmit="return confirm('The old key stops working. Continue?')">@csrf<button class="btn btn-sm">Rotate</button></form>@endif</div></div>
-    <div><div class="label">CA fingerprint (SHA-256)</div><code class="text-xs break-all">{{ $fingerprint ?? 'CA not initialised' }}</code></div>
-    <div>
-      <div class="label">Linux (Ubuntu/Debian) — one line, as root</div>
-      <pre class="overflow-x-auto rounded bg-slate-900 p-3 text-xs text-slate-100">curl -fsSL http://{{ $ccc }}/install/linux.sh | sudo bash -s -- --key {{ $key }}</pre>
-      <p class="text-xs text-slate-500">Many PCs: use the Ansible role in installers/ansible (one inventory file).</p>
-    </div>
-    <div>
-      <div class="label">Windows — silent install (GPO, Intune, PDQ, imaging)</div>
-      <pre class="overflow-x-auto rounded bg-slate-900 p-3 text-xs text-slate-100">XephyGuard-Setup.exe /S /KEY={{ $key }} /CCC={{ $ccc }} /CAFP={{ $fingerprint }}</pre>
-    </div>
-    <div><div class="label">Downloads</div>
-      @forelse ($downloads as $d)<a class="mr-3 text-indigo-600 underline" href="{{ route('downloads', $d) }}">{{ $d }}</a>@empty
-        <p class="text-xs text-slate-500">No installers uploaded yet. Copy the release artifacts into <code>storage/app/public/downloads/</code> (scripts/release.sh does this).</p>@endforelse
-      <a class="ml-1 text-indigo-600 underline" href="{{ route('ca.cert') }}">xephyguard-ca.crt</a></div>
-    <p class="text-sm text-slate-600">New PCs find this CCC automatically and appear below as <b>Pending</b>. Click <b>Approve</b> — nothing else to configure.</p>
+@php
+  $cccHost = $ccc ?: request()->getHost();
+  $portSuffix = request()->getPort() && !in_array(request()->getPort(), [80, 443], true) ? ':' . request()->getPort() : '';
+  $baseUrl = (request()->isSecure() ? 'https://' : 'http://') . $cccHost . $portSuffix;
+  $exeName = $setupFile ?? '';
+
+  $livePending = isset($pending) && $pending->count() ? $pending->map(function ($e) {
+      return [
+          'id' => $e->id,
+          'real' => true,
+          'host' => $e->hostname,
+          'os' => trim($e->os . ' ' . ($e->os_version ?? '')),
+          'ip' => $e->ip ?? '—',
+          'mac' => collect($e->macs ?? [])->first() ?? '—',
+          'name' => $e->hostname,
+      ];
+  })->values()->all() : [];
+
+  $livePcs = isset($pcs) && $pcs->count() ? $pcs->map(function ($p) {
+      return [
+          'id' => $p->id,
+          'real' => true,
+          'name' => $p->name,
+          'host' => $p->hostname,
+          'os' => trim($p->os . ' ' . ($p->os_version ?? '')),
+          'ip' => $p->ip ?? '—',
+          'agent' => $p->agent?->version ?? '—',
+          'status' => $p->online() ? 'normal' : 'offline',
+          'lastSeen' => $p->last_seen_at ? $p->last_seen_at->diffForHumans() : 'Never',
+          'certExpires' => $p->agent?->cert_expires_at ? $p->agent->cert_expires_at->format('Y-m-d') : '—',
+          'retired' => $p->retired_at !== null,
+          'editingName' => false,
+      ];
+  })->values()->all() : [];
+@endphp
+<script type="application/json" id="xg-page-data">{!! json_encode([
+  'auto' => (bool) ($lab?->auto_approve ?? false),
+  'key' => $key ?? '',
+  'fp' => $fingerprint ?? '',
+  'macs' => implode("\n", $lab?->auto_approve_macs ?? []),
+  'exeName' => $exeName,
+  'cccHost' => $cccHost,
+  'baseUrl' => $baseUrl,
+  'pending' => $livePending,
+  'enrolled' => $livePcs,
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<div class="doc" x-data="enrollPage"><div class="optbar"><span class="otitle">Add a PC</span><span class="osub">Install the agent, then approve the PC when it appears.</span><span class="grow"></span><a class="btn" href="{{ route('downloads.index') }}"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Downloads</a></div><div class="canvas ">
+  
+
+  <div class="cols-2">
+    <section class="panel">
+      <div class="panel-head"><h2 class="h2">1. Install the agent</h2></div>
+      <div class="panel-body stack">
+        <div><div class="cmd-label">Lab enrolment key</div>
+          <div class="key">
+            <code x-text="key || 'Not set'"></code>
+            <button type="button" class="btn btn-sm" x-show="key" @click="xgCopy(key, 'Key copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg> Copy</button>
+            <form method="post" action="{{ route('enroll.rotate') }}" style="display:inline" @submit="confirmSubmit($event, 'The old key stops working for new installs. Continue?')">
+              @csrf
+              <button type="submit" class="btn btn-sm btn-quiet">Rotate</button>
+            </form>
+          </div>
+        </div>
+        <div>
+          <div class="seg" style="margin-bottom:10px"><button :aria-pressed="os === 'win'" @click="os = 'win'">Windows</button><button :aria-pressed="os === 'linux'" @click="os = 'linux'">Ubuntu / Debian</button></div>
+          <div class="cmd"><pre x-text="cmd"></pre><button class="btn btn-sm copy" @click="xgCopy(cmd, 'Command copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+          <p class="help" x-show="os === 'win'">Run as administrator. Works from Group Policy or a disk image.</p>
+          <p class="help" x-show="os === 'linux'" x-cloak>For a whole lab, use the Ansible role in <code>installers/ansible</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="h2">2. Approve new PCs</h2>
+        <span class="chip alert" x-show="pending.length" x-text="pending.length + ' waiting'"></span>
+        <form method="post" action="{{ route('enroll.approve_all') }}" x-show="pending.length" style="display:inline">
+          @csrf
+          <button type="submit" class="btn btn-sm">Approve all</button>
+        </form>
+      </div>
+      <template x-for="p in pending" :key="p.id">
+        <div class="row" style="padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:nowrap;--gap:14px">
+          <div class="grow" style="min-width:0"><div class="mono" style="font-weight:500" x-text="p.host"></div><div class="small muted" x-text="p.os + ' · ' + p.ip"></div></div>
+          <input class="input input-sm" style="width:110px" x-model="p.name" aria-label="Display name">
+          <button class="btn btn-sm btn-solid" @click="approve(p)">Approve</button><button class="btn btn-sm btn-quiet" @click="reject(p)">Reject</button>
+        </div>
+      </template>
+      <div class="empty-state" x-show="!pending.length"><b>No PCs waiting</b>New installs appear here.</div>
+      <form method="post" action="{{ route('enroll.auto') }}" class="panel-body stack" style="border-top:1px solid var(--border);background:var(--surface-2)">
+        @csrf
+        <label class="check"><span class="switch"><input type="checkbox" name="auto_approve" value="1" x-model="auto"><i></i></span> Approve known MAC addresses automatically</label>
+        <div class="stack" style="--gap:8px" x-show="auto">
+          <textarea name="macs" class="textarea mono" rows="3" x-model="macs"></textarea>
+          <div><button type="submit" class="btn btn-sm">Save list</button></div>
+        </div>
+      </form>
+    </section>
   </div>
-  <div class="card">
-    <div class="mb-2 flex items-center justify-between"><h2 class="text-lg font-semibold">Pending approval ({{ $pending->count() }})</h2>
-      @if ($pending->count() > 1)<form method="post" action="{{ route('enroll.approve_all') }}">@csrf<button class="btn btn-primary btn-sm">Approve all</button></form>@endif</div>
-    <table class="tbl"><tr><th>Hostname</th><th>OS</th><th>IP / MAC</th><th>Name</th><th></th></tr>
-      @forelse ($pending as $e)
-        <tr><td class="font-semibold">{{ $e->hostname }}</td><td class="text-xs">{{ $e->os }} {{ $e->os_version }}</td>
-          <td class="text-xs">{{ $e->ip }}<br>{{ implode(', ', $e->macs ?? []) }}</td>
-          <td colspan="2"><form method="post" action="{{ route('enroll.approve', $e) }}" class="flex gap-1">@csrf
-              <input name="name" class="input w-28" placeholder="{{ $e->hostname }}"><button class="btn btn-primary btn-sm">Approve</button></form>
-            <form method="post" action="{{ route('enroll.reject', $e) }}" class="mt-1">@csrf<button class="text-xs text-red-600">reject</button></form></td></tr>
-      @empty<tr><td colspan="5" class="py-6 text-center text-slate-500">Nothing pending.</td></tr>@endforelse
-    </table>
-    @if (auth()->user()->hasRole('admin'))
-      <form method="post" action="{{ route('enroll.auto') }}" class="mt-4 space-y-2 border-t border-slate-200 pt-3">@csrf
-        <label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" name="auto_approve" value="1" @checked($lab->auto_approve)> Auto-approve PCs whose MAC is on this list</label>
-        <textarea name="macs" rows="3" class="input font-mono text-xs" placeholder="aa:bb:cc:dd:ee:ff, one per line">{{ implode("\n", $lab->auto_approve_macs ?? []) }}</textarea>
-        <button class="btn btn-sm">Save</button></form>
-    @endif
-  </div>
-  <div class="card lg:col-span-2">
-    <h2 class="mb-2 text-lg font-semibold">Enrolled PCs ({{ $pcs->whereNull('retired_at')->count() }})</h2>
-    <table class="tbl"><tr><th>Name</th><th>Hostname</th><th>OS</th><th>IP</th><th>Agent</th><th>Last seen</th><th>Cert expires</th><th></th></tr>
-      @foreach ($pcs as $pc)
-        <tr @class(['opacity-50' => $pc->retired_at])>
-          <td><form method="post" action="{{ route('pcs.rename', $pc) }}" class="flex gap-1">@csrf<input name="name" value="{{ $pc->name }}" class="input w-32"><button class="btn btn-sm">✓</button></form></td>
-          <td>{{ $pc->hostname }}</td><td class="text-xs">{{ $pc->os }}</td><td>{{ $pc->ip }}</td><td>{{ $pc->agent?->version }}</td>
-          <td class="text-xs">{{ $pc->last_seen_at?->diffForHumans() ?? 'never' }}</td><td class="text-xs">{{ $pc->agent?->cert_expires_at?->format('Y-m-d') }}</td>
-          <td>@if ($pc->retired_at)<span class="text-xs">retired</span>@elseif (auth()->user()->hasRole('admin'))
-            <form method="post" action="{{ route('pcs.retire', $pc) }}" onsubmit="return confirm('Retire {{ $pc->name }}? Its credentials are revoked.')">@csrf<button class="text-xs text-red-600">retire</button></form>@endif</td></tr>
-      @endforeach
-    </table>
-  </div>
-</div>
+
+  <section class="panel">
+    <div class="panel-head"><h2 class="h2">Enrolled PCs</h2><span class="muted small" x-text="enrolled.length + ' total'"></span><input class="input input-sm" style="width:220px" placeholder="Search" x-model="q"></div>
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th>PC</th><th>Computer</th><th>System</th><th>Address</th><th>Agent</th><th>Last seen</th><th>Cert expires</th><th></th></tr></thead>
+      <tbody><template x-for="p in shown" :key="p.id"><tr :style="p.retired && 'opacity:.5'">
+        <td class="name">
+          <span class="dot" :class="p.status === 'offline' ? 'off' : 'ok'" style="margin-right:10px"></span>
+          <template x-if="!p.editingName">
+            <span><span x-text="p.name"></span> <button type="button" class="link-btn small muted" style="margin-left:6px" @click="p.editingName = true">Rename</button></span>
+          </template>
+          <template x-if="p.editingName">
+            <span class="row" style="display:inline-flex;--gap:6px"><input class="input input-sm" style="width:110px" x-model="p.name" @keydown.enter="renamePc(p)"><button type="button" class="btn btn-sm" @click="renamePc(p)">Save</button></span>
+          </template>
+        </td>
+        <td class="mono small" x-text="p.host"></td><td x-text="p.os"></td><td class="mono small" x-text="p.ip"></td>
+        <td><span class="mono small" x-text="p.agent && p.agent !== '—' ? 'v' + p.agent : '—'"></span></td>
+        <td class="small muted" x-text="p.lastSeen || 'Never'"></td>
+        <td class="mono small muted" x-text="p.certExpires || '—'"></td>
+        <td class="right"><button class="btn btn-sm btn-quiet" x-show="!p.retired" @click="retirePc(p)">Retire</button><span class="small muted" x-show="p.retired">Retired</span></td></tr></template>
+        <template x-if="!shown.length"><tr><td colspan="8" class="muted" style="padding:18px 16px">No enrolled PCs match this filter.</td></tr></template>
+      </tbody>
+    </table></div>
+  </section>
+</div></div>
 @endsection

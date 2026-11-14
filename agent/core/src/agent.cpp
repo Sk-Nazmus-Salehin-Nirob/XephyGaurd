@@ -52,6 +52,7 @@ Agent::Agent(Config cfg, std::string config_path, ServicePlatform& plat)
             auto j = json::parse(txt, nullptr, false);
             if (!j.is_discarded()) {
                 rules_.load(SignatureSet::from_json(j));
+                if (plat_.network) plat_.network->set_ai_domains(rules_.ai_domains());
                 log::info("signatures: loaded seed bundle {} ({} rules)", rules_.version(), SignatureSet::from_json(j).rule_count());
             }
         }
@@ -94,7 +95,11 @@ void Agent::apply_policy(const Policy& p) {
         reevaluate_ = true;
     }
     next_run_.clear();
-    if (plat_.system) plat_.system->set_exam_mode(p.mode == Mode::test);
+    if (plat_.system) {
+        plat_.system->set_exam_mode(p.mode == Mode::test);
+        plat_.system->set_browser_ai_overview_suppressed(p.suppress_ai_overview, p.google_search_url);
+        plat_.system->set_browser_proxy_pac(p.proxy_mode == "proxy_only" ? p.proxy_pac_url : std::string{});
+    }
     push_helper_config();
     if (stop_) restart_watchers();
 }
@@ -102,6 +107,14 @@ void Agent::apply_policy(const Policy& p) {
 bool Agent::apply_signatures(const json& env, bool require_signature) {
     if (!env.is_object() || !env.contains("bundle") || !env["bundle"].is_string()) return false;
     const std::string bundle = env["bundle"].get<std::string>();
+    const std::string env_version = env.value("version", "");
+    // Remember a refused version so the uplink loop does not refetch it in a tight loop.
+    auto reject = [&] {
+        std::lock_guard rl(rejected_sig_mu_);
+        rejected_sig_version_ = env_version;
+        rejected_sig_at_ms_ = now_ms();
+        return false;
+    };
     if (require_signature) {
         bool ok = false;
         const std::string ca = read_file(cfg_.ca_file, &ok);
@@ -109,19 +122,31 @@ bool Agent::apply_signatures(const json& env, bool require_signature) {
             log::error("signatures: bundle {} has an invalid signature; keeping {}", env.value("version", "?"),
                        rules_.version());
             sink_->emit(ev::tamper, {{"kind", "signature_invalid"}, {"bundle_version", env.value("version", "")}});
-            return false;
+            return reject();
         }
     }
     auto j = json::parse(bundle, nullptr, false);
-    if (j.is_discarded()) return false;
+    if (j.is_discarded()) return reject();
     std::string err;
     auto set = SignatureSet::from_json(j, &err);
     if (!err.empty()) {
         log::error("signatures: parse error: {}", err);
-        return false;
+        return reject();
+    }
+    // A bundle without any AI/IDE domain would blind domain monitoring on this PC. Keep the last-known-good
+    // bundle instead (a first load with nothing to lose is still accepted).
+    if (set.ai_domains.empty() && set.ide_domains.empty() && !rules_.ai_domains().empty()) {
+        log::warn("signatures: bundle {} has no domains; keeping {}", env.value("version", "?"), rules_.version());
+        return reject();
+    }
+    {
+        std::lock_guard rl(rejected_sig_mu_);
+        rejected_sig_version_.clear();
+        rejected_sig_at_ms_ = 0;
     }
     log::info("signatures: loaded {} ({} rules)", set.version, set.rule_count());
     rules_.load(std::move(set));
+    if (plat_.network) plat_.network->set_ai_domains(rules_.ai_domains());
     if (queue_) queue_->kv_set("signatures", env.dump());
     {
         std::lock_guard lk(hit_mu_);
@@ -130,6 +155,7 @@ bool Agent::apply_signatures(const json& env, bool require_signature) {
     known_extensions_.clear();
     last_ext_hash_.clear();
     rescan_extensions_ = true;
+    push_helper_config();   // the helper filters WSL extensions with the bundle's ids; refresh them now
     return true;
 }
 
@@ -396,6 +422,30 @@ void Agent::scan_devices() {
 }
 
 // ------------------------------------------------------------------------------ outbound AI traffic
+namespace {
+bool is_extension_host_proc(const std::string& p) {
+    return p == "code" || p == "code - insiders" || p == "vscodium" || p == "codium" || p == "copilot-runtime" ||
+           p == "copilot-language-server" || p == "copilot" || p == "cursor" || p == "windsurf";
+}
+
+bool is_browser_proc(const std::string& p) {
+    return p == "chrome" || p == "msedge" || p == "brave" || p == "firefox" || p == "opera" || p == "vivaldi" || p == "arc";
+}
+
+std::tuple<std::string, std::string, std::string> classify_ai_flow(const RuleEngine& rules,
+                                                                   const std::string& dom,
+                                                                   const std::string& proc) {
+    if (auto hit = rules.match_ai_domain(dom)) {
+        const std::string cat = (hit->category == "ide_ai_backend") ? "ai_extension" : "browser_ai";
+        return {hit->rule_id, cat, hit->description};
+    }
+    if (is_extension_host_proc(proc)) {
+        return {"net.ide_ai", "ai_extension", "IDE AI backend stream (" + dom + ")"};
+    }
+    return {"net.ai_traffic", "browser_ai", "Outbound AI network stream (" + dom + ")"};
+}
+}  // namespace
+
 void Agent::scan_ai_traffic() {
     if (!plat_.network) return;
     const int64_t now = steady_ms();
@@ -413,99 +463,19 @@ void Agent::scan_ai_traffic() {
     if (flows.empty()) return;
     rescan_extensions_ = true;
 
-    auto classify_domain = [](const std::string& dom) -> std::tuple<std::string, std::string, std::string> {
-        if (dom.find("githubcopilot.com") != std::string::npos)
-            return {"ext.copilot", "ai_extension", "GitHub Copilot outbound AI stream (" + dom + ")"};
-        if (dom.find("jetbrains.ai") != std::string::npos || dom.find("grazie.ai") != std::string::npos)
-            return {"ext.jb.ai_assistant", "ai_extension", "JetBrains AI outbound stream (" + dom + ")"};
-        if (dom.find("codeium.com") != std::string::npos || dom.find("windsurf.com") != std::string::npos)
-            return {"ext.codeium", "ai_extension", "Codeium / Windsurf outbound AI stream (" + dom + ")"};
-        if (dom.find("tabnine.com") != std::string::npos)
-            return {"ext.tabnine", "ai_extension", "Tabnine outbound AI stream (" + dom + ")"};
-        if (dom.find("sourcegraph.com") != std::string::npos)
-            return {"ext.cody", "ai_extension", "Sourcegraph Cody outbound AI stream (" + dom + ")"};
-        if (dom.find("supermaven.com") != std::string::npos)
-            return {"ext.supermaven", "ai_extension", "Supermaven outbound AI stream (" + dom + ")"};
-        if (dom.find("augmentcode.com") != std::string::npos)
-            return {"ext.augment", "ai_extension", "Augment Code outbound AI stream (" + dom + ")"};
-        if (dom.find("cursor.sh") != std::string::npos || dom.find("cursor.com") != std::string::npos ||
-            dom.find("anysphere.inc") != std::string::npos)
-            return {"proc.editor.cursor", "ai_editor", "Cursor AI outbound stream (" + dom + ")"};
-        if (dom.find("api.anthropic.com") != std::string::npos)
-            return {"ext.claude_code", "ai_extension", "Anthropic Claude API stream (" + dom + ")"};
-        if (dom.find("claude.ai") != std::string::npos)
-            return {"web.claude", "browser_ai", "Claude AI web stream (" + dom + ")"};
-        if (dom.find("chatgpt.com") != std::string::npos || dom.find("openai.com") != std::string::npos ||
-            dom.find("oaiusercontent.com") != std::string::npos)
-            return {"web.chatgpt", "browser_ai", "ChatGPT / OpenAI stream (" + dom + ")"};
-        if (dom.find("gemini.google.com") != std::string::npos || dom.find("aistudio.google.com") != std::string::npos ||
-            dom.find("generativelanguage.googleapis.com") != std::string::npos ||
-            dom.find("cloudaicompanion.googleapis.com") != std::string::npos)
-            return {"web.gemini", "browser_ai", "Google Gemini AI stream (" + dom + ")"};
-        if (dom.find("deepseek.com") != std::string::npos)
-            return {"web.deepseek", "browser_ai", "DeepSeek AI stream (" + dom + ")"};
-        if (dom.find("perplexity.ai") != std::string::npos)
-            return {"web.perplexity", "browser_ai", "Perplexity AI stream (" + dom + ")"};
-        if (dom.find("grok.com") != std::string::npos || dom.find("x.ai") != std::string::npos)
-            return {"web.grok", "browser_ai", "Grok (xAI) stream (" + dom + ")"};
-        if (dom.find("mistral.ai") != std::string::npos)
-            return {"web.mistral", "browser_ai", "Mistral AI stream (" + dom + ")"};
-        if (dom.find("groq.com") != std::string::npos)
-            return {"web.groq", "browser_ai", "Groq AI stream (" + dom + ")"};
-        if (dom.find("together.xyz") != std::string::npos)
-            return {"web.together", "browser_ai", "Together AI stream (" + dom + ")"};
-        if (dom.find("openrouter.ai") != std::string::npos)
-            return {"web.openrouter", "browser_ai", "OpenRouter AI stream (" + dom + ")"};
-        if (dom.find("fireworks.ai") != std::string::npos)
-            return {"web.fireworks", "browser_ai", "Fireworks AI stream (" + dom + ")"};
-        if (dom.find("cohere.ai") != std::string::npos || dom.find("cohere.com") != std::string::npos)
-            return {"web.cohere", "browser_ai", "Cohere AI stream (" + dom + ")"};
-        if (dom.find("phind.com") != std::string::npos)
-            return {"web.phind", "browser_ai", "Phind AI stream (" + dom + ")"};
-        if (dom.find("blackbox.ai") != std::string::npos)
-            return {"web.blackbox", "browser_ai", "Blackbox AI stream (" + dom + ")"};
-        if (dom.find("poe.com") != std::string::npos)
-            return {"web.poe", "browser_ai", "Poe AI stream (" + dom + ")"};
-        if (dom.find("v0.dev") != std::string::npos)
-            return {"web.v0", "browser_ai", "Vercel v0 AI stream (" + dom + ")"};
-        if (dom.find("bolt.new") != std::string::npos)
-            return {"web.bolt", "browser_ai", "Bolt.new AI stream (" + dom + ")"};
-        if (dom.find("lovable.dev") != std::string::npos)
-            return {"web.lovable", "browser_ai", "Lovable AI stream (" + dom + ")"};
-        if (dom.find("copilot.microsoft.com") != std::string::npos || dom.find("copilot.cloud.microsoft") != std::string::npos ||
-            dom.find("m365.cloud.microsoft") != std::string::npos || dom.find("copilot.bing.com") != std::string::npos ||
-            dom.find("sydney.bing.com") != std::string::npos)
-            return {"proc.desktop.copilot", "browser_ai", "Microsoft Copilot stream (" + dom + ")"};
-        if (dom.find("kimi.") != std::string::npos || dom.find("moonshot.") != std::string::npos)
-            return {"web.kimi", "browser_ai", "Kimi (Moonshot) AI stream (" + dom + ")"};
-        if (dom.find("qwen") != std::string::npos || dom.find("tongyi") != std::string::npos ||
-            dom.find("dashscope") != std::string::npos)
-            return {"web.qwen", "browser_ai", "Qwen (Alibaba) AI stream (" + dom + ")"};
-        if (dom.find("cloudcode-pa.googleapis.com") != std::string::npos || dom.find("antigravity.google") != std::string::npos)
-            return {"net.ai_traffic", "browser_ai", "Google Antigravity / Gemini Code Assist stream (" + dom + ")"};
-        return {"net.ai_traffic", "browser_ai", "Outbound AI network stream (" + dom + ")"};
-    };
-
-    auto is_browser_proc = [](const std::string& p) {
-        return p == "chrome" || p == "msedge" || p == "brave" || p == "firefox" || p == "opera" || p == "vivaldi" || p == "arc";
-    };
-    // IDE extension hosts: their AI traffic is attributed to the installed extension in scan_extensions().
-    auto is_extension_host = [](const std::string& p) {
-        return p == "code" || p == "code - insiders" || p == "vscodium" || p == "codium" || p == "copilot-runtime" ||
-               p == "copilot-language-server" || p == "copilot" || p == "cursor" || p == "windsurf";
-    };
-
+    const bool ext_scan_active = plat_.extensions && policy().collect.extensions;
     for (const auto& f : flows) {
         const auto dom = to_lower(f.domain);
-        auto [rule_id, category, desc] = classify_domain(dom);
+        auto [rule_id, category, desc] = classify_ai_flow(rules_, dom, f.process);
         const double sent_kb = std::round((double(f.bytes_sent) / 1024.0) * 10.0) / 10.0;
         const double recv_kb = std::round((double(f.bytes_recv) / 1024.0) * 10.0) / 10.0;
-        // Browsers and standalone AI apps / CLIs emit immediately; IDE extension streams are attributed to the
-        // installed extension in scan_extensions().
-        if (category == "browser_ai" || is_browser_proc(f.process) || !is_extension_host(f.process)) {
-            RuleHit hit{rule_id, "browser_ai", desc, Severity::high};
+        // Browsers and standalone AI apps / CLIs emit immediately; IDE extension-host AI streams defer to
+        // scan_extensions() when extension scanning is enabled (which still falls back if no extension matches).
+        if (category == "browser_ai" || is_browser_proc(f.process) || !is_extension_host_proc(f.process) ||
+            !ext_scan_active) {
+            RuleHit hit{rule_id, category, desc, Severity::high};
             // A standalone program talking to an AI service (not a browser / IDE host) can be closed in Test mode.
-            const bool closable = !is_browser_proc(f.process) && !is_extension_host(f.process);
+            const bool closable = !is_browser_proc(f.process) && !is_extension_host_proc(f.process);
             handle_rule_hit(hit, f.process + ":" + dom,
                             json{{"process", f.process},
                                  {"exe", f.process},
@@ -631,7 +601,10 @@ void Agent::scan_extensions() {
         const std::string id = to_lower(e.id);
         const std::string dom = to_lower(f.domain);
         if (id.find("copilot") != std::string::npos || rule_id == "ext.copilot" || rule_id == "ext.jb.copilot")
-            return dom.find("githubcopilot.com") != std::string::npos;
+            return dom.find("githubcopilot.com") != std::string::npos ||
+                   dom.find("copilot-proxy.githubusercontent.com") != std::string::npos ||
+                   dom.find("copilot-telemetry.githubusercontent.com") != std::string::npos ||
+                   dom.find("copilot.microsoft.com") != std::string::npos;
         if (id.find("ml-llm") != std::string::npos || id.find("jetbrains.ai") != std::string::npos ||
             rule_id.starts_with("ext.jb.ai"))
             return dom.find("jetbrains.ai") != std::string::npos || dom.find("grazie.ai") != std::string::npos;
@@ -670,16 +643,21 @@ void Agent::scan_extensions() {
         std::optional<OutboundAiFlow> flow;
     };
     std::vector<ActiveExtHit> active_hits;
+    std::vector<bool> flow_claimed(flows.size(), false);
     for (auto& e : exts) {
         auto h = rules_.match_extension(e);
         std::optional<OutboundAiFlow> matched_flow;
         if (h) {
-            for (const auto& f : flows) {
+            for (size_t fi = 0; fi < flows.size(); ++fi) {
+                const auto& f = flows[fi];
                 if (flow_matches_ext(e, h->rule_id, f)) {
-                    e.active = true;
-                    e.activity = f.domain + " (+" + fmt_kb(f.bytes_sent) + " KB sent, +" + fmt_kb(f.bytes_recv) + " KB recv)";
-                    matched_flow = f;
-                    break;
+                    if (!e.active) {
+                        e.active = true;
+                        e.activity =
+                            f.domain + " (+" + fmt_kb(f.bytes_sent) + " KB sent, +" + fmt_kb(f.bytes_recv) + " KB recv)";
+                        matched_flow = f;
+                    }
+                    flow_claimed[fi] = true;
                 }
             }
         }
@@ -731,6 +709,27 @@ void Agent::scan_extensions() {
             ctx["recv_kb"] = std::round((double(item.flow->bytes_recv) / 1024.0) * 10.0) / 10.0;
         }
         handle_rule_hit(live_hit, item.ext.ide + ":" + item.ext.id + ":" + item.ext.user, std::move(ctx));
+    }
+    // Any extension-host AI stream that did not match an installed extension (e.g., built-in Copilot Chat)
+    // must still be emitted rather than silently dropped.
+    for (size_t fi = 0; fi < flows.size(); ++fi) {
+        if (flow_claimed[fi]) continue;
+        const auto& f = flows[fi];
+        if (!is_extension_host_proc(f.process) || is_browser_proc(f.process)) continue;
+        const auto dom = to_lower(f.domain);
+        auto [rule_id, category, desc] = classify_ai_flow(rules_, dom, f.process);
+        if (category != "ai_extension") continue;
+        const double sent_kb = std::round((double(f.bytes_sent) / 1024.0) * 10.0) / 10.0;
+        const double recv_kb = std::round((double(f.bytes_recv) / 1024.0) * 10.0) / 10.0;
+        RuleHit hit{rule_id, category, desc + " (" + f.process + ")", Severity::high};
+        handle_rule_hit(hit, f.process + ":" + dom,
+                        json{{"process", f.process},
+                             {"exe", f.process},
+                             {"pid", f.pid},
+                             {"domain", dom},
+                             {"remote_ip", f.remote_ip},
+                             {"sent_kb", sent_kb},
+                             {"recv_kb", recv_kb}});
     }
 }
 
@@ -797,10 +796,19 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
     } else if (t == "paste") {
         if (!pol.collect.clipboard) return;
         const bool is_copy = j.value("copy", false);
+        auto norm_target = [](const std::string& s) -> std::string {
+            auto pos = s.find(" (");
+            if (pos != std::string::npos && s.ends_with(')')) {
+                return normalize_exe(s.substr(0, pos)) + s.substr(pos);
+            }
+            return normalize_exe(s);
+        };
         sink_->emit(is_copy ? ev::copy : ev::paste,
                     {{"chars", j.value("chars", 0)}, {"lines", j.value("lines", 0)}, {"code", j.value("code", false)},
-                     {"score", j.value("score", 0.0)}, {"src", limit(normalize_exe(j.value("src", "")), 64)},
-                     {"dst", limit(normalize_exe(j.value("dst", "")), 64)}, {"user", user}});
+                     {"score", j.value("score", 0.0)}, {"src", limit(norm_target(j.value("src", "")), 64)},
+                     {"dst", limit(norm_target(j.value("dst", "")), 64)}, {"user", user}});
+        wake_uplink_.store(true);
+        flush_cv_.notify_all();
     } else if (t == "keys") {
         if (!pol.collect.keys) return;
         json k = j;
@@ -818,9 +826,18 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
 void Agent::push_helper_config() {
     if (!plat_.ipc) return;
     const Policy p = policy();
+    const std::string pac_url = (p.proxy_mode == "proxy_only") ? p.proxy_pac_url : std::string{};
     plat_.ipc->broadcast(ipc::line({{"t", "config"},
                                     {"mode", to_string(p.mode)},
                                     {"title_capture", to_string(p.title_capture)},
+                                    {"ccc_host", cfg_.ccc_host},
+                                    {"pc_id", cfg_.pc_id},
+                                    {"ext_ids", rules_.extension_ids()},
+                                    {"proxy_pac_url", pac_url},
+                                    {"screen", {{"port", cfg_.screen_port},
+                                                {"path", cfg_.screen_path},
+                                                {"tls", cfg_.screen_tls},
+                                                {"agent_token", cfg_.screen_token}}},
                                     {"collect", {{"window", p.collect.window}, {"clipboard", p.collect.clipboard},
                                                  {"keys", p.collect.keys}}}}));
     plat_.ipc->broadcast(ipc::line({{"t", "indicator"},
@@ -1140,6 +1157,7 @@ bool Agent::poll_enrollment() {
         if (auto h = crypto::sha256_file_hex(config_path_)) file_hashes_[config_path_] = *h;
         log::info("enrollment approved: this PC is #{}", cfg_.pc_id);
         policy_dirty_ = true;
+        push_helper_config();
         return true;
     }
     if (st == "rejected") log::error("enrollment was rejected by the CCC administrator");
@@ -1164,6 +1182,23 @@ bool Agent::fetch_policy() {
     if (!err.empty()) {
         log::error("policy: invalid policy from CCC: {}", err);
         return false;
+    }
+    if (j.contains("screen") && j["screen"].is_object()) {
+        const auto& sc = j["screen"];
+        if (sc.contains("port") && sc["port"].is_number_unsigned()) {
+            const uint16_t pnum = sc["port"].get<uint16_t>();
+            if (pnum > 0) cfg_.screen_port = pnum;
+        }
+        if (sc.contains("path") && sc["path"].is_string()) {
+            const std::string sp = sc["path"].get<std::string>();
+            if (!sp.empty()) cfg_.screen_path = sp;
+        }
+        if (sc.contains("tls") && sc["tls"].is_boolean()) {
+            cfg_.screen_tls = sc["tls"].get<bool>();
+        }
+        if (sc.contains("agent_token") && sc["agent_token"].is_string()) {
+            cfg_.screen_token = sc["agent_token"].get<std::string>();
+        }
     }
     apply_policy(p);
     queue_->kv_set("policy", j["policy"].dump());
@@ -1202,7 +1237,19 @@ bool Agent::flush_once() {
     if (ack->server_time_ms > 0) status_.clock_offset_ms = protocol::clock_offset(t0, t1, ack->server_time_ms);
     const Policy p = policy();
     if (ack->policy_version != 0 && ack->policy_version != p.version) policy_dirty_ = true;
-    if (!ack->signatures_version.empty() && ack->signatures_version != rules_.version()) policy_dirty_ = true;
+    if (!ack->signatures_version.empty() && ack->signatures_version != rules_.version()) {
+        // Do not spin on a bundle we already refused: only refetch when the server announces a different
+        // version, or when the retry interval (15 min) has elapsed.
+        constexpr int64_t kRejectedSigRetryMs = 15 * 60 * 1000;
+        std::lock_guard rl(rejected_sig_mu_);
+        const int64_t now = now_ms();
+        if (ack->signatures_version != rejected_sig_version_) {
+            policy_dirty_ = true;
+        } else if (now - rejected_sig_at_ms_ >= kRejectedSigRetryMs) {
+            rejected_sig_at_ms_ = now;
+            policy_dirty_ = true;
+        }
+    }
     if (ack->isolated != status_.isolated.load()) apply_isolation(ack->isolated);
     return included == events.size() || included > 0;
 }
@@ -1518,13 +1565,20 @@ int Agent::run(std::atomic<bool>& stop) {
     threads_.clear();
     if (cfg_.enrolled()) flush_once();
     queue_->kv_set("clean_shutdown", "1");
-    if (plat_.system) plat_.system->set_exam_mode(false);
+    if (plat_.system) {
+        plat_.system->set_exam_mode(false);
+        plat_.system->set_browser_ai_overview_suppressed(false);
+        plat_.system->set_browser_proxy_pac({});
+    }
     if (plat_.processes) plat_.processes->stop();
     if (plat_.network) plat_.network->stop();
     if (plat_.devices) plat_.devices->stop();
     if (plat_.files) plat_.files->stop();
     if (plat_.input) plat_.input->stop();
-    if (plat_.ipc) plat_.ipc->stop();
+    if (plat_.ipc) {
+        plat_.ipc->broadcast(ipc::line({{"t", "clear_proxy_pac"}}));
+        plat_.ipc->stop();
+    }
     return 0;
 }
 

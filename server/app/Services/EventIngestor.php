@@ -181,6 +181,7 @@ class EventIngestor
             'queue_depth' => $hb['queue_depth'] ?? null, 'realtime' => $hb['realtime'] ?? null] : $pc->usage;
         if ($pc->status === 'offline') {
             $pc->status = 'clean';
+            $this->refreshLiveScore($pc, $session);
         }
         $agent->version = is_string($hb['agent_version'] ?? null) ? $hb['agent_version'] : $agent->version;
         $agent->policy_version = isset($hb['policy_version']) ? (string) $hb['policy_version'] : $agent->policy_version;
@@ -277,19 +278,38 @@ class EventIngestor
 
             case 'paste':
             case 'copy':
+                $src = $str('src');
+                $dst = $str('dst');
+                if (! $dst && $type === 'paste') {
+                    $dst = $pc->active_app;
+                }
+                if (! $src && $type === 'copy') {
+                    $src = $pc->active_app;
+                }
                 PasteEvent::create([
                     'pc_id' => $pc->id, 'lab_session_id' => $sid, 'user' => $str('user'), 'is_copy' => $type === 'copy',
                     'chars' => $int('chars'), 'lines' => $int('lines'), 'looks_like_code' => (bool) ($d['code'] ?? false),
-                    'code_score' => (float) ($d['score'] ?? 0), 'source_app' => $str('src'), 'target_app' => $str('dst'),
+                    'code_score' => (float) ($d['score'] ?? 0), 'source_app' => $src, 'target_app' => $dst,
                     'occurred_at' => $at,
                 ]);
+
+                $chars = $int('chars');
+                $lines = $int('lines');
+                $details = $lines > 1 ? "{$chars} ch, {$lines} ln" : "{$chars} ch";
+
+                if ($type === 'paste') {
+                    $pc->last_event = mb_substr("Paste: ".($src ?: '?')." → ".($dst ?: '?')." ({$details})", 0, 160);
+                } else {
+                    $pc->last_event = mb_substr("Copy: ".($src ?: '?')." ({$details})", 0, 160);
+                }
+
                 $threshold = (int) Setting::get('paste_alert_chars', 800);
-                if ($type === 'paste' && $sid && $session->mode === 'test' && $int('chars') >= $threshold) {
-                    $pc->last_event = "Large paste: {$int('chars')} chars";
+                if ($type === 'paste' && $sid && $session->mode === 'test' && $chars >= $threshold) {
+                    $pc->last_event = mb_substr("Large paste: ".($src ?: '?')." → ".($dst ?: '?')." ({$chars} chars)", 0, 160);
 
                     return $this->alert($pc, $sid, 'behavior.large_paste', 'medium', 'behavior',
-                        sprintf('Large paste: %d characters, %d lines%s', $int('chars'), $int('lines'),
-                            ($d['code'] ?? false) ? ' (looks like code)' : ''), $d, $at, $str('user'));
+                        sprintf('Large paste: %d characters, %d lines%s from %s to %s', $chars, $lines,
+                            ($d['code'] ?? false) ? ' (looks like code)' : '', $src ?: '?', $dst ?: '?'), $d, $at, $str('user'));
                 }
 
                 return null;
@@ -366,15 +386,54 @@ class EventIngestor
         return $alert;
     }
 
-    /** Live tile score: severity points of this session's alerts (capped). Not the integrity score. */
+    /** Live tile score: severity points of open (unreviewed) alerts (capped). Not the integrity score. */
     public function refreshLiveScore(Pc $pc, ?LabSession $session): void
     {
-        $q = Alert::query()->where('pc_id', $pc->id);
-        $session ? $q->where('lab_session_id', $session->id) : $q->where('occurred_at', '>', now()->subHours(2));
-        $alerts = $q->get(['severity', 'acknowledged_at']);
-        $points = $alerts->sum(fn ($a) => Alert::SEVERITY_POINTS[$a->severity] ?? 0);
+        $q = Alert::query()->where('pc_id', $pc->id)->whereNull('acknowledged_at');
+        if ($session) {
+            $q->where('lab_session_id', $session->id);
+        }
+        $this->applyOpenAlertsToPc($pc, $q->get(['severity']));
+    }
+
+    /** Reconciles live score and status across multiple PCs using a single open-alerts query. */
+    public function reconcileLiveScores(iterable $pcs, ?LabSession $session): void
+    {
+        $pcList = collect($pcs);
+        if ($pcList->isEmpty()) {
+            return;
+        }
+        $sessionPcIds = $session
+            ? SessionPc::query()->where('lab_session_id', $session->id)->pluck('pc_id')->flip()
+            : collect();
+        $openByPc = Alert::query()
+            ->whereIn('pc_id', $pcList->pluck('id'))
+            ->whereNull('acknowledged_at')
+            ->get(['pc_id', 'lab_session_id', 'severity'])
+            ->groupBy('pc_id');
+
+        foreach ($pcList as $pc) {
+            $prevStatus = $pc->status;
+            $prevScore = (int) $pc->live_score;
+            $alerts = $openByPc->get($pc->id, collect());
+            if ($session && $sessionPcIds->has($pc->id)) {
+                $alerts = $alerts->where('lab_session_id', $session->id);
+            }
+            $this->applyOpenAlertsToPc($pc, $alerts);
+            if ($pc->status !== $prevStatus || (int) $pc->live_score !== $prevScore) {
+                $pc->save();
+            }
+        }
+    }
+
+    private function applyOpenAlertsToPc(Pc $pc, iterable $openAlerts): void
+    {
+        $open = collect($openAlerts);
+        $points = $open->sum(fn ($a) => Alert::SEVERITY_POINTS[$a->severity] ?? 0);
         $pc->live_score = min(100, $points);
-        $open = $alerts->whereNull('acknowledged_at');
+        if ($pc->status === 'offline' && ! $pc->online()) {
+            return;
+        }
         $pc->status = $open->whereIn('severity', ['high', 'critical'])->isNotEmpty() ? 'alert'
             : ($open->where('severity', 'medium')->isNotEmpty() ? 'warning' : 'clean');
     }

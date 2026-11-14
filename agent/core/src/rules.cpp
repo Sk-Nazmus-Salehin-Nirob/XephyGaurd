@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include <set>
 
 #include "xg/util.hpp"
 
@@ -162,6 +163,56 @@ std::optional<RuleHit> RuleEngine::match_device(const DeviceInfo& d) const {
     for (const auto& r : set_.devices)
         if (enabled(r.id) && !cls.empty() && in(cls, r.classes)) return hit_of(r.id, "device", r.description, r.severity);
     return std::nullopt;
+}
+
+static bool domain_matches_suffix(const std::string& host, const std::string& pat) {
+    if (host == pat) return true;
+    return host.size() > pat.size() && host[host.size() - pat.size() - 1] == '.' &&
+           host.compare(host.size() - pat.size(), pat.size(), pat) == 0;
+}
+
+std::optional<RuleHit> RuleEngine::match_ai_domain(const std::string& domain) const {
+    const std::string dom = to_lower(domain);
+    if (dom.empty()) return std::nullopt;
+    std::shared_lock lk(mu_);
+    for (const auto& pat : set_.ide_domains) {
+        if (domain_matches_suffix(dom, pat)) {
+            return RuleHit{"net.ide_ai", "ide_ai_backend", "IDE AI backend stream (" + dom + ")", Severity::high};
+        }
+    }
+    for (const auto& pat : set_.ai_domains) {
+        if (domain_matches_suffix(dom, pat)) {
+            return RuleHit{"net.browser_ai", "browser_ai", "AI web service stream (" + dom + ")", Severity::medium};
+        }
+    }
+    return std::nullopt;
+}
+
+std::vector<std::string> RuleEngine::ai_domains() const {
+    std::shared_lock lk(mu_);
+    std::vector<std::string> out;
+    out.reserve(set_.ide_domains.size() + set_.ai_domains.size());
+    std::set<std::string> seen;
+    for (const auto& d : set_.ide_domains) {
+        if (seen.insert(d).second) out.push_back(d);
+    }
+    for (const auto& d : set_.ai_domains) {
+        if (seen.insert(d).second) out.push_back(d);
+    }
+    return out;
+}
+
+std::vector<std::string> RuleEngine::extension_ids() const {
+    std::shared_lock lk(mu_);
+    std::vector<std::string> out;
+    std::set<std::string> seen;
+    for (const auto& r : set_.extensions) {
+        if (!enabled(r.id)) continue;
+        for (const auto& x : r.ext_ids) {
+            if (seen.insert(x).second) out.push_back(x);
+        }
+    }
+    return out;
 }
 
 PortProbe RuleEngine::probe() const { std::shared_lock lk(mu_); return set_.probe; }

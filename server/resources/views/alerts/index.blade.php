@@ -1,38 +1,104 @@
-@extends('layouts.app')
+@extends('layouts.app', ['activePage' => 'alerts.html'])
 @section('title', 'Alerts')
 @section('content')
-<div class="card">
-  <form class="mb-3 flex flex-wrap items-end gap-2">
-    <div><label class="label">Session</label><select name="session" class="input w-64"><option value="">All</option>
-      @foreach ($sessions as $s)<option value="{{ $s->id }}" @selected(($filters['session'] ?? '') == $s->id)>{{ $s->starts_at->format('M d H:i') }} · {{ $s->course }} ({{ $s->mode }})</option>@endforeach</select></div>
-    <div><label class="label">Severity</label><select name="severity" class="input w-36"><option value="">All</option>
-      @foreach (['critical', 'high', 'medium', 'low', 'info'] as $sv)<option @selected(($filters['severity'] ?? '') === $sv)>{{ $sv }}</option>@endforeach</select></div>
-    <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="open" value="1" @checked($filters['open'] ?? false)> Unacknowledged only</label>
-    <button class="btn">Filter</button>
-  </form>
-  <table class="tbl">
-    <tr><th>Time</th><th>Severity</th><th>PC</th><th>User</th><th>Alert</th><th>Rule</th><th>Review</th></tr>
-    @forelse ($alerts as $a)
-      <tr>
-        <td class="font-mono text-xs whitespace-nowrap">{{ $a->occurred_at->format('M d H:i:s') }}</td>
-        <td><span class="badge sev-{{ $a->severity }}">{{ $a->severity }}</span></td>
-        <td>{{ $a->pc?->name }}</td><td>{{ $a->user }}</td><td>{{ $a->title }}</td>
-        <td class="font-mono text-xs">{{ $a->rule_id }}</td>
-        <td class="w-80">
-          @if ($a->acknowledged_at)
-            <div class="text-xs text-slate-500">✓ {{ $a->acknowledger?->name }} {{ $a->acknowledged_at->diffForHumans() }}</div>
-            @if ($a->comment)<div class="text-xs">“{{ $a->comment }}”</div>@endif
+@php
+  $liveAlerts = isset($alerts) && $alerts->count() ? $alerts->getCollection()->map(function ($a) {
+      return [
+          'id' => $a->id,
+          'pcId' => $a->pc_id,
+          'pc' => $a->pc?->name ?? ('PC-' . $a->pc_id),
+          'pcRetired' => $a->pc?->retired_at !== null,
+          'user' => $a->user ?: '—',
+          'sev' => $a->severity ?? 'medium',
+          'title' => $a->title ?: $a->rule_id,
+          'rule' => $a->rule_id ?? '',
+          'at' => $a->occurred_at?->format('H:i:s') ?? '',
+          'ago' => $a->occurred_at ? max(0, (int) $a->occurred_at->diffInMinutes(now())) : 0,
+          'acked' => $a->acknowledged_at !== null,
+          'by' => $a->acknowledger?->name ?? 'Staff',
+          'note' => $a->comment ?? '',
+      ];
+  })->values()->all() : [];
+@endphp
+<script type="application/json" id="xg-page-data">{!! json_encode([
+  'sev' => $filters['severity'] ?? '',
+  'unacked' => (bool) ($filters['open'] ?? false),
+  'session' => (string) ($filters['session'] ?? ''),
+  'byName' => auth()->user()?->name ?? 'Staff',
+  'openTotal' => (int) ($openTotal ?? 0),
+  'total' => isset($alerts) ? $alerts->total() : count($liveAlerts),
+  'hasPages' => isset($alerts) && $alerts->hasPages(),
+  'sevTotals' => $sevTotals ?? null,
+  'items' => $liveAlerts,
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<div class="doc" x-data="alertsPage"><div class="optbar"><span class="otitle">Alerts</span><span class="osub"><span x-text="waiting"></span> waiting for review. Repeated alerts are grouped.</span><span class="grow"></span>
+      <select class="select select-sm" style="width:260px" aria-label="Session" @change="selectSession($event.target.value)">
+        <option value="" @selected(empty($filters['session']))>All sessions</option>
+        @foreach($sessions ?? [] as $s)
+          <option value="{{ $s->id }}" @selected(($filters['session'] ?? null) == $s->id)>{{ ucfirst(str_replace('_', ' ', $s->mode)) }} · {{ $s->course }}{{ $s->starts_at ? ' (' . $s->starts_at->format('M d') . ')' : '' }}</option>
+        @endforeach
+      </select>
+    </div><div class="canvas ">
+  
+
+  <div class="toolbar">
+    <div class="pills" role="group" aria-label="Severity">
+      <button class="pill" :aria-pressed="sev === ''" @click="setSev('')">All <span class="n" x-text="allCount()"></span></button>
+      <button class="pill" :aria-pressed="sev === 'critical'" @click="setSev('critical')">Critical <span class="n" x-text="n('critical')"></span></button>
+      <button class="pill" :aria-pressed="sev === 'high'" @click="setSev('high')">High <span class="n" x-text="n('high')"></span></button>
+      <button class="pill" :aria-pressed="sev === 'medium'" @click="setSev('medium')">Medium <span class="n" x-text="n('medium')"></span></button>
+      <button class="pill" :aria-pressed="sev === 'low'" @click="setSev('low')">Low <span class="n" x-text="n('low')"></span></button>
+    </div>
+    <input class="input input-sm" style="width:220px;margin-left:8px" placeholder="Search PC or alert" x-model="q">
+    <span class="grow"></span>
+    <label class="check small"><span class="switch"><input type="checkbox" x-model="unacked" @change="toggleUnacked()"><i></i></span> Unreviewed only</label>
+    <label class="check small"><span class="switch"><input type="checkbox" x-model="grouped"><i></i></span> Group repeats</label>
+  </div>
+
+  <template x-for="r in rows" :key="r.key">
+    <div class="msg" :class="{ unread: !r.acked }">
+      <button class="msg-row" @click="openKey = openKey === r.key ? null : r.key" :aria-expanded="openKey === r.key">
+        <span class="sev" :class="r.sev" x-text="r.sev"></span>
+        <span><span class="t"><span x-text="r.title"></span> <span class="count" x-show="r.count > 1" x-text="'×' + r.count"></span></span><span class="m"><b x-text="r.pc"></b><span class="chip plain" x-show="r.pcRetired" style="margin-left:6px">retired</span> · <span x-text="r.user"></span> · <span class="mono" x-text="r.rule"></span></span></span>
+        <span class="when" x-text="xgAgo(r.ago)"></span>
+        <span><span class="chip alert" x-show="!r.acked">Needs review</span><span class="small muted" x-show="r.acked">Reviewed</span></span>
+      </button>
+      <div x-show="openKey === r.key" x-cloak>
+        <template x-if="r.count > 1"><div><template x-for="i in r.items" :key="i.id"><div class="msg-sub"><span class="mono muted" x-text="i.at"></span><span x-text="i.title"></span><span class="muted" x-text="xgAgo(i.ago)"></span></div></template></div></template>
+        <div class="msg-detail" style="padding-left:20px">
+          <template x-if="r.acked"><div class="note"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg><div><b x-text="'Reviewed by ' + (r.by || 'Staff')"></b><br><span x-text="r.note || 'No note.'"></span></div></div></template>
+          <template x-if="!r.acked">
+            <div class="stack" style="--gap:10px;max-width:640px">
+              <label class="field"><span>Note (optional)</span><textarea class="textarea" rows="2" placeholder="What did you find out?" x-model="notes[r.key]"></textarea></label>
+              <div class="row"><button class="btn btn-solid" @click="ack(r)" x-text="r.count > 1 ? 'Mark all ' + r.count + ' as reviewed' : 'Mark as reviewed'"></button><a class="btn btn-quiet" :href="'/#pc=' + r.pcId">Show PC in Live lab</a>
+                <span class="pills" style="margin-left:auto"><button class="pill" @click="notes[r.key] = 'False alarm.'">False alarm</button><button class="pill" @click="notes[r.key] = 'Spoke to the student.'">Spoke to student</button></span></div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </template>
+  <div class="empty-state" x-show="!rows.length"><b>Nothing matches</b>Try clearing a filter.</div>
+  @if(isset($alerts) && $alerts->total() > 0)
+  <div class="panel" style="margin-top:12px">
+    <div class="tbl-foot">
+      <span>Showing {{ $alerts->firstItem() }}–{{ $alerts->lastItem() }} of {{ $alerts->total() }} alerts (page {{ $alerts->currentPage() }} of {{ $alerts->lastPage() }})</span>
+      @if($alerts->hasPages())
+        <div class="pager">
+          @if($alerts->onFirstPage())
+            <button disabled>Prev</button>
           @else
-            <form method="post" action="{{ route('alerts.ack', $a) }}" class="flex gap-1">@csrf
-              <input name="comment" class="input" placeholder="Comment (optional)"><button class="btn btn-sm">Ack</button></form>
+            <a class="btn btn-sm" href="{{ $alerts->previousPageUrl() }}">Prev</a>
           @endif
-        </td>
-      </tr>
-    @empty
-      <tr><td colspan="7" class="py-6 text-center text-slate-500">No alerts.</td></tr>
-    @endforelse
-  </table>
-  {{ $alerts->links() }}
-  <p class="mt-3 text-xs text-slate-500">Every alert is a flag for human review. XephyGuard never decides on misconduct.</p>
-</div>
+          @if($alerts->hasMorePages())
+            <a class="btn btn-sm" href="{{ $alerts->nextPageUrl() }}">Next</a>
+          @else
+            <button disabled>Next</button>
+          @endif
+        </div>
+      @endif
+    </div>
+  </div>
+  @endif
+</div></div>
 @endsection

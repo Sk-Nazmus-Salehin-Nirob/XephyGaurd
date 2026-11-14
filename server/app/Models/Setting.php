@@ -29,4 +29,9 @@ class Setting extends Model
         static::query()->updateOrCreate(['key' => $key], ['value' => $value]);
         Cache::forget('xg.settings');
     }
+
+    public static function set(string $key, mixed $value): void
+    {
+        static::put($key, $value);
+    }
 }

@@ -1,22 +1,68 @@
-@extends('layouts.app')
+@extends('layouts.app', ['activePage' => 'reports.html'])
 @section('title', 'Reports')
 @section('content')
-<div class="card">
-  <div class="mb-3 flex items-end justify-between">
-    <h2 class="text-lg font-semibold">Session reports</h2>
-    <form action="{{ route('research.export') }}" class="flex items-end gap-2">
-      <div><label class="label">Research export from</label><input type="date" name="from" class="input"></div>
-      <div><label class="label">until</label><input type="date" name="until" class="input"></div>
-      <button class="btn">Export CSV (consenting, pseudonymized)</button></form>
+@php
+  $defaultTo = now()->format('Y-m-d');
+  $defaultFrom = now()->subDays(30)->format('Y-m-d');
+@endphp
+<div class="doc" x-data="{ from: '{{ $defaultFrom }}', to: '{{ $defaultTo }}' }"><div class="optbar"><span class="otitle">Reports</span><span class="osub">Every session is scored once it ends. A person decides what it means.</span><span class="grow"></span></div><div class="canvas ">
+  
+  <div class="cols-main">
+    <section>
+      @if(!empty($sessions) && $sessions->count())
+        @foreach($sessions as $s)
+          @php
+            $rep = isset($reports) ? ($reports[$s->id] ?? null) : null;
+            $flagged = (int) ($rep?->summary['flagged'] ?? 0);
+            $pcCount = (int) ($rep?->summary['pcs'] ?? ($s->session_pcs_count ?? 0));
+          @endphp
+          <div class="rep">
+            <div class="datebox"><b>{{ ($s->ended_at ?? $s->starts_at)?->format('d') ?? '—' }}</b><span>{{ ($s->ended_at ?? $s->starts_at)?->format('M') ?? '' }}</span></div>
+            <div>
+              <div style="font-weight:600">{{ $s->course }}</div>
+              <div class="small muted" style="margin-top:2px">{{ $s->starts_at?->format('H:i') ?? '—' }} · {{ ucfirst(str_replace('_', ' ', $s->mode)) }}{{ $pcCount ? ' · ' . $pcCount . ' PCs' : '' }}</div>
+            </div>
+            @if($flagged > 0)
+              <span class="chip alert"><span class="dot alert"></span>{{ $flagged }} flagged</span>
+            @else
+              <span class="chip ok"><span class="dot ok"></span>No flags</span>
+            @endif
+            <div class="row">
+              <a class="btn btn-sm btn-solid" href="{{ route('reports.show', $s) }}">Open</a>
+              <a class="btn btn-sm" href="{{ route('reports.pdf', $s) }}">PDF</a>
+              <a class="btn btn-sm" href="{{ route('reports.csv', $s) }}">CSV</a>
+            </div>
+          </div>
+        @endforeach
+      @else
+        <div class="panel empty-state"><b>No completed sessions yet</b>Reports appear here automatically once a session ends.</div>
+      @endif
+      @if(!empty($sessions) && $sessions->hasPages())
+        <div class="panel" style="margin-top:12px">
+          <div class="tbl-foot">
+            <span>Showing {{ $sessions->firstItem() }}–{{ $sessions->lastItem() }} of {{ $sessions->total() }} sessions</span>
+            <div class="pager">
+              @if($sessions->onFirstPage())
+                <button disabled>Prev</button>
+              @else
+                <a class="btn btn-sm" href="{{ $sessions->previousPageUrl() }}">Prev</a>
+              @endif
+              @if($sessions->hasMorePages())
+                <a class="btn btn-sm" href="{{ $sessions->nextPageUrl() }}">Next</a>
+              @else
+                <button disabled>Next</button>
+              @endif
+            </div>
+          </div>
+        </div>
+      @endif
+    </section>
+    <form method="get" action="{{ route('research.export') }}" class="panel panel-pad stack">
+      <div><h2 class="h2">Research export</h2><p class="muted small" style="margin-top:2px">Pseudonymised data for students who gave consent. Names never leave this server.</p></div>
+      <label class="field"><span>From</span><input name="from" class="input" type="date" x-model="from"></label>
+      <label class="field"><span>Until</span><input name="until" class="input" type="date" x-model="to"></label>
+      <button type="submit" class="btn btn-solid"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</button>
+    </form>
   </div>
-  <table class="tbl"><tr><th>Date</th><th>Course</th><th>Profile</th><th>Report</th><th>Flagged</th><th></th></tr>
-    @foreach ($sessions as $s)
-      @php($r = $reports[$s->id] ?? null)
-      <tr><td>{{ $s->starts_at->format('Y-m-d H:i') }}</td><td>{{ $s->course }}</td><td>{{ $s->profile?->name }}</td>
-        <td><span class="badge {{ $r?->status === 'ready' ? 'bg-emerald-100 text-emerald-800' : ($r?->status === 'failed' ? 'sev-high' : 'sev-info') }}">{{ $r?->status ?? 'none' }}</span></td>
-        <td>{{ count($r?->summary['flagged'] ?? []) }}</td>
-        <td class="flex gap-2"><a class="text-indigo-600" href="{{ route('reports.show', $s) }}">Open</a><a class="text-indigo-600" href="{{ route('reports.pdf', $s) }}">PDF</a><a class="text-indigo-600" href="{{ route('reports.csv', $s) }}">CSV</a></td></tr>
-    @endforeach
-  </table>{{ $sessions->links() }}
-</div>
+</div></div>
 @endsection

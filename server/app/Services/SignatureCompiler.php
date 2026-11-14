@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\BlocklistEntry;
 use App\Models\Rule;
 use App\Models\SignatureVersion;
 use Symfony\Component\Yaml\Yaml;
@@ -63,7 +64,7 @@ class SignatureCompiler
     public function buildBundle(): array
     {
         $bundle = ['processes' => [], 'extensions' => [], 'ports' => ['rules' => []], 'artifacts' => ['rules' => []],
-            'adapters' => [], 'devices' => []];
+            'adapters' => [], 'devices' => [], 'domains' => ['ai' => [], 'ide' => []]];
         foreach (Rule::query()->where('enabled', true)->orderBy('rule_id')->get() as $rule) {
             $def = array_merge($rule->definition, ['id' => $rule->rule_id, 'severity' => $rule->severity]);
             if ($rule->description) {
@@ -79,6 +80,14 @@ class SignatureCompiler
                 default => null,
             };
         }
+        foreach (BlocklistEntry::query()
+            ->where('enabled', true)
+            ->whereIn('category', ['ai', 'ide'])
+            ->where('kind', 'domain')
+            ->orderBy('value')
+            ->get(['category', 'value']) as $entry) {
+            $bundle['domains'][$entry->category][] = strtolower($entry->value);
+        }
         $bundle['ports']['probe'] = \App\Models\Setting::get('signatures.port.probe', ['enabled' => true,
             'paths' => ['/v1/models', '/api/tags'], 'severity' => 'high', 'min_rss_mb' => 300]);
         $bundle['artifacts']['scan'] = \App\Models\Setting::get('signatures.artifact.scan', ['roots' => ['~'], 'max_depth' => 6]);
@@ -86,10 +95,36 @@ class SignatureCompiler
         return $bundle;
     }
 
-    /** Compiles, signs and activates a new version if the rule set changed. */
+    /**
+     * Refuses bundles that would blind every agent: an empty AI or IDE domain list makes the agent drop all
+     * domain visibility, so such a bundle must never be signed or activated.
+     *
+     * @throws \RuntimeException
+     */
+    public function assertPublishable(array $bundle): void
+    {
+        $missing = [];
+        foreach (['ai', 'ide'] as $key) {
+            $list = $bundle['domains'][$key] ?? null;
+            if (! is_array($list) || $list === []) {
+                $missing[] = "domains.$key";
+            }
+        }
+        if ($missing) {
+            throw new \RuntimeException('Refusing to publish signatures: '.implode(' and ', $missing)
+                .' is empty or missing. Import the blocklists first (php artisan xephyguard:bootstrap).');
+        }
+    }
+
+    /**
+     * Compiles, signs and activates a new version if the rule set changed.
+     *
+     * @throws \RuntimeException when the compiled bundle fails validation (see assertPublishable)
+     */
     public function publish(?int $userId = null, ?string $note = null): SignatureVersion
     {
         $bundle = $this->buildBundle();
+        $this->assertPublishable($bundle);
         $digest = hash('sha256', json_encode($bundle));
         $current = SignatureVersion::active();
         if ($current && $current->sha256 === $digest) {
