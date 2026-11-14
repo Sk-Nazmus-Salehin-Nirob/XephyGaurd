@@ -548,7 +548,7 @@ document.addEventListener('alpine:init', () => {
               ? d.processes.map(p => ({ pid: p.pid || 0, name: p.exe || 'process', title: p.type || '', cpu: 0, mem: 0, net: 0, threat: p.rule || '' }))
               : base.processes),
           aiTraffic: (d.ai_traffic && d.ai_traffic.length)
-            ? d.ai_traffic.map(r => ({ service: r.description || r.rule_id, host: r.domain || r.remote_ip, proc: r.process || 'browser', count: 1, last: r.at, mode: 'Observed' }))
+            ? d.ai_traffic.map(r => ({ service: r.description || r.rule_id, host: r.domain || r.remote_ip, proc: r.process || 'browser', count: Number(r.count || 1), last: r.at, mode: r.mode || 'Observed' }))
             : base.aiTraffic,
           tabs: (d.browser_tabs && d.browser_tabs.length)
             ? d.browser_tabs.map(t => ({ browser: t.app || 'Browser', title: t.title || t.app, host: t.ai_site || t.user || '', ai: !!t.ai_site }))

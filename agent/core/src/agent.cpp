@@ -422,6 +422,30 @@ void Agent::scan_devices() {
 }
 
 // ------------------------------------------------------------------------------ outbound AI traffic
+namespace {
+bool is_extension_host_proc(const std::string& p) {
+    return p == "code" || p == "code - insiders" || p == "vscodium" || p == "codium" || p == "copilot-runtime" ||
+           p == "copilot-language-server" || p == "copilot" || p == "cursor" || p == "windsurf";
+}
+
+bool is_browser_proc(const std::string& p) {
+    return p == "chrome" || p == "msedge" || p == "brave" || p == "firefox" || p == "opera" || p == "vivaldi" || p == "arc";
+}
+
+std::tuple<std::string, std::string, std::string> classify_ai_flow(const RuleEngine& rules,
+                                                                   const std::string& dom,
+                                                                   const std::string& proc) {
+    if (auto hit = rules.match_ai_domain(dom)) {
+        const std::string cat = (hit->category == "ide_ai_backend") ? "ai_extension" : "browser_ai";
+        return {hit->rule_id, cat, hit->description};
+    }
+    if (is_extension_host_proc(proc)) {
+        return {"net.ide_ai", "ai_extension", "IDE AI backend stream (" + dom + ")"};
+    }
+    return {"net.ai_traffic", "browser_ai", "Outbound AI network stream (" + dom + ")"};
+}
+}  // namespace
+
 void Agent::scan_ai_traffic() {
     if (!plat_.network) return;
     const int64_t now = steady_ms();
@@ -439,39 +463,19 @@ void Agent::scan_ai_traffic() {
     if (flows.empty()) return;
     rescan_extensions_ = true;
 
-    // IDE extension hosts: their AI traffic is attributed to the installed extension in scan_extensions().
-    auto is_extension_host = [](const std::string& p) {
-        return p == "code" || p == "code - insiders" || p == "vscodium" || p == "codium" || p == "copilot-runtime" ||
-               p == "copilot-language-server" || p == "copilot" || p == "cursor" || p == "windsurf";
-    };
-
-    auto classify_domain = [this, &is_extension_host](const std::string& dom, const std::string& proc)
-        -> std::tuple<std::string, std::string, std::string> {
-        if (auto hit = rules_.match_ai_domain(dom)) {
-            const std::string cat = (hit->category == "ide_ai_backend") ? "ai_extension" : "browser_ai";
-            return {hit->rule_id, cat, hit->description};
-        }
-        if (is_extension_host(proc)) {
-            return {"net.ide_ai", "ai_extension", "IDE AI backend stream (" + dom + ")"};
-        }
-        return {"net.ai_traffic", "browser_ai", "Outbound AI network stream (" + dom + ")"};
-    };
-
-    auto is_browser_proc = [](const std::string& p) {
-        return p == "chrome" || p == "msedge" || p == "brave" || p == "firefox" || p == "opera" || p == "vivaldi" || p == "arc";
-    };
-
+    const bool ext_scan_active = plat_.extensions && policy().collect.extensions;
     for (const auto& f : flows) {
         const auto dom = to_lower(f.domain);
-        auto [rule_id, category, desc] = classify_domain(dom, f.process);
+        auto [rule_id, category, desc] = classify_ai_flow(rules_, dom, f.process);
         const double sent_kb = std::round((double(f.bytes_sent) / 1024.0) * 10.0) / 10.0;
         const double recv_kb = std::round((double(f.bytes_recv) / 1024.0) * 10.0) / 10.0;
-        // Browsers and standalone AI apps / CLIs emit immediately; IDE extension streams are attributed to the
-        // installed extension in scan_extensions().
-        if (category == "browser_ai" || is_browser_proc(f.process) || !is_extension_host(f.process)) {
-            RuleHit hit{rule_id, "browser_ai", desc, Severity::high};
+        // Browsers and standalone AI apps / CLIs emit immediately; IDE extension-host AI streams defer to
+        // scan_extensions() when extension scanning is enabled (which still falls back if no extension matches).
+        if (category == "browser_ai" || is_browser_proc(f.process) || !is_extension_host_proc(f.process) ||
+            !ext_scan_active) {
+            RuleHit hit{rule_id, category, desc, Severity::high};
             // A standalone program talking to an AI service (not a browser / IDE host) can be closed in Test mode.
-            const bool closable = !is_browser_proc(f.process) && !is_extension_host(f.process);
+            const bool closable = !is_browser_proc(f.process) && !is_extension_host_proc(f.process);
             handle_rule_hit(hit, f.process + ":" + dom,
                             json{{"process", f.process},
                                  {"exe", f.process},
@@ -597,7 +601,10 @@ void Agent::scan_extensions() {
         const std::string id = to_lower(e.id);
         const std::string dom = to_lower(f.domain);
         if (id.find("copilot") != std::string::npos || rule_id == "ext.copilot" || rule_id == "ext.jb.copilot")
-            return dom.find("githubcopilot.com") != std::string::npos;
+            return dom.find("githubcopilot.com") != std::string::npos ||
+                   dom.find("copilot-proxy.githubusercontent.com") != std::string::npos ||
+                   dom.find("copilot-telemetry.githubusercontent.com") != std::string::npos ||
+                   dom.find("copilot.microsoft.com") != std::string::npos;
         if (id.find("ml-llm") != std::string::npos || id.find("jetbrains.ai") != std::string::npos ||
             rule_id.starts_with("ext.jb.ai"))
             return dom.find("jetbrains.ai") != std::string::npos || dom.find("grazie.ai") != std::string::npos;
@@ -636,16 +643,21 @@ void Agent::scan_extensions() {
         std::optional<OutboundAiFlow> flow;
     };
     std::vector<ActiveExtHit> active_hits;
+    std::vector<bool> flow_claimed(flows.size(), false);
     for (auto& e : exts) {
         auto h = rules_.match_extension(e);
         std::optional<OutboundAiFlow> matched_flow;
         if (h) {
-            for (const auto& f : flows) {
+            for (size_t fi = 0; fi < flows.size(); ++fi) {
+                const auto& f = flows[fi];
                 if (flow_matches_ext(e, h->rule_id, f)) {
-                    e.active = true;
-                    e.activity = f.domain + " (+" + fmt_kb(f.bytes_sent) + " KB sent, +" + fmt_kb(f.bytes_recv) + " KB recv)";
-                    matched_flow = f;
-                    break;
+                    if (!e.active) {
+                        e.active = true;
+                        e.activity =
+                            f.domain + " (+" + fmt_kb(f.bytes_sent) + " KB sent, +" + fmt_kb(f.bytes_recv) + " KB recv)";
+                        matched_flow = f;
+                    }
+                    flow_claimed[fi] = true;
                 }
             }
         }
@@ -697,6 +709,27 @@ void Agent::scan_extensions() {
             ctx["recv_kb"] = std::round((double(item.flow->bytes_recv) / 1024.0) * 10.0) / 10.0;
         }
         handle_rule_hit(live_hit, item.ext.ide + ":" + item.ext.id + ":" + item.ext.user, std::move(ctx));
+    }
+    // Any extension-host AI stream that did not match an installed extension (e.g., built-in Copilot Chat)
+    // must still be emitted rather than silently dropped.
+    for (size_t fi = 0; fi < flows.size(); ++fi) {
+        if (flow_claimed[fi]) continue;
+        const auto& f = flows[fi];
+        if (!is_extension_host_proc(f.process) || is_browser_proc(f.process)) continue;
+        const auto dom = to_lower(f.domain);
+        auto [rule_id, category, desc] = classify_ai_flow(rules_, dom, f.process);
+        if (category != "ai_extension") continue;
+        const double sent_kb = std::round((double(f.bytes_sent) / 1024.0) * 10.0) / 10.0;
+        const double recv_kb = std::round((double(f.bytes_recv) / 1024.0) * 10.0) / 10.0;
+        RuleHit hit{rule_id, category, desc + " (" + f.process + ")", Severity::high};
+        handle_rule_hit(hit, f.process + ":" + dom,
+                        json{{"process", f.process},
+                             {"exe", f.process},
+                             {"pid", f.pid},
+                             {"domain", dom},
+                             {"remote_ip", f.remote_ip},
+                             {"sent_kb", sent_kb},
+                             {"recv_kb", recv_kb}});
     }
 }
 
@@ -793,12 +826,14 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
 void Agent::push_helper_config() {
     if (!plat_.ipc) return;
     const Policy p = policy();
+    const std::string pac_url = (p.proxy_mode == "proxy_only") ? p.proxy_pac_url : std::string{};
     plat_.ipc->broadcast(ipc::line({{"t", "config"},
                                     {"mode", to_string(p.mode)},
                                     {"title_capture", to_string(p.title_capture)},
                                     {"ccc_host", cfg_.ccc_host},
                                     {"pc_id", cfg_.pc_id},
                                     {"ext_ids", rules_.extension_ids()},
+                                    {"proxy_pac_url", pac_url},
                                     {"screen", {{"port", cfg_.screen_port},
                                                 {"path", cfg_.screen_path},
                                                 {"tls", cfg_.screen_tls},
@@ -1540,7 +1575,10 @@ int Agent::run(std::atomic<bool>& stop) {
     if (plat_.devices) plat_.devices->stop();
     if (plat_.files) plat_.files->stop();
     if (plat_.input) plat_.input->stop();
-    if (plat_.ipc) plat_.ipc->stop();
+    if (plat_.ipc) {
+        plat_.ipc->broadcast(ipc::line({{"t", "clear_proxy_pac"}}));
+        plat_.ipc->stop();
+    }
     return 0;
 }
 

@@ -364,7 +364,7 @@
                     <td class="mono small" x-text="n.host + (n.path ? n.path : '')"></td>
                     <td class="muted" x-text="n.layer"></td>
                     <td class="muted" x-text="n.category || '—'"></td>
-                    <td class="right"><span class="chip" :class="n.action === 'blocked' ? 'ok' : 'watch'" x-text="n.action"></span></td>
+                    <td class="right"><span class="chip" :class="n.action === 'blocked' ? 'ok' : (n.action === 'observed' ? 'alert' : 'watch')" x-text="n.action"></span></td>
                   </tr>
                 </template>
               </tbody></table>

@@ -477,9 +477,12 @@ public:
 
     void stop() override {
         sni_stop_ = true;
-        if (sni_sock_ != INVALID_SOCKET) {
-            closesocket(sni_sock_);
-            sni_sock_ = INVALID_SOCKET;
+        {
+            std::lock_guard lk(sni_sock_mu_);
+            if (sni_sock_ != INVALID_SOCKET) {
+                closesocket(sni_sock_);
+                sni_sock_ = INVALID_SOCKET;
+            }
         }
         if (sni_thread_.joinable()) sni_thread_.join();
         if (iface_handle_) CancelMibChangeNotify2(iface_handle_);
@@ -532,50 +535,94 @@ private:
         if (last_dns_query_.size() > 2048) last_dns_query_.clear();
     }
 
+    std::string find_primary_ipv4() {
+        for (const auto& a : adapters()) {
+            if (!a.up || !a.is_default_route) continue;
+            for (const auto& addr : a.addresses) {
+                if (addr.find(':') == std::string::npos && !addr.starts_with("127.") && !addr.starts_with("169.254.")) {
+                    return addr;
+                }
+            }
+        }
+        return {};
+    }
+
+    bool has_sni_socket() {
+        std::lock_guard lk(sni_sock_mu_);
+        return sni_sock_ != INVALID_SOCKET;
+    }
+
+    void close_sni_socket() {
+        std::lock_guard lk(sni_sock_mu_);
+        if (sni_sock_ != INVALID_SOCKET) {
+            closesocket(sni_sock_);
+            sni_sock_ = INVALID_SOCKET;
+        }
+    }
+
+    SOCKET open_sni_socket(const std::string& bind_ip) {
+        SOCKET s = socket(AF_INET, SOCK_RAW, IPPROTO_IP);
+        if (s == INVALID_SOCKET) return INVALID_SOCKET;
+
+        sockaddr_in sa{};
+        sa.sin_family = AF_INET;
+        inet_pton(AF_INET, bind_ip.c_str(), &sa.sin_addr);
+        if (bind(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) != 0) {
+            closesocket(s);
+            return INVALID_SOCKET;
+        }
+        DWORD opt = RCVALL_IPLEVEL;
+        DWORD bytes = 0;
+        if (WSAIoctl(s, SIO_RCVALL, &opt, sizeof(opt), nullptr, 0, &bytes, nullptr, nullptr) != 0) {
+            opt = RCVALL_ON;
+            if (WSAIoctl(s, SIO_RCVALL, &opt, sizeof(opt), nullptr, 0, &bytes, nullptr, nullptr) != 0) {
+                closesocket(s);
+                return INVALID_SOCKET;
+            }
+        }
+        DWORD tv = 500;
+        setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
+        std::lock_guard lk(sni_sock_mu_);
+        if (sni_stop_) {
+            closesocket(s);
+            return INVALID_SOCKET;
+        }
+        sni_sock_ = s;
+        return s;
+    }
+
     void start_sni_sniffer() {
         sni_stop_ = false;
         sni_thread_ = std::thread([this] {
-            // Find primary non-loopback IPv4 address for raw socket TLS ClientHello SNI capture
-            std::string bind_ip;
-            for (const auto& a : adapters()) {
-                if (!a.up || !a.is_default_route) continue;
-                for (const auto& addr : a.addresses) {
-                    if (addr.find(':') == std::string::npos && !addr.starts_with("127.") && !addr.starts_with("169.254.")) {
-                        bind_ip = addr;
-                        break;
+            std::vector<uint8_t> buf(65535);
+            std::string bound_ip;
+            int64_t last_ip_check_ms = 0;
+
+            while (!sni_stop_) {
+                const int64_t now = steady_ms();
+                if (bound_ip.empty() || now - last_ip_check_ms >= 5000) {
+                    last_ip_check_ms = now;
+                    const std::string cur_ip = find_primary_ipv4();
+                    if (cur_ip != bound_ip || !has_sni_socket()) {
+                        close_sni_socket();
+                        bound_ip.clear();
+                        if (!cur_ip.empty() && open_sni_socket(cur_ip) != INVALID_SOCKET) {
+                            bound_ip = cur_ip;
+                        }
                     }
                 }
-                if (!bind_ip.empty()) break;
-            }
-            if (bind_ip.empty()) return;
-
-            SOCKET s = socket(AF_INET, SOCK_RAW, IPPROTO_IP);
-            if (s == INVALID_SOCKET) return;
-            sni_sock_ = s;
-
-            sockaddr_in sa{};
-            sa.sin_family = AF_INET;
-            inet_pton(AF_INET, bind_ip.c_str(), &sa.sin_addr);
-            if (bind(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) != 0) {
-                closesocket(s);
-                sni_sock_ = INVALID_SOCKET;
-                return;
-            }
-            DWORD opt = RCVALL_IPLEVEL;
-            DWORD bytes = 0;
-            if (WSAIoctl(s, SIO_RCVALL, &opt, sizeof(opt), nullptr, 0, &bytes, nullptr, nullptr) != 0) {
-                opt = RCVALL_ON;
-                if (WSAIoctl(s, SIO_RCVALL, &opt, sizeof(opt), nullptr, 0, &bytes, nullptr, nullptr) != 0) {
-                    closesocket(s);
-                    sni_sock_ = INVALID_SOCKET;
-                    return;
+                if (bound_ip.empty()) {
+                    for (int k = 0; k < 10 && !sni_stop_; ++k) Sleep(200);
+                    continue;
                 }
-            }
-            DWORD tv = 500;
-            setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
 
-            std::vector<uint8_t> buf(65535);
-            while (!sni_stop_) {
+                SOCKET s = INVALID_SOCKET;
+                {
+                    std::lock_guard lk(sni_sock_mu_);
+                    s = sni_sock_;
+                }
+                if (s == INVALID_SOCKET) continue;
+
                 int n = recv(s, reinterpret_cast<char*>(buf.data()), int(buf.size()), 0);
                 if (n < 60) continue;
                 size_t ihl = (buf[0] & 0x0F) * 4;
@@ -595,6 +642,7 @@ private:
                     ip_to_domains_[dst_ip].insert(sni);
                 }
             }
+            close_sni_socket();
         });
     }
 
@@ -619,6 +667,7 @@ private:
     std::map<std::string, int64_t> last_dns_query_;
     std::map<std::string, ConnCounter> conn_bytes_;
     std::atomic<bool> sni_stop_{false};
+    std::mutex sni_sock_mu_;
     SOCKET sni_sock_ = INVALID_SOCKET;
     std::thread sni_thread_;
 };

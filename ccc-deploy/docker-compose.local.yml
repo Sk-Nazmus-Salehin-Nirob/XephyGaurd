@@ -73,6 +73,9 @@ services:
     image: xephyguard/ccc-proxy:local
     build: { context: .., dockerfile: ccc-deploy/docker/proxy.Dockerfile, network: host }
     network_mode: host
+    dns:
+      - 127.0.0.1
+      - 8.8.8.8
     restart: unless-stopped
     env_file: .env.local
     volumes:

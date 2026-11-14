@@ -72,6 +72,9 @@ services:
     image: xephyguard/ccc-proxy:${XG_VERSION:-latest}
     build: { context: .., dockerfile: ccc-deploy/docker/proxy.Dockerfile }
     network_mode: host
+    dns:
+      - 127.0.0.1
+      - 8.8.8.8
     restart: unless-stopped
     environment:
       XG_NETWORK_MODE: ${XG_NETWORK_MODE:-gateway}

@@ -13,7 +13,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from .domains import DomainSet
+from .domains import DomainSet, PathRules
 from .state import State
 
 log = logging.getLogger("xg-proxy")
@@ -41,6 +41,10 @@ class PolicyCache:
         self.state = State()
         self._blocked: dict[str | None, DomainSet] = {}
         self._inspect = DomainSet()
+        self._ai_doms = DomainSet()
+        self._ide_doms = DomainSet()
+        self._ai_paths = PathRules()
+        self._ide_paths = PathRules()
         self.reload(force=True)
 
     def reload(self, force: bool = False) -> None:
@@ -62,12 +66,36 @@ class PolicyCache:
         self._mtime = m
         self._blocked = {}
         self._inspect = DomainSet.of(self.state.inspect_hosts)
+        self._ai_doms = DomainSet.of(self.state.categories.get("ai", []))
+        self._ide_doms = DomainSet.of(self.state.categories.get("ide", []))
+        self._ai_paths = PathRules.of(self.state.path_rules.get("ai", []))
+        self._ide_paths = PathRules.of(self.state.path_rules.get("ide", []))
         log.info("proxy policy v%s loaded", self.state.version)
 
     def blocked(self, group: str | None) -> DomainSet:
         if group not in self._blocked:
             self._blocked[group] = self.state.blocked_domains_for_group(group)
         return self._blocked[group]
+
+    def match_ai_domain(self, host: str | None) -> tuple[str, str] | None:
+        """Returns (matched_domain, category) when host belongs to tracked AI or IDE categories."""
+        if not host:
+            return None
+        if m := self._ai_doms.matches(host):
+            return m, "ai"
+        if m := self._ide_doms.matches(host):
+            return m, "ide"
+        return None
+
+    def match_ai_path(self, host: str | None, path: str) -> tuple[str, str] | None:
+        """Returns (matched_rule, category) when host+path matches tracked AI or IDE path rules."""
+        if not host:
+            return None
+        if r := self._ai_paths.matches(host, path):
+            return r, "ai"
+        if r := self._ide_paths.matches(host, path):
+            return r, "ide"
+        return None
 
     # -- decisions ------------------------------------------------------------------------------
     def decide_tls(self, client_ip: str | None, sni: str | None) -> TlsDecision:
@@ -204,11 +232,30 @@ class EventShipper:
         self.cache = cache
         self.fallback = fallback
         self.q: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=50000)
+        self._seen_lock = threading.Lock()
+        self._seen_observed: dict[tuple[str | None, str], float] = {}
         self._stop = threading.Event()
         self._t = threading.Thread(target=self._run, daemon=True)
         self._t.start()
 
+    def should_emit_observed(self, client_ip: str | None, matched: str, window_s: float = 30.0) -> bool:
+        """Deduplicates observed AI/IDE events per (client_ip, matched_domain) within window_s."""
+        ip = client_ip.removeprefix("::ffff:") if client_ip else None
+        now = time.monotonic()
+        key = (ip, matched)
+        with self._seen_lock:
+            last = self._seen_observed.get(key)
+            if last is not None and now - last < window_s:
+                return False
+            if len(self._seen_observed) > 4096:
+                cutoff = now - window_s
+                self._seen_observed = {k: v for k, v in self._seen_observed.items() if v > cutoff}
+            self._seen_observed[key] = now
+            return True
+
     def emit(self, **ev: Any) -> None:
+        if isinstance(ev.get("client_ip"), str):
+            ev["client_ip"] = ev["client_ip"].removeprefix("::ffff:")
         ev.setdefault("ts", int(time.time() * 1000))
         try:
             self.q.put_nowait(ev)

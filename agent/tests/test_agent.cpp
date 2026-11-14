@@ -297,3 +297,51 @@ TEST_CASE("agent pushes ext_ids to the helper after applying a bundle") {
     CHECK(h.ipc->count_containing("\"ext_ids\"") >= 1);
     CHECK(h.ipc->count_containing("github.copilot-chat") >= 1);
 }
+
+TEST_CASE("agent emits fallback hit for unclaimed IDE extension-host AI flows and matches copilot-proxy") {
+    {
+        Harness h;
+        h.agent->apply_policy(Policy::default_for(Mode::practice));
+        // Built-in or unlisted Copilot in VS Code (no github.copilot extension on disk!) must still raise a hit.
+        h.exts->list = {{"vscode", "ms-vscode.cpptools", "1.0", "alice", ""}};
+        h.procs->procs = {{100, 1, "C:\\Users\\alice\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+                           "Code.exe", "", "alice", 0, 1}};
+        h.net->flows = {{100, "code", "140.82.114.22", 443, "api.individual.githubcopilot.com", 2048, 8192}};
+        h.agent->scan_extensions();
+        auto hits = h.of(ev::rule_hit);
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].data["rule_id"] == "net.ide_ai");
+        CHECK(hits[0].data["category"] == "ai_extension");
+        CHECK(hits[0].data["context"]["process"] == "code");
+        CHECK(hits[0].data["context"]["domain"] == "api.individual.githubcopilot.com");
+    }
+
+    {
+        Harness h;
+        h.agent->apply_policy(Policy::default_for(Mode::practice));
+        // When github.copilot IS installed and contacts copilot-proxy.githubusercontent.com, ext.copilot claims it
+        // instead of duplicating as a generic fallback hit.
+        h.procs->procs = {{100, 1, "C:\\Users\\alice\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+                           "Code.exe", "", "alice", 0, 1}};
+        h.exts->list = {{"vscode", "github.copilot", "1.2", "alice", "", false, ""}};
+        h.net->flows = {{100, "code", "140.82.114.25", 443, "copilot-proxy.githubusercontent.com", 1024, 4096}};
+        h.agent->scan_extensions();
+        auto hits = h.of(ev::rule_hit);
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].data["rule_id"] == "ext.copilot");
+        CHECK(hits[0].data["context"]["domain"] == "copilot-proxy.githubusercontent.com");
+    }
+}
+
+TEST_CASE("agent pushes proxy_pac_url to helper in proxy_only mode") {
+    Harness h;
+    auto p = Policy::default_for(Mode::practice);
+    p.proxy_mode = "proxy_only";
+    p.proxy_pac_url = "http://192.168.0.100/proxy.pac";
+    h.agent->apply_policy(p);
+    CHECK(h.ipc->count_containing("http://192.168.0.100/proxy.pac") >= 1);
+
+    p.proxy_mode = "gateway";
+    h.agent->apply_policy(p);
+    CHECK(h.ipc->count_containing("\"proxy_pac_url\":\"\"") >= 1);
+}

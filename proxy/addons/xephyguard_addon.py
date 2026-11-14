@@ -68,8 +68,14 @@ class XephyGuard:
                              matched=d.matched, reason=d.reason)
         elif d.action == "pass":
             data.ignore_connection = True
-            if self.cache.state.log_urls.get("enabled") and sni:
-                self.events.emit(client_ip=ip, host=sni, layer="sni", action="allowed")
+            if sni:
+                ai_match = self.cache.match_ai_domain(sni)
+                if ai_match:
+                    if self.events.should_emit_observed(ip, ai_match[0]):
+                        self.events.emit(client_ip=ip, host=sni, layer="sni", action="observed",
+                                         category=ai_match[1], matched=ai_match[0])
+                elif self.cache.state.log_urls.get("enabled"):
+                    self.events.emit(client_ip=ip, host=sni, layer="sni", action="allowed")
         # "inspect": let mitmproxy intercept with the lab CA
 
     def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
@@ -107,8 +113,13 @@ class XephyGuard:
                 flow.metadata["xg_rewritten"] = True
                 self.events.emit(client_ip=ip, host=host, path="/search", layer="search-ai", action="rewritten",
                                  category="search_ai")
+        ai_match = self.cache.match_ai_domain(host) or self.cache.match_ai_path(host, path)
+        if ai_match and self.events.should_emit_observed(ip, ai_match[0]):
+            self.events.emit(client_ip=ip, host=host, path=path.split("?", 1)[0][:256],
+                             layer="http" if flow.request.scheme == "http" else "path",
+                             action="observed", category=ai_match[1], matched=ai_match[0])
         lu = self.cache.state.log_urls
-        if lu.get("enabled"):
+        if lu.get("enabled") and not ai_match:
             p = flow.request.path if lu.get("query") else flow.request.path.split("?", 1)[0]
             self.events.emit(client_ip=ip, host=host, path=p[:512], layer="http", action="allowed")
 

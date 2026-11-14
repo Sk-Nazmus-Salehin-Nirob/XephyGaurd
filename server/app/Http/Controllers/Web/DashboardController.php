@@ -92,6 +92,50 @@ class DashboardController extends Controller
 
         $sessionPc = $session ? \App\Models\SessionPc::where('lab_session_id', $session->id)->where('pc_id', $pc->id)->first() : null;
         $student = $sessionPc?->student_id ? \App\Models\Student::find($sessionPc->student_id) : \App\Models\Student::forLogin($pc->current_user);
+        $netEvents = NetEvent::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)->latest('occurred_at')
+            ->limit(100)->get(['host', 'path', 'layer', 'action', 'category', 'matched', 'occurred_at']);
+
+        $agentAiTraffic = $events->where('type', 'rule_hit')
+            ->filter(fn ($e) => ! empty($e->data['context']['domain'] ?? ''))
+            ->values()
+            ->map(fn ($e) => [
+                'at' => $e->occurred_at->format('H:i:s'),
+                'rule_id' => $e->data['rule_id'] ?? '',
+                'description' => $e->data['description'] ?? '',
+                'process' => $e->data['context']['process'] ?? ($e->data['context']['ide'] ?? ''),
+                'domain' => $e->data['context']['domain'] ?? '',
+                'remote_ip' => $e->data['context']['remote_ip'] ?? '',
+                'sent_kb' => $e->data['context']['sent_kb'] ?? 0,
+                'recv_kb' => $e->data['context']['recv_kb'] ?? 0,
+                'count' => 1,
+                'mode' => 'Observed',
+            ]);
+
+        $proxyAiTraffic = $netEvents
+            ->filter(fn ($n) => in_array($n->action, ['observed', 'blocked'], true)
+                && in_array($n->category, ['ai', 'ide', 'search_ai'], true))
+            ->groupBy(fn ($n) => ($n->host ?: $n->matched ?: '').'|'.$n->action)
+            ->values()
+            ->map(function ($group) {
+                $first = $group->first();
+
+                return [
+                    'at' => $first->occurred_at?->format('H:i:s'),
+                    'rule_id' => 'proxy.'.($first->category ?? 'ai'),
+                    'description' => match ($first->category) {
+                        'ide' => 'IDE AI backend',
+                        'search_ai' => 'Search AI',
+                        default => 'AI web service',
+                    },
+                    'process' => 'proxy ('.$first->layer.')',
+                    'domain' => $first->host ?: ($first->matched ?? ''),
+                    'remote_ip' => '',
+                    'sent_kb' => 0,
+                    'recv_kb' => 0,
+                    'count' => $group->count(),
+                    'mode' => $first->action === 'blocked' ? 'Blocked' : 'Observed',
+                ];
+            });
 
         return response()->json([
             'pc' => $pc->tile() + ['hostname' => $pc->hostname, 'os_version' => $pc->os_version, 'ip' => $pc->ip,
@@ -122,19 +166,7 @@ class DashboardController extends Controller
                     'user' => $e->user ?: ($e->data['user'] ?? ''),
                     'ai_site' => $e->data['ai_site'] ?? '',
                 ]),
-            'ai_traffic' => $events->where('type', 'rule_hit')
-                ->filter(fn ($e) => ! empty($e->data['context']['domain'] ?? ''))
-                ->values()
-                ->map(fn ($e) => [
-                    'at' => $e->occurred_at->format('H:i:s'),
-                    'rule_id' => $e->data['rule_id'] ?? '',
-                    'description' => $e->data['description'] ?? '',
-                    'process' => $e->data['context']['process'] ?? ($e->data['context']['ide'] ?? ''),
-                    'domain' => $e->data['context']['domain'] ?? '',
-                    'remote_ip' => $e->data['context']['remote_ip'] ?? '',
-                    'sent_kb' => $e->data['context']['sent_kb'] ?? 0,
-                    'recv_kb' => $e->data['context']['recv_kb'] ?? 0,
-                ]),
+            'ai_traffic' => $agentAiTraffic->concat($proxyAiTraffic)->sortByDesc('at')->values(),
             'processes' => $events->whereIn('type', ['process_start', 'process_stop'])->values()
                 ->map(fn ($e) => ['at' => $e->occurred_at->format('H:i:s'), 'type' => $e->type, 'pid' => $e->data['pid'] ?? null, 'exe' => $e->data['exe'] ?? '', 'rule' => $e->data['rule_id'] ?? '']),
             'adapters' => Event::query()->where('pc_id', $pc->id)->where('type', 'net_adapter')->latest('occurred_at')
@@ -170,12 +202,10 @@ class DashboardController extends Controller
                     'model' => $e->data['model'] ?? '',
                     'rule_id' => $e->data['rule_id'] ?? '',
                 ]),
-            'network' => NetEvent::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)->latest('occurred_at')
-                ->limit(100)->get(['host', 'path', 'layer', 'action', 'category', 'occurred_at'])
-                ->map(fn ($n) => [
-                    'host' => $n->host, 'path' => $n->path, 'layer' => $n->layer, 'action' => $n->action,
-                    'category' => $n->category, 'occurred_at' => $n->occurred_at?->format('H:i:s'),
-                ]),
+            'network' => $netEvents->map(fn ($n) => [
+                'host' => $n->host, 'path' => $n->path, 'layer' => $n->layer, 'action' => $n->action,
+                'category' => $n->category, 'occurred_at' => $n->occurred_at?->format('H:i:s'),
+            ]),
             'pastes' => PasteEvent::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)->latest('occurred_at')
                 ->limit(100)->get(['is_copy', 'chars', 'lines', 'looks_like_code', 'source_app', 'target_app', 'occurred_at'])
                 ->map(fn ($p) => [
