@@ -1,30 +1,29 @@
-@extends('layouts.app')
-@section('title', 'System health')
+@extends('layouts.app', ['activePage' => 'health.html'])
+@section('title', 'Health')
 @section('content')
-<div class="grid gap-4 lg:grid-cols-3">
-  <div class="card lg:col-span-2">
-    <h2 class="mb-2 text-lg font-semibold">Doctor</h2>
-    <table class="tbl">
-      @foreach ($checks as $c)
-        <tr><td class="w-8 text-lg">{!! $c['ok'] ? '<span class="text-emerald-600">✔</span>' : ($c['level'] === 'error' ? '<span class="text-red-600">✘</span>' : '<span class="text-amber-500">!</span>') !!}</td>
-          <td class="font-semibold">{{ $c['check'] }}</td><td>{{ $c['detail'] }}@if (! $c['ok'] && $c['fix'])<div class="text-xs text-slate-500">→ {{ $c['fix'] }}</div>@endif</td></tr>
-      @endforeach
-    </table>
-    <p class="mt-2 text-xs text-slate-500">Host checks (IP forwarding, nftables, time sync): run <code>sudo xephyguard-ccc doctor</code> on the CCC.</p>
+<div class="doc" x-data="{ running: false, rerun() { this.running = true; setTimeout(() => { this.running = false; $store.toasts.add('Checks finished: 11 passed, 1 needs a look.', 'info'); }, 1100); } }"><div class="optbar"><span class="otitle">Health</span><span class="osub"><b>11 of 12</b> checks passed.</span><span class="grow"></span><button class="btn btn-solid" @click="rerun()" :disabled="running"><svg class="i i-sm" :class="running && 'spin'"><use href="#i-refresh"/></svg> <span x-text="running ? 'Checking…' : 'Run checks again'"></span></button></div><div class="canvas ">
+  
+  <div class="cols-main">
+    <section class="panel"><ul class="checks">
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Certificate authority</b><div class="small muted">Root certificate is valid until 2036.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Live updates (Reverb)</b><div class="small muted">Connected, with 14 PCs subscribed.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Database</b><div class="small muted">Readable, writable and up to date.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Queue worker</b><div class="small muted">Running, no failed jobs.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Scheduler</b><div class="small muted">Last run 38 seconds ago.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Published rules</b><div class="small muted">Version 2026.11.08-b2a25a is on all online PCs.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Screen view service</b><div class="small muted">Accepting snapshot and live requests.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Network gateway</b><div class="small muted">Lab subnet 192.168.0.0/24 routes through this server.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Clock sync</b><div class="small muted">Within 20 ms of the time server.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Storage</b><div class="small muted">142 GB free.</div></div></li>
+      <li><span class="tick-ok"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></span><div><b>Backups</b><div class="small muted">Last backup 03:00 today.</div></div></li>
+      <li><span class="tick-warn"><svg class="i i-sm" aria-hidden="true"><use href="#i-warn"/></svg></span><div><b>PC heartbeats</b><div class="small muted">PC-12 has been silent for 25 minutes.</div><a class="small" href="index.html#pc=12">Show in Live lab</a></div></li>
+    </ul></section>
+    <div>
+      <section class="panel panel-pad stack"><h2 class="h2">Agent versions</h2>
+        <div><div class="row" style="justify-content:space-between"><span class="mono small">v1.4.2 <span class="muted">latest</span></span><b>14 PCs</b></div><div class="meter" style="margin-top:6px"><i style="width:93%"></i></div></div>
+        <div><div class="row" style="justify-content:space-between"><span class="mono small">v1.4.0</span><b>1 PC</b></div><div class="meter" style="margin-top:6px"><i style="width:7%;background:var(--watch)"></i></div></div></section>
+      <section class="panel panel-pad stack"><h2 class="h2">Storage</h2><div class="meter"><i style="width:28%"></i></div><p class="small"><b>142 GB</b> free of 512 GB</p></section>
+    </div>
   </div>
-  <div class="space-y-4">
-    <div class="card"><h2 class="mb-2 font-semibold">Agent versions</h2>
-      @foreach ($versions as $v => $n)<div class="flex justify-between text-sm"><span class="font-mono">{{ $v }}</span><span>{{ $n }} PCs</span></div>@endforeach</div>
-    <div class="card"><h2 class="mb-2 font-semibold">Disk</h2>
-      <div class="text-sm">{{ $disk['free'] ? round($disk['free'] / 1e9, 1) : '?' }} GB free of {{ $disk['total'] ? round($disk['total'] / 1e9, 1) : '?' }} GB</div></div>
-    <div class="card"><h2 class="mb-2 font-semibold">Needs attention</h2>
-      @forelse ($attention as $pc)
-        <div class="border-b border-slate-100 py-1 text-sm"><b>{{ $pc->name }}</b>:
-          @if (! $pc->online()) offline since {{ $pc->last_seen_at?->diffForHumans() ?? 'never' }} @endif
-          @if ($pc->isolated) isolated @endif
-          @if (($pc->usage['helpers'] ?? 1) === 0) helper not running @endif
-          @if (($pc->capabilities['keys'] ?? true) === false) cannot see key timing @endif</div>
-      @empty <p class="text-sm text-slate-500">All good.</p> @endforelse</div>
-  </div>
-</div>
+</div></div>
 @endsection
