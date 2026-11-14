@@ -40,9 +40,30 @@ jobs:
       - uses: actions/checkout@v4
       - run: vcpkg install openssl:x64-windows-static sqlite3:x64-windows-static
       - run: cmake -S agent -B build -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static -DXG_BUILD_TESTS=OFF
-      - run: cmake --build build --config Release --target xephyguard-agent
+      - run: cmake --build build --config Release --target xephyguard-agent xephyguard-helper
+      - name: Package installer (.exe)
+        shell: pwsh
+        run: |
+          python -m pip install --quiet pyyaml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/compile_signatures.py --out installers/windows/signatures.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $cmd = Get-Command makensis -ErrorAction SilentlyContinue
+          $makensis = if ($cmd) { $cmd.Source } elseif (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") { "C:\Program Files (x86)\NSIS\makensis.exe" } else { "" }
+          if (-not $makensis) {
+            choco install nsis -y --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          }
+          $ver = if ((Get-Content agent/CMakeLists.txt -Raw) -match 'VERSION\s+([0-9.]+)') { $matches[1] } else { '0.1.0' }
+          $buildDir = (Resolve-Path build/Release).Path
+          Push-Location installers/windows
+          & $makensis -V2 "-DVERSION=$ver" "-DBUILD_DIR=$buildDir" xephyguard.nsi
+          $rc = $LASTEXITCODE
+          Pop-Location
+          if ($rc -ne 0) { exit $rc }
       - uses: actions/upload-artifact@v4
-        with: { name: agent-windows, path: build/Release/xephyguard-agent.exe }
+        with: { name: agent-windows, path: installers/windows/XephyGuard-Setup-*.exe }
 
   server:
     runs-on: ubuntu-24.04
