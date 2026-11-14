@@ -10,17 +10,7 @@
       $status = $p['status'] ?? 'normal';
       $score = (int) ($p['score'] ?? 0);
       $user = $p['user'] ?? '';
-      if ($status === 'offline') {
-          $uiStatus = 'offline';
-      } elseif ($user === '' || $user === null) {
-          $uiStatus = 'idle';
-      } elseif ($score >= 50 || $status === 'alert') {
-          $uiStatus = 'alert';
-      } elseif ($score >= 25 || $status === 'watch') {
-          $uiStatus = 'watch';
-      } else {
-          $uiStatus = 'normal';
-      }
+      $uiStatus = \App\Models\Pc::resolveUiStatus($status, $score, $user);
       $scenes = ['code', 'terminal', 'split', 'writer', 'calc', 'browser'];
       return [
           'id' => $p['id'],

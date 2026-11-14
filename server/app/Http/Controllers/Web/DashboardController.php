@@ -13,23 +13,27 @@ use App\Models\PasteEvent;
 use App\Models\Pc;
 use App\Models\Profile;
 use App\Models\Seat;
+use App\Models\SessionPc;
 use App\Services\Audit;
+use App\Services\EventIngestor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function index(EventIngestor $ingestor)
     {
         $lab = Lab::current();
         $session = LabSession::activeFor($lab->id);
+        $pcs = Pc::query()->active()->where('lab_id', $lab->id)->with('agent:id,pc_id,version')->orderBy('name')->get();
+        $ingestor->reconcileLiveScores($pcs, $session);
 
         return view('dashboard.live', [
             'lab' => $lab,
             'session' => $session?->load('profile'),
             'seats' => Seat::query()->where('lab_id', $lab->id)->get(['id', 'label', 'x', 'y']),
-            'pcs' => Pc::query()->active()->where('lab_id', $lab->id)->with('agent:id,pc_id,version')->orderBy('name')->get()->map(fn ($p) => $p->tile() + [
+            'pcs' => $pcs->map(fn ($p) => $p->tile() + [
                 'hostname' => $p->hostname,
                 'ip' => $p->ip,
                 'os_version' => $p->os_version,
@@ -57,9 +61,16 @@ class DashboardController extends Controller
     }
 
     /** Detail drawer: timeline, processes, network log, key-rate chart, paste log. */
-    public function pc(Pc $pc): JsonResponse
+    public function pc(Pc $pc, EventIngestor $ingestor): JsonResponse
     {
         $session = LabSession::activeFor($pc->lab_id);
+        $inSession = $session && SessionPc::query()->where('lab_session_id', $session->id)->where('pc_id', $pc->id)->exists();
+        $prevStatus = $pc->status;
+        $prevScore = (int) $pc->live_score;
+        $ingestor->refreshLiveScore($pc, $inSession ? $session : null);
+        if ($pc->status !== $prevStatus || (int) $pc->live_score !== $prevScore) {
+            $pc->save();
+        }
         $since = $session?->started_at ?? now()->subHours(24);
         $events = Event::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)
             ->whereNotIn('type', ['key_stats', 'heartbeat', 'process_snapshot', 'extension_scan', 'artifact_scan'])->latest('occurred_at')->limit(200)->get(['type', 'occurred_at', 'data', 'user'])

@@ -209,4 +209,77 @@ class UiRegressionTest extends TestCase
             @unlink($smallFile);
         }
     }
+
+    public function test_acknowledging_all_alerts_turns_seat_green_and_resets_live_score(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        [$pc] = $this->enrolledPc('192.168.10.21', 'Rupom2');
+        $pc->update(['current_user' => 'student.rupom', 'status' => 'alert', 'live_score' => 100, 'last_seen_at' => now()]);
+
+        $crit = Alert::create(['pc_id' => $pc->id, 'rule_id' => 'tamper.x', 'severity' => 'critical', 'title' => 'Crit', 'occurred_at' => now()->subMinutes(4)]);
+        $high = Alert::create(['pc_id' => $pc->id, 'rule_id' => 'net.ai_domain', 'severity' => 'high', 'title' => 'High', 'occurred_at' => now()->subMinutes(3)]);
+        $med = Alert::create(['pc_id' => $pc->id, 'rule_id' => 'net.wifi_new', 'severity' => 'medium', 'title' => 'Med', 'occurred_at' => now()->subMinutes(2)]);
+        $low = Alert::create(['pc_id' => $pc->id, 'rule_id' => 'proc.info', 'severity' => 'low', 'title' => 'Low', 'occurred_at' => now()->subMinute()]);
+        Alert::create(['pc_id' => $pc->id, 'rule_id' => 'net.ai_domain', 'severity' => 'high', 'title' => 'Old acked', 'occurred_at' => now()->subMinutes(10), 'acknowledged_at' => now()->subMinutes(5)]);
+
+        $admin = $this->user('admin');
+        $this->actingAs($admin);
+
+        // Batch-acknowledge critical + high: only medium (15) + low (5) = 20 remain -> warning/watch (amber)
+        $this->postJson('/alerts/ack-batch', ['ids' => [$crit->id, $high->id]])
+            ->assertOk()
+            ->assertJsonPath('pcs.0.status', 'warning')
+            ->assertJsonPath('pcs.0.score', 20);
+
+        $dashMid = $this->get('/')->assertOk()->getContent();
+        preg_match('/<script type="application\/json" id="xg-live-data">(.*?)<\/script>/s', $dashMid, $m1);
+        $midData = json_decode($m1[1], true, 512, JSON_THROW_ON_ERROR);
+        $midPc = collect($midData['pcs'])->firstWhere('id', $pc->id);
+        $this->assertSame('watch', $midPc['status']);
+        $this->assertSame(20, $midPc['score']);
+
+        // Ack medium: only low (5) remains -> clean/normal (green)
+        $this->postJson("/alerts/{$med->id}/ack", [])
+            ->assertOk()
+            ->assertJsonPath('pc.status', 'clean')
+            ->assertJsonPath('pc.score', 5);
+
+        // Ack low: zero unacked alerts remain -> clean/normal, score = 0
+        $this->postJson("/alerts/{$low->id}/ack", [])
+            ->assertOk()
+            ->assertJsonPath('pc.status', 'clean')
+            ->assertJsonPath('pc.score', 0);
+
+        $pc->refresh();
+        $this->assertSame('clean', $pc->status);
+        $this->assertSame(0, $pc->live_score);
+
+        $dashClean = $this->get('/')->assertOk()->getContent();
+        preg_match('/<script type="application\/json" id="xg-live-data">(.*?)<\/script>/s', $dashClean, $m2);
+        $cleanData = json_decode($m2[1], true, 512, JSON_THROW_ON_ERROR);
+        $cleanPc = collect($cleanData['pcs'])->firstWhere('id', $pc->id);
+        $this->assertSame('normal', $cleanPc['status']);
+        $this->assertSame(0, $cleanPc['score']);
+    }
+
+    public function test_dashboard_reconciles_stale_live_score_when_no_open_alerts_exist(): void
+    {
+        Queue::fake();
+        $this->bootLab();
+        [$pc] = $this->enrolledPc('192.168.10.21', 'RUPOM');
+        // Simulate stale DB state where alerts were acknowledged under older code leaving live_score = 100
+        $pc->update(['current_user' => 'rupam_e6wsmfr', 'status' => 'clean', 'live_score' => 100, 'last_seen_at' => now()]);
+        Alert::create(['pc_id' => $pc->id, 'rule_id' => 'web.ai_tab', 'severity' => 'high', 'title' => 'Acked ChatGPT', 'occurred_at' => now()->subMinutes(5), 'acknowledged_at' => now()->subMinute()]);
+
+        $html = $this->actingAs($this->user('admin'))->get('/')->assertOk()->getContent();
+        preg_match('/<script type="application\/json" id="xg-live-data">(.*?)<\/script>/s', $html, $m);
+        $data = json_decode($m[1], true, 512, JSON_THROW_ON_ERROR);
+        $renderedPc = collect($data['pcs'])->firstWhere('id', $pc->id);
+
+        $this->assertSame('normal', $renderedPc['status']);
+        $this->assertSame(0, $renderedPc['score']);
+        $this->assertSame(0, $pc->fresh()->live_score);
+        $this->assertSame('clean', $pc->fresh()->status);
+    }
 }

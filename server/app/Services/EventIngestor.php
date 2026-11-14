@@ -181,6 +181,7 @@ class EventIngestor
             'queue_depth' => $hb['queue_depth'] ?? null, 'realtime' => $hb['realtime'] ?? null] : $pc->usage;
         if ($pc->status === 'offline') {
             $pc->status = 'clean';
+            $this->refreshLiveScore($pc, $session);
         }
         $agent->version = is_string($hb['agent_version'] ?? null) ? $hb['agent_version'] : $agent->version;
         $agent->policy_version = isset($hb['policy_version']) ? (string) $hb['policy_version'] : $agent->policy_version;
@@ -385,15 +386,54 @@ class EventIngestor
         return $alert;
     }
 
-    /** Live tile score: severity points of this session's alerts (capped). Not the integrity score. */
+    /** Live tile score: severity points of open (unreviewed) alerts (capped). Not the integrity score. */
     public function refreshLiveScore(Pc $pc, ?LabSession $session): void
     {
-        $q = Alert::query()->where('pc_id', $pc->id);
-        $session ? $q->where('lab_session_id', $session->id) : $q->where('occurred_at', '>', now()->subHours(2));
-        $alerts = $q->get(['severity', 'acknowledged_at']);
-        $points = $alerts->sum(fn ($a) => Alert::SEVERITY_POINTS[$a->severity] ?? 0);
+        $q = Alert::query()->where('pc_id', $pc->id)->whereNull('acknowledged_at');
+        if ($session) {
+            $q->where('lab_session_id', $session->id);
+        }
+        $this->applyOpenAlertsToPc($pc, $q->get(['severity']));
+    }
+
+    /** Reconciles live score and status across multiple PCs using a single open-alerts query. */
+    public function reconcileLiveScores(iterable $pcs, ?LabSession $session): void
+    {
+        $pcList = collect($pcs);
+        if ($pcList->isEmpty()) {
+            return;
+        }
+        $sessionPcIds = $session
+            ? SessionPc::query()->where('lab_session_id', $session->id)->pluck('pc_id')->flip()
+            : collect();
+        $openByPc = Alert::query()
+            ->whereIn('pc_id', $pcList->pluck('id'))
+            ->whereNull('acknowledged_at')
+            ->get(['pc_id', 'lab_session_id', 'severity'])
+            ->groupBy('pc_id');
+
+        foreach ($pcList as $pc) {
+            $prevStatus = $pc->status;
+            $prevScore = (int) $pc->live_score;
+            $alerts = $openByPc->get($pc->id, collect());
+            if ($session && $sessionPcIds->has($pc->id)) {
+                $alerts = $alerts->where('lab_session_id', $session->id);
+            }
+            $this->applyOpenAlertsToPc($pc, $alerts);
+            if ($pc->status !== $prevStatus || (int) $pc->live_score !== $prevScore) {
+                $pc->save();
+            }
+        }
+    }
+
+    private function applyOpenAlertsToPc(Pc $pc, iterable $openAlerts): void
+    {
+        $open = collect($openAlerts);
+        $points = $open->sum(fn ($a) => Alert::SEVERITY_POINTS[$a->severity] ?? 0);
         $pc->live_score = min(100, $points);
-        $open = $alerts->whereNull('acknowledged_at');
+        if ($pc->status === 'offline' && ! $pc->online()) {
+            return;
+        }
         $pc->status = $open->whereIn('severity', ['high', 'critical'])->isNotEmpty() ? 'alert'
             : ($open->where('severity', 'medium')->isNotEmpty() ? 'warning' : 'clean');
     }

@@ -29,6 +29,26 @@ class Pc extends Model
 
     public function scopeActive(Builder $q): Builder { return $q->whereNull('retired_at'); }
 
+    /** Maps DB tile status, risk score, and active user into Live lab seat state. */
+    public static function resolveUiStatus(?string $status, int $score, ?string $user): string
+    {
+        $status = $status ?: 'normal';
+        if ($status === 'offline') {
+            return 'offline';
+        }
+        if ($user === '' || $user === null) {
+            return 'idle';
+        }
+        if ($score >= 50 || $status === 'alert') {
+            return 'alert';
+        }
+        if ($score >= 25 || in_array($status, ['watch', 'warning'], true)) {
+            return 'watch';
+        }
+
+        return 'normal';
+    }
+
     public function online(): bool
     {
         return $this->last_seen_at !== null &&

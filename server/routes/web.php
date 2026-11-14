@@ -45,6 +45,7 @@ Route::group([], function () {
             Route::get('/pcs/{pc}', [DashboardController::class, 'pc'])->name('pcs.show');
             Route::get('/alerts', [AlertController::class, 'index'])->name('alerts.index');
             Route::get('/alerts.html', [AlertController::class, 'index'])->name('alerts.html');
+            Route::post('/alerts/ack-batch', [AlertController::class, 'acknowledgeBatch'])->name('alerts.ack_batch');
             Route::post('/alerts/{alert}/ack', [AlertController::class, 'acknowledge'])->name('alerts.ack');
 
             Route::get('/sessions', [SessionController::class, 'index'])->name('sessions.index');

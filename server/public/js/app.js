@@ -360,6 +360,19 @@ window.xgGroup = function (list) {
 };
 window.xgAgo = m => m < 60 ? m + ' min ago' : Math.floor(m / 60) + ' h ago';
 
+window.xgAckItems = async function (items, comment = null) {
+  const payload = comment !== null ? { comment } : {};
+  if (items.length === 1) {
+    const res = await window.xgApi(`/alerts/${items[0].id}/ack`, { method: 'POST', body: JSON.stringify(payload) });
+    return res && res.pc ? [res.pc] : [];
+  }
+  const res = await window.xgApi('/alerts/ack-batch', {
+    method: 'POST',
+    body: JSON.stringify({ ids: items.map(a => a.id), ...payload }),
+  });
+  return res && Array.isArray(res.pcs) ? res.pcs : [];
+};
+
 document.addEventListener('alpine:init', () => {
   window.xgHydrateGlobals();
 
@@ -506,8 +519,9 @@ document.addEventListener('alpine:init', () => {
           pastes: [],
         };
         const pcObj = d.pc || {};
-        const pcUiStatus = pcObj.status || 'offline';
+        const pcUiStatus = this.uiStatusFromTile(pcObj);
         const pcUser = pcObj.user || 'No one signed in';
+        const pcScoreVal = (pcUiStatus === 'offline' || pcUiStatus === 'idle') ? '—' : Number(pcObj.score ?? 0);
         const mapped = {
           pcInfo: {
             id: pcObj.id || id,
@@ -518,8 +532,8 @@ document.addEventListener('alpine:init', () => {
             agent: pcObj.agent_version || '—',
             status: pcUiStatus,
             user: pcUser,
-            last: pcObj.last_event || 'Retired / Offline',
-            score: typeof pcObj.score === 'number' ? pcObj.score : '—',
+            last: pcObj.last_event || (pcUiStatus === 'offline' ? 'Offline' : 'Active'),
+            score: pcScoreVal,
             isolated: !!pcObj.isolated,
             monitors: 1,
             caps: { snapshot: false, live: false, delta: false, multi: false, secure: false },
@@ -563,6 +577,7 @@ document.addEventListener('alpine:init', () => {
             : base.pastes,
         };
         this.serverDetails[id] = mapped;
+        this.applyTile(id, pcObj);
       } catch (e) {
         Alpine.store('toasts').add(e.message || 'Could not load PC details.', 'alert');
       }
@@ -606,12 +621,65 @@ document.addEventListener('alpine:init', () => {
         ['typing', 'Typing', 'keyboard', ''], ['pastes', 'Pastes', 'clipboard', d.pastes.length || '']];
     },
     pct(n) { return Math.max(0, n / Math.max(1, this.total) * 100); },
+    uiStatusFromTile(tile) {
+      const status = tile?.status || 'normal';
+      const score = Number(tile?.score ?? 0);
+      const user = tile?.user ?? '';
+      if (status === 'offline') return 'offline';
+      if (!user || user === 'No one signed in') return 'idle';
+      if (score >= 50 || status === 'alert') return 'alert';
+      if (score >= 25 || status === 'watch' || status === 'warning') return 'watch';
+      return 'normal';
+    },
+    applyTile(pcId, tile) {
+      if (!tile) return;
+      const uiStatus = this.uiStatusFromTile(tile);
+      const scoreVal = (uiStatus === 'offline' || uiStatus === 'idle') ? '—' : Number(tile.score ?? 0);
+      const applyTo = (target) => {
+        if (!target) return;
+        target.status = uiStatus;
+        target.score = scoreVal;
+        target.isolated = !!tile.isolated;
+        if (tile.user !== undefined) target.user = tile.user || 'No one signed in';
+        if (tile.app !== undefined) target.app = tile.app || '—';
+        if (tile.last_event !== undefined) target.last = tile.last_event || 'Active';
+        if (uiStatus === 'offline') target.scene = 'off';
+        else if (uiStatus === 'idle') target.scene = 'idle';
+        else if (uiStatus === 'alert') target.scene = 'flag';
+        else if (target.scene === 'flag' || target.scene === 'off' || target.scene === 'idle') target.scene = 'code';
+      };
+      const p = this.pcs.find(x => x.id === pcId);
+      applyTo(p);
+      const det = this.serverDetails[pcId];
+      if (det && det.pcInfo) applyTo(det.pcInfo);
+      if (window.XG_LIVE && Array.isArray(window.XG_LIVE.pcs)) {
+        applyTo(window.XG_LIVE.pcs.find(x => x.id === pcId));
+      }
+      this.$nextTick(() => {
+        document.querySelectorAll(`canvas[data-pc="${pcId}"]`).forEach(c => {
+          if (p) window.xgDraw(c, p, performance.now());
+        });
+        if (this.activePcId === pcId) this.paintLive();
+      });
+    },
     kind(p) { if (p.isolated || p.status === 'alert') return 'alert'; return ({ active: 'ok', clean: 'ok', normal: 'ok', idle: 'idle', warning: 'watch', watch: 'watch', offline: 'off' })[p.status] || 'ok'; },
     seatClass(p) { if (!p) return 'empty'; const k = p.isolated ? 'iso' : this.kind(p); return 's-' + k + (this.editing ? ' editing' : ''); },
     tileClass(p) { const k = p.isolated ? 'iso' : this.kind(p); return { alert: 't-alert', watch: 't-watch', iso: 't-iso', off: 't-off' }[k] || ''; },
     dotOf(p) { if (p.isolated) return 'iso'; return ({ ok: 'ok', idle: '', watch: 'watch', alert: 'alert', off: 'off' })[this.kind(p)] || ''; },
-    scoreClass(p) { return typeof p.score !== 'number' ? '' : (p.score < 70 ? 'low' : (p.score < 95 ? 'mid' : '')); },
-    ringColor(p) { return typeof p.score !== 'number' ? 'var(--off)' : (p.score < 70 ? 'var(--alert)' : (p.score < 95 ? 'var(--watch)' : 'var(--ok)')); },
+    scoreClass(p) {
+      if (typeof p.score !== 'number') return '';
+      const k = this.kind(p);
+      if (k === 'alert' || p.score >= 50) return 'low';
+      if (k === 'watch' || p.score >= 25) return 'mid';
+      return '';
+    },
+    ringColor(p) {
+      if (typeof p.score !== 'number') return 'var(--off)';
+      const k = this.kind(p);
+      if (k === 'alert' || p.score >= 50) return 'var(--alert)';
+      if (k === 'watch' || p.score >= 25) return 'var(--watch)';
+      return 'var(--ok)';
+    },
     statusText(p) { return p.isolated ? 'Isolated' : ({ active: 'Online', clean: 'Online', normal: 'Online', idle: 'Not in use', warning: 'Needs a look', watch: 'Needs a look', alert: 'Alert', offline: 'Offline' })[p.status] || 'Online'; },
     pc(id) { return this.pcs.find(p => p.id === id); },
 
@@ -752,13 +820,20 @@ document.addEventListener('alpine:init', () => {
       const items = (g.items || []).filter(a => !a.acked && a.id);
       if (!items.length) return;
       try {
-        await Promise.all(items.map(a =>
-          window.xgApi(`/alerts/${a.id}/ack`, { method: 'POST', body: JSON.stringify({}) })
-        ));
+        const updatedTiles = await window.xgAckItems(items);
         items.forEach(a => {
           const x = this.alerts.find(y => y.id === a.id);
           if (x) { x.acked = true; x.by = window.XG_USER_NAME || 'Staff'; }
         });
+        if (updatedTiles.length) {
+          updatedTiles.forEach(t => this.applyTile(t.id, t));
+        } else if (g.pcId) {
+          const remaining = this.alerts.filter(a => a.pcId === g.pcId && !a.acked);
+          if (!remaining.length) {
+            const p = this.pcs.find(x => x.id === g.pcId);
+            if (p) this.applyTile(g.pcId, { ...p, status: 'clean', score: 0 });
+          }
+        }
         window.xgAdjustAlertBadge(-items.length);
         Alpine.store('toasts').add(`${g.pc}: ${items.length > 1 ? items.length + ' alerts' : 'alert'} marked as reviewed.`, 'ok');
       } catch (e) {
@@ -854,9 +929,7 @@ document.addEventListener('alpine:init', () => {
         const pending = (r.items || []).filter(i => !i.acked && i.id);
         if (!pending.length) return;
         try {
-          await Promise.all(pending.map(i =>
-            window.xgApi('/alerts/' + i.id + '/ack', { method: 'POST', body: JSON.stringify({ comment: note }) })
-          ));
+          await window.xgAckItems(pending, note);
           pending.forEach(i => {
             const a = this.all.find(x => x.id === i.id);
             if (a) { a.acked = true; a.by = this.byName; a.note = note; }
