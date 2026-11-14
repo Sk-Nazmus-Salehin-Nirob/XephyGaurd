@@ -1176,13 +1176,15 @@ document.addEventListener('alpine:init', () => {
       fp: d.fp || '',
       macs: d.macs || '',
       exeName: d.exeName || 'XephyGuard-Setup.exe',
+      cccHost: d.cccHost || window.location.hostname || '',
       baseUrl: d.baseUrl || window.location.origin,
       pending: Array.isArray(d.pending) ? d.pending : [],
       enrolled: Array.isArray(d.enrolled) ? d.enrolled : [],
       get cmd() {
         const keyPart = this.key || '<ROTATE_KEY_FIRST>';
         if (this.os === 'win') {
-          return this.exeName + ' /S /KEY=' + keyPart + ' /CCC=' + this.baseUrl + (this.fp ? ' /CAFP=' + this.fp : '');
+          const cccArg = this.cccHost || window.location.hostname || this.baseUrl;
+          return this.exeName + ' /S /KEY=' + keyPart + ' /CCC=' + cccArg + (this.fp ? ' /CAFP=' + this.fp : '');
         }
         return 'curl -fsSL ' + this.baseUrl + '/install/linux.sh | sudo bash -s -- --key ' + keyPart;
       },
@@ -1279,6 +1281,10 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('dlPage', () => {
     const d = window.xgJson('xg-page-data', {}) || {};
     return {
+      cccHost: d.cccHost || window.location.hostname || '',
+      baseUrl: d.baseUrl || window.location.origin,
+      key: d.key || '',
+      fp: d.fp || '',
       win: d.win || '',
       lin: d.lin || '',
       notify(msg) { Alpine.store('toasts').add(msg, 'info'); }

@@ -42,6 +42,7 @@
   'fp' => $fingerprint ?? '',
   'macs' => implode("\n", $lab?->auto_approve_macs ?? []),
   'exeName' => $exeName,
+  'cccHost' => $cccHost,
   'baseUrl' => $baseUrl,
   'pending' => $livePending,
   'enrolled' => $livePcs,

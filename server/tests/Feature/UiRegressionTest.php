@@ -191,6 +191,14 @@ class UiRegressionTest extends TestCase
             $this->assertStringContainsString('class="body no-rail"', $guestHtml);
             $this->assertStringContainsString('1 KB · Code signing certificate', $guestHtml);
             $this->assertStringNotContainsString('0 MB · Release artifact', $guestHtml);
+            $this->assertStringContainsString('Connection credentials', $guestHtml);
+            preg_match('/<script type="application\/json" id="xg-page-data">(.*?)<\/script>/s', $guestHtml, $dm);
+            $dlData = json_decode($dm[1], true, 512, JSON_THROW_ON_ERROR);
+            $this->assertNotEmpty($dlData['cccHost']);
+            $this->assertNotEmpty($dlData['key']);
+            $this->assertNotEmpty($dlData['fp']);
+            $this->assertStringContainsString('/CAFP='.$dlData['fp'], $dlData['win']);
+            $this->assertStringContainsString('/CCC='.$dlData['cccHost'], $dlData['win']);
 
             $admin = $this->user('admin');
             $authHtml = $this->actingAs($admin)->get('/downloads')->assertOk()->getContent();

@@ -6,14 +6,22 @@
   $portSuffix = request()->getPort() && !in_array(request()->getPort(), [80, 443], true) ? ':' . request()->getPort() : '';
   $baseUrl = (request()->isSecure() ? 'https://' : 'http://') . $cccHost . $portSuffix;
   $enrollKey = $key ?? '';
+  $caFp = $fingerprint ?? '';
   $exeName = $setupFile ?? '';
   $exeMeta = $exeName ? collect($files ?? [])->firstWhere('name', $exeName) : null;
   $exeSize = $exeMeta ? (($exeMeta['size_label'] ?? ($exeMeta['size_mb'] . ' MB')) . ' · ') : '';
   $extraFiles = collect($files ?? [])->filter(fn ($f) => ($f['name'] ?? '') !== $exeName)->values()->all();
-  $winCmd = ($exeName ?: 'XephyGuard-Setup.exe') . ' /S /KEY=' . ($enrollKey ?: '<ROTATE_KEY_FIRST>') . ' /CCC=' . $baseUrl;
+  $winCmd = ($exeName ?: 'XephyGuard-Setup.exe')
+      . ' /S /KEY=' . ($enrollKey ?: '<ROTATE_KEY_FIRST>')
+      . ' /CCC=' . $cccHost
+      . ($caFp !== '' ? ' /CAFP=' . $caFp : '');
   $linCmd = 'curl -fsSL ' . $baseUrl . '/install/linux.sh | sudo bash -s -- --key ' . ($enrollKey ?: '<ROTATE_KEY_FIRST>');
 @endphp
 <script type="application/json" id="xg-page-data">{!! json_encode([
+  'cccHost' => $cccHost,
+  'baseUrl' => $baseUrl,
+  'key' => $enrollKey,
+  'fp' => $caFp,
   'win' => $winCmd,
   'lin' => $linCmd,
 ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
@@ -25,8 +33,36 @@
     <div class="dl"><span class="ico"><svg class="i i-lg" aria-hidden="true"><use href="#i-live"/></svg></span><div class="grow"><b>Windows installer</b><div class="muted small">No Windows installer package uploaded to storage yet</div></div><span class="chip plain">Not uploaded</span></div>
   @endif
   <div class="dl"><span class="ico"><svg class="i i-lg" aria-hidden="true"><use href="#i-terminal"/></svg></span><div class="grow"><b>Ubuntu and Debian installer</b><div class="muted small">linux.sh · installs the agent as a service · Xorg sessions for screen view</div></div><a class="btn" href="{{ route('install.linux') }}" @click="notify('Script is downloading.')"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Download</a></div>
-  <div class="dl"><span class="ico"><svg class="i i-lg" aria-hidden="true"><use href="#i-key"/></svg></span><div class="grow"><b>Lab certificate</b><div class="muted small">ca.crt · lets the lab hide AI summaries in search results{{ !empty($fingerprint) ? ' · SHA-256 ' . substr($fingerprint, 0, 23) . '…' : '' }}</div></div><a class="btn" href="{{ route('ca.cert') }}" @click="notify('Certificate is downloading.')"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Download</a></div>
+  <div class="dl"><span class="ico"><svg class="i i-lg" aria-hidden="true"><use href="#i-key"/></svg></span><div class="grow"><b>Lab certificate</b><div class="muted small">ca.crt · lets the lab hide AI summaries in search results{{ $caFp !== '' ? ' · SHA-256 ' . substr($caFp, 0, 23) . '…' : '' }}</div></div><a class="btn" href="{{ route('ca.cert') }}" @click="notify('Certificate is downloading.')"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Download</a></div>
   <div class="dl"><span class="ico"><svg class="i i-lg" aria-hidden="true"><use href="#i-globe"/></svg></span><div class="grow"><b>Proxy configuration</b><div class="muted small">proxy.pac · for labs that use proxy-only mode</div></div><a class="btn" href="{{ route('proxy.pac') }}" @click="notify('File is downloading.')"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Download</a></div>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2 class="h2">Connection credentials</h2><span class="small muted">Enter these when the installer asks for server connection details.</span></div>
+  <div class="panel-body stack">
+    <div class="form-grid">
+      <div>
+        <div class="cmd-label">Teacher / CCC Server IP or Hostname</div>
+        <div class="key">
+          <code x-text="cccHost"></code>
+          <button type="button" class="btn btn-sm" @click="xgCopy(cccHost, 'Server address copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg> Copy</button>
+        </div>
+      </div>
+      <div>
+        <div class="cmd-label">Lab enrollment key</div>
+        <div class="key">
+          <code x-text="key || 'Not set'"></code>
+          <button type="button" class="btn btn-sm" x-show="key" @click="xgCopy(key, 'Enrollment key copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg> Copy</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="cmd-label">Server CA SHA-256 fingerprint</div>
+      <div class="key">
+        <code x-text="fp || 'Not available yet'"></code>
+        <button type="button" class="btn btn-sm" x-show="fp" @click="xgCopy(fp, 'CA fingerprint copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg> Copy</button>
+      </div>
+    </div>
+  </div>
 </section>
 <div class="cols-2">
   <section class="panel panel-pad stack">
