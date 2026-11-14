@@ -1,425 +1,348 @@
-import Alpine from 'alpinejs';
-import './echo';
-import { ScreenViewer } from './screen/viewer.js';
+// Demo data for the interactive preview. In production this comes from the server (Reverb + API).
+window.XG = (() => {
+  const pc = (id, name, seat, o) => Object.assign({
+    id, name, seat, host: 'LAB-' + name.toUpperCase().replace(/[^A-Z0-9]/g, ''), ip: '192.168.0.' + (100 + id),
+    os: 'Windows 11 Pro', agent: '1.4.2', user: 'std_2107' + String(10 + id).padStart(2, '0'), app: 'Visual Studio Code',
+    last: 'Typing', score: 100, status: 'active', isolated: false, kind: 'code', session: 'win32',
+    caps: { snapshot: true, live: true, delta: true, multi: false, secure: true }, monitors: 1, ai: false
+  }, o || {});
 
-window.ScreenViewer = ScreenViewer;
+  const pcs = [
+    pc(1, 'Rupom2', { x: 0, y: 0 }, { user: 'std_210701', app: 'Google Chrome', kind: 'chat', last: 'AI chat open: Grok (xAI)', score: 60, status: 'alert', ai: true, monitors: 2, caps: { snapshot: true, live: true, delta: true, multi: true, secure: true } }),
+    pc(2, 'SIyam', { x: 1, y: 0 }, { app: 'CLion', last: 'main.cpp saved', score: 98 }),
+    pc(3, 'Sazzad', { x: 2, y: 0 }, { app: 'Firefox', kind: 'browser', last: 'USB device attached', score: 88, status: 'warning' }),
+    pc(4, 'PC-04', { x: 3, y: 0 }, { app: 'ollama.exe', kind: 'terminal', last: 'Local AI model running', score: 45, status: 'alert', isolated: true }),
+    pc(5, 'PC-05', { x: 4, y: 0 }, { app: 'Sublime Text', score: 96, last: 'test.py saved' }),
+    pc(6, 'PC-06', { x: 5, y: 0 }, { os: 'Ubuntu 24.04', app: 'Terminal', kind: 'terminal', score: 99, last: 'gcc build ok', session: 'x11', caps: { snapshot: true, live: true, delta: false, multi: false, secure: false } }),
+    pc(7, 'PC-07', { x: 0, y: 1 }, { app: 'PyCharm', score: 100, last: 'Debug started' }),
+    pc(8, 'PC-08', { x: 1, y: 1 }, { app: 'Chrome', kind: 'browser', score: 94, last: 'cppreference.com' }),
+    pc(9, 'PC-09', { x: 2, y: 1 }, { app: 'VS Code', score: 82, status: 'warning', last: 'Large paste, 412 chars' }),
+    pc(10, 'PC-10', { x: 3, y: 1 }, { app: 'CodeBlocks', score: 97, last: 'Build succeeded' }),
+    pc(11, 'PC-11', { x: 4, y: 1 }, { app: 'Lock screen', kind: 'lock', status: 'idle', last: 'No one signed in', user: '-', score: '-' }),
+    pc(12, 'PC-12', { x: 0, y: 2 }, { app: '-', status: 'offline', last: 'No heartbeat for 25 min', user: '-', score: '-', kind: 'lock' }),
+    pc(13, 'PC-13', { x: 1, y: 2 }, { os: 'Ubuntu 24.04', app: 'Wayland session', kind: 'lock', score: 99, last: 'Screen view not supported', session: 'wayland', caps: { snapshot: false, live: false, delta: false, multi: false, secure: false } }),
+    pc(14, 'PC-14', { x: 2, y: 2 }, { app: 'VS Code', score: 99, last: 'algorithm.cpp' }),
+    pc(15, 'PC-15', { x: 3, y: 2 }, { app: 'Eclipse', score: 97, last: 'Java compiled' }),
+    pc(16, 'Instructor laptop', null, { app: 'Terminal', kind: 'terminal', status: 'idle', user: 'assistant_01', score: '-', last: 'Spare machine' })
+  ];
 
-const csrf = () => document.querySelector('meta[name="csrf-token"]').content;
+  // minutes ago, clock time
+  const al = (id, pcId, sev, title, rule, ago, acked, note) => {
+    const p = pcs.find(x => x.id === pcId); const mins = 12 * 60 + 8 - ago;
+    return { id, pcId, pc: p.name, user: p.user, sev, title, rule, ago, at: String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0'), acked: !!acked, by: acked ? 'KUET admin' : '', note: note || '' };
+  };
+  const alerts = [
+    al(24, 4, 'critical', 'Local AI model running: ollama.exe', 'proc.ollama', 6),
+    al(23, 1, 'high', 'Grok (xAI) stream: chrome to cdn.grok.com', 'web.grok', 7),
+    al(22, 1, 'high', 'Grok (xAI) stream: chrome to cdn.grok.com', 'web.grok', 9),
+    al(21, 1, 'high', 'Grok (xAI) stream: chrome to cdn.grok.com', 'web.grok', 11),
+    al(20, 3, 'low', 'External USB device attached: 0bda:0129', 'dev.usb_device', 14),
+    al(19, 9, 'low', 'Large paste: 412 characters into VS Code', 'paste.large', 18),
+    al(18, 12, 'high', 'Machine went silent: no heartbeat for 25 minutes', 'tamper.machine_silent', 25),
+    al(17, 1, 'high', 'Session helper was terminated', 'tamper.helper_terminated', 31),
+    al(16, 1, 'high', 'Session helper was terminated', 'tamper.helper_terminated', 33),
+    al(15, 8, 'medium', 'Blocked AI site: chatgpt.com (3 attempts)', 'net.domain_block', 38, true, 'Spoke to the student.'),
+    al(14, 2, 'medium', 'Search AI summary hidden on google.com', 'net.google_udm14', 44, true, 'Automatic filter, no action needed.'),
+    al(13, 5, 'critical', 'Second network adapter plugged in: Realtek USB GbE', 'hw.adapter_added', 52, true, 'Removed an unauthorised USB dongle.'),
+    al(12, 12, 'high', 'Machine went silent: agent ended from Task Manager', 'tamper.machine_silent', 61, true, 'Hardware freeze, machine rebooted.'),
+    al(11, 7, 'low', 'Large paste: 540 characters into PyCharm', 'paste.large', 70, true, 'Starter code from the exam sheet.')
+  ];
 
-async function api(url, opts = {}) {
-    const res = await fetch(url, {
-        credentials: 'same-origin',
-        ...opts,
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), ...(opts.headers || {}) },
+  // Detail data for the inspector, generated per PC.
+  const detail = p => {
+    const ai = p.ai || p.isolated;
+    const proc = [
+      { pid: 9820, name: 'Code.exe', title: 'main.cpp - Visual Studio Code', cpu: 6.2, mem: 480, net: 0.1 },
+      { pid: 4412, name: p.session === 'win32' ? 'chrome.exe' : 'firefox', title: 'Browser', cpu: 3.4, mem: 910, net: 1.8 },
+      { pid: 1024, name: p.session === 'win32' ? 'explorer.exe' : 'gnome-shell', title: 'Desktop shell', cpu: 0.8, mem: 120, net: 0 },
+      { pid: 6184, name: 'xerophyte-agent', title: 'XephyGuard agent', cpu: 0.6, mem: 64, net: 0.2 }
+    ];
+    if (p.isolated) proc.unshift({ pid: 14208, name: 'ollama.exe', title: 'Ollama server', cpu: 38.5, mem: 5200, net: 0, threat: 'Local AI model' });
+    return {
+      events: [
+        { time: '12:02', label: p.last, sev: p.status === 'alert' ? 'high' : p.status === 'warning' ? 'medium' : 'info' },
+        { time: '11:58', label: 'Window changed: ' + p.app, sev: 'info' },
+        { time: '11:41', label: 'Screen snapshot taken for review', sev: 'info' },
+        { time: '11:30', label: 'Agent signed in and verified', sev: 'info' }
+      ],
+      processes: proc,
+      aiTraffic: ai ? [
+        { service: 'Grok (xAI)', host: 'cdn.grok.com', proc: 'chrome', count: 12, last: '12:01', mode: 'Seen' },
+        { service: 'OpenAI', host: 'api.openai.com', proc: 'chrome', count: 4, last: '11:57', mode: 'Blocked' }
+      ] : [],
+      tabs: [
+        { browser: 'Chrome', title: ai ? 'Grok' : 'cppreference.com', host: ai ? 'grok.com' : 'en.cppreference.com', ai: ai },
+        { browser: 'Chrome', title: 'Exam sheet (PDF)', host: 'files.kuet.ac.bd', ai: false }
+      ],
+      extensions: ai ? [{ browser: 'Chrome', name: 'Sider: ChatGPT sidebar', id: 'difoiogjjojoaoomphldepapgpbgkhkb', flag: true }] : [],
+      artifacts: p.isolated ? [{ kind: 'Folder', path: 'C:\\Users\\std\\.ollama\\models', note: 'Local model files' }] : [],
+      adapters: [{ name: 'Ethernet', type: 'Wired', mac: '70:85:C2:55:1A:' + (10 + p.id), ip: p.ip, flag: false }],
+      ports: [{ port: 11434, proto: 'TCP', proc: 'ollama.exe', flag: p.isolated }].filter(x => x.flag),
+      devices: p.id === 3 ? [{ vidpid: '0bda:0129', name: 'Realtek USB reader', time: '11:54' }] : [],
+      keyrate: Array.from({ length: 30 }, (_, i) => Math.max(0, Math.round(34 + 26 * Math.sin(i * (.4 + p.id * .03)) + (i * 7 % 11)))),
+      pastes: p.status === 'warning' ? [{ time: '11:52', chars: 412, lines: 18, code: false, from: 'exam sheet', to: p.app }] : []
+    };
+  };
+
+  return { pcs, alerts, detail, now: '12:08' };
+})();
+// XephyGuard UI v2 · interactive preview logic (static demo, no backend)
+
+/* ---------- Synthetic student desktops (stand-in for real screen frames) ---------- */
+(function () {
+  const rng = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const rr = (x, ctx, a, b, w, h, rad, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.roundRect(a, b, w, h, rad); ctx.fill(); };
+  const palette = ['#7aa2f7', '#9ece6a', '#e0af68', '#bb9af7', '#c0caf5', '#7dcfff'];
+
+  window.xgDraw = function (c, pc, t, monitor) {
+    if (!c || !pc) return;
+    const ctx = c.getContext('2d'), w = c.width, h = c.height, u = w / 320;
+    const r = rng(pc.id * 977 + (monitor || 0) * 131);
+    const hue = (pc.id * 53 + (monitor || 0) * 40) % 360;
+    // wallpaper
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, `hsl(${hue},45%,28%)`); g.addColorStop(1, `hsl(${(hue + 50) % 360},50%,18%)`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+
+    const down = pc.status === 'offline' || pc.kind === 'lock';
+    if (!down) {
+      const X = w * .05, Y = h * .07, W = w * .9, H = h * .82;
+      const kind = (monitor || 0) === 1 ? 'browser' : pc.kind;
+      if (kind === 'code') {
+        rr(0, ctx, X, Y, W, H, 4 * u, '#1e2128');
+        rr(0, ctx, X, Y, W, 9 * u, 4 * u, '#2a2e37');
+        ctx.fillStyle = '#16181d'; ctx.fillRect(X, Y + 9 * u, W * .17, H - 9 * u);
+        for (let i = 0; i < 9; i++) rr(0, ctx, X + 6 * u, Y + 18 * u + i * 9 * u, W * .17 * (.4 + r() * .45), 3 * u, 1.5 * u, '#3a3f4b');
+        const lines = Math.floor((H - 22 * u) / (8 * u));
+        for (let k = 0; k < lines; k++) {
+          const ind = Math.floor(r() * 3) * 10 * u, len = (.12 + r() * .5) * W * .7;
+          const live = k === Math.floor(lines * .6);
+          const L = live ? len * (.55 + .45 * Math.abs(Math.sin(t / 900))) : len;
+          rr(0, ctx, X + W * .2 + ind, Y + 17 * u + k * 8 * u, L, 3.2 * u, 1.6 * u, palette[Math.floor(r() * palette.length)]);
+          if (live && Math.floor(t / 500) % 2 === 0) { ctx.fillStyle = '#fff'; ctx.fillRect(X + W * .2 + ind + L + 2 * u, Y + 15.5 * u + k * 8 * u, 1.2 * u, 6 * u); }
+        }
+      } else if (kind === 'terminal') {
+        rr(0, ctx, X + W * .08, Y + H * .06, W * .84, H * .86, 4 * u, '#0e1013');
+        rr(0, ctx, X + W * .08, Y + H * .06, W * .84, 8 * u, 4 * u, '#23262d');
+        const lines = Math.floor((H * .8) / (8 * u));
+        for (let k = 0; k < lines; k++) { const len = (.1 + r() * .6) * W * .7; rr(0, ctx, X + W * .11, Y + H * .06 + 14 * u + k * 8 * u, k % 4 === 0 ? len * .5 : len, 3 * u, 1.5 * u, k % 4 === 0 ? '#58d68d' : '#7b8494'); }
+      } else if (kind === 'chat') {
+        rr(0, ctx, X, Y, W, H, 4 * u, '#14161a'); rr(0, ctx, X, Y, W, 9 * u, 4 * u, '#23262d');
+        ctx.fillStyle = '#101216'; ctx.fillRect(X, Y + 9 * u, W * .14, H - 9 * u);
+        for (let i = 0; i < 6; i++) rr(0, ctx, X + 5 * u, Y + 18 * u + i * 10 * u, W * .14 - 10 * u, 4 * u, 2 * u, '#2c303a');
+        for (let k = 0; k < 5; k++) { const me = k % 2 === 0, bw = (.25 + r() * .3) * W * .6; rr(0, ctx, me ? X + W * .95 - bw : X + W * .2, Y + 16 * u + k * 17 * u, bw, 12 * u, 5 * u, me ? '#2b5cd6' : '#262a33'); }
+        rr(0, ctx, X + W * .2, Y + H - 18 * u, W * .7, 10 * u, 5 * u, '#262a33');
+        if (Math.floor(t / 600) % 2 === 0) { ctx.fillStyle = '#fff'; ctx.fillRect(X + W * .22, Y + H - 15.5 * u, 1.2 * u, 5 * u); }
+      } else { // browser
+        rr(0, ctx, X, Y, W, H, 4 * u, '#f3f4f6'); rr(0, ctx, X, Y, W, 9 * u, 4 * u, '#d9dce1');
+        rr(0, ctx, X + W * .14, Y + 11 * u, W * .6, 7 * u, 3.5 * u, '#fff');
+        rr(0, ctx, X + 8 * u, Y + 24 * u, W * .5, 7 * u, 2 * u, '#bfc5ce');
+        for (let k = 0; k < 4; k++) rr(0, ctx, X + 8 * u, Y + 36 * u + k * 9 * u, W * (.5 + r() * .35), 3 * u, 1.5 * u, '#cdd2d9');
+        for (let k = 0; k < 3; k++) rr(0, ctx, X + 8 * u + k * (W * .3), Y + H - 46 * u, W * .27, 38 * u, 4 * u, '#fff');
+      }
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = `600 ${22 * u}px Inter, sans-serif`; ctx.textAlign = 'center';
+      if (pc.status !== 'offline') ctx.fillText('12:08', w / 2, h * .46);
+      ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.font = `${8 * u}px Inter, sans-serif`;
+      ctx.fillText(pc.status === 'offline' ? 'No signal' : 'Locked', w / 2, h * .46 + 14 * u);
+    }
+    // taskbar
+    ctx.fillStyle = 'rgba(14,16,20,.88)'; ctx.fillRect(0, h - 11 * u, w, 11 * u);
+    for (let i = 0; i < 6; i++) rr(0, ctx, w * .36 + i * 9 * u, h - 8.5 * u, 6 * u, 6 * u, 1.5 * u, i === 1 ? '#5b9bff' : '#59606c');
+    rr(0, ctx, w - 30 * u, h - 8 * u, 24 * u, 5 * u, 2 * u, '#59606c');
+    // cursor
+    if (!down) {
+      const cx = w * (.5 + .28 * Math.sin(t / 2300 + pc.id)), cy = h * (.5 + .2 * Math.cos(t / 1900 + pc.id));
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = .8 * u; ctx.beginPath();
+      ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + 10 * u); ctx.lineTo(cx + 3 * u, cy + 7.5 * u); ctx.lineTo(cx + 7 * u, cy + 7 * u); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  };
+
+  // keep wall thumbnails moving (1 fps keeps CPU low, like the real thumbnails would)
+  setInterval(() => {
+    if (document.hidden || !window.XG) return;
+    document.querySelectorAll('canvas[data-pc]').forEach(c => {
+      const p = XG.pcs.find(x => x.id == c.dataset.pc); xgDraw(c, p, performance.now());
     });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || res.statusText || `HTTP ${res.status}`);
-    return res.json();
-}
-window.xgApi = api;
+  }, 1000);
+})();
 
-/* Toast notifications (alerts arriving in real time). */
-Alpine.store('toasts', {
+/* ---------- Alert grouping (repeats of the same rule on one PC collapse into one row) ---------- */
+window.xgGroup = function (list) {
+  const rank = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+  const map = new Map();
+  list.forEach(a => {
+    const k = a.pcId + '|' + a.rule;
+    if (!map.has(k)) map.set(k, { key: k, pcId: a.pcId, pc: a.pc, user: a.user, rule: a.rule, sev: a.sev, title: a.title, at: a.at, ago: a.ago, items: [] });
+    const g = map.get(k); g.items.push(a);
+    if (rank[a.sev] > rank[g.sev]) g.sev = a.sev;
+    if (a.ago < g.ago) { g.ago = a.ago; g.at = a.at; g.title = a.title; }
+  });
+  const arr = [...map.values()].map(g => ({ ...g, count: g.items.length, acked: g.items.every(i => i.acked), by: (g.items.find(i => i.acked) || {}).by, note: (g.items.find(i => i.note) || {}).note }));
+  return arr.sort((a, b) => (a.acked - b.acked) || (rank[b.sev] - rank[a.sev]) || (a.ago - b.ago));
+};
+window.xgAgo = m => m < 60 ? m + ' min ago' : Math.floor(m / 60) + ' h ago';
+
+document.addEventListener('alpine:init', () => {
+
+  /* ---------- Theme ---------- */
+  const apply = mode => {
+    const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  };
+  Alpine.store('theme', {
+    mode: localStorage.getItem('xg-theme') || 'system',
+    get dark() { return document.documentElement.dataset.theme === 'dark'; },
+    set(m) { this.mode = m; try { localStorage.setItem('xg-theme', m); } catch (e) {} apply(m); },
+    toggle() { this.set(this.dark ? 'light' : 'dark'); }
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (Alpine.store('theme').mode === 'system') apply('system'); });
+
+  /* ---------- Toasts & copy ---------- */
+  Alpine.store('toasts', {
     items: [],
-    push(t) {
-        const id = Math.random();
-        this.items.push({ id, ...t });
-        setTimeout(() => (this.items = this.items.filter((i) => i.id !== id)), 8000);
+    add(title, severity = 'info') { const id = Date.now() + Math.random(); this.items.push({ id, title, severity }); setTimeout(() => this.remove(id), 4200); },
+    remove(id) { this.items = this.items.filter(t => t.id !== id); }
+  });
+  window.xgCopy = (text, label = 'Copied to clipboard') => {
+    const done = () => Alpine.store('toasts').add(label, 'ok');
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, done);
+    else { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch (e) {} t.remove(); done(); }
+  };
+
+  /* ---------- Command palette ---------- */
+  Alpine.data('palette', () => ({
+    open: false, q: '', idx: 0,
+    base: [
+      { g: 'Go to', t: 'Live lab', icon: 'live', href: 'index.html', k: 'Alt+1' },
+      { g: 'Go to', t: 'Alerts', icon: 'bell', href: 'alerts.html', k: 'Alt+2' },
+      { g: 'Go to', t: 'Sessions', icon: 'clock', href: 'sessions.html', k: 'Alt+3' },
+      { g: 'Go to', t: 'Timetable and profiles', icon: 'calendar', href: 'profiles.html', k: 'Alt+4' },
+      { g: 'Go to', t: 'Roster', icon: 'users', href: 'roster.html', k: 'Alt+5' },
+      { g: 'Go to', t: 'Blocklists and rules', icon: 'shield', href: 'signatures.html', k: 'Alt+6' },
+      { g: 'Go to', t: 'Reports', icon: 'report', href: 'reports.html', k: 'Alt+7' },
+      { g: 'Go to', t: 'Add a PC', icon: 'addpc', href: 'enroll.html', k: 'Alt+8' },
+      { g: 'Go to', t: 'Health', icon: 'pulse', href: 'admin-health.html', k: 'Alt+9' },
+      { g: 'Go to', t: 'Settings', icon: 'sliders', href: 'admin-settings.html' },
+      { g: 'Go to', t: 'Staff accounts', icon: 'badge', href: 'admin-users.html' },
+      { g: 'Go to', t: 'Audit log', icon: 'list', href: 'admin-audit.html' },
+      { g: 'Go to', t: 'Shared clipboard', icon: 'clipboard', href: 'share.html' },
+      { g: 'Go to', t: 'Downloads', icon: 'download', href: 'downloads.html' },
+      { g: 'Actions', t: 'Open the screen wall', icon: 'grid', href: 'index.html#wall' },
+      { g: 'Actions', t: 'Start a session', icon: 'plus', href: 'sessions.html#start' },
+      { g: 'Actions', t: 'Switch theme', icon: 'sun', run: () => Alpine.store('theme').toggle() }
+    ],
+    get items() {
+      const pcs = (window.XG ? XG.pcs : []).map(p => ({ g: 'PCs', t: p.name, icon: 'live', href: 'index.html#pc=' + p.id, k: p.user }));
+      const q = this.q.trim().toLowerCase();
+      const all = this.base.concat(pcs);
+      return q ? all.filter(i => (i.t + ' ' + (i.k || '')).toLowerCase().includes(q)).slice(0, 12) : this.base.slice(0, 8);
     },
+    show() { this.open = true; this.q = ''; this.idx = 0; this.$nextTick(() => this.$refs.q && this.$refs.q.focus()); },
+    go(i) { const it = this.items[i]; if (!it) return; this.open = false; if (it.run) it.run(); else location.href = it.href; },
+    move(d) { const n = this.items.length; this.idx = (this.idx + d + n) % n; }
+  }));
+
+  /* ---------- Live lab ---------- */
+  Alpine.data('labView', () => ({
+    view: 'map', cols: 6, rows: 3, editing: false, dragId: null, dropKey: null,
+    pcs: structuredClone(XG.pcs), alerts: structuredClone(XG.alerts),
+    activePcId: null, inspector: false, tab: 'screen', screenMode: 'snapshot', monitor: 0, snapT: 4200, snapAt: '12:07:41',
+    tile: 240, flagged: false, blur: false, pinned: [1], dock: { att: true, props: true, list: true }, pcFilter: 'all',
+    messageModal: false, messageTarget: null, messageText: '', showDone: false, closeModal: false, closeName: '',
+
+    init() {
+      const h = location.hash;
+      if (h.includes('wall')) this.view = 'wall';
+      const m = h.match(/pc=(\d+)/); if (m) this.activePcId = +m[1];
+      this._timer = setInterval(() => {
+        if (document.hidden || !this.inspector || this.tab !== 'screen' || !this.$refs.live) return;
+        xgDraw(this.$refs.live, this.active, this.screenMode === 'live' ? performance.now() : this.snapT, this.monitor);
+      }, 110);
+      this.$watch('inspector', v => v && this.$nextTick(() => this.paintLive()));
+      this.$watch('tab', () => this.$nextTick(() => this.paintLive()));
+      this.$watch('monitor', () => this.paintLive());
+    },
+    paintLive() { if (this.$refs.live) xgDraw(this.$refs.live, this.active, this.screenMode === 'live' ? performance.now() : this.snapT, this.monitor); },
+
+    /* derived */
+    get active() { return this.pcs.find(p => p.id === this.activePcId) || {}; },
+    get det() { return this.activePcId ? XG.detail(this.active) : null; },
+    get counts() { const c = { ok: 0, idle: 0, watch: 0, alert: 0, off: 0 }; this.pcs.filter(p => p.seat).forEach(p => c[this.kind(p)]++); return c; },
+    get total() { return this.pcs.filter(p => p.seat).length; },
+    get online() { return this.pcs.filter(p => p.seat && p.status !== 'offline').length; },
+    get groups() { return xgGroup(this.alerts.filter(a => !a.acked)); },
+    get doneGroups() { return xgGroup(this.alerts.filter(a => a.acked)); },
+    get half() { return Math.floor(this.cols / 2); },
+    get gridStyle() { const h = this.half; return `grid-template-columns: repeat(${h}, minmax(0,1fr)) 18px repeat(${this.cols - h}, minmax(0,1fr))`; },
+    get cells() {
+      const out = [];
+      for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.cols; x++)
+        out.push({ key: x + ':' + y, x, y, pc: this.pcs.find(p => p.seat && p.seat.x === x && p.seat.y === y) || null, col: x + 1 + (x >= this.half ? 1 : 0) });
+      return out;
+    },
+    get unplaced() { return this.pcs.filter(p => !p.seat); },
+    get listed() { return this.pcs.filter(p => p.seat && (this.pcFilter === 'all' || !['ok', 'idle'].includes(this.kind(p)))); },
+    get wallPcs() { return this.pcs.filter(p => p.seat && !this.pinned.includes(p.id) && (!this.flagged || !['ok', 'idle'].includes(this.kind(p)))); },
+    get pinnedPcs() { return this.pinned.map(id => this.pcs.find(p => p.id === id)).filter(Boolean); },
+    get screenOk() { return !!(this.active.caps && this.active.caps.snapshot && this.active.status !== 'offline'); },
+    get pcAlerts() { return this.alerts.filter(a => a.pcId === this.activePcId); },
+    get tabs() {
+      const d = this.det; if (!d) return [];
+      return [['screen', 'Screen', 'monitor', ''], ['timeline', 'Timeline', 'clock', ''], ['alerts', 'Alerts', 'bell', this.pcAlerts.length || ''],
+        ['programs', 'Programs', 'terminal', d.processes.length], ['browser', 'Browser', 'globe', d.aiTraffic.length || ''],
+        ['installed', 'Installed AI', 'shield', (d.extensions.length + d.artifacts.length) || ''], ['network', 'Network', 'wifi', ''],
+        ['typing', 'Typing', 'keyboard', ''], ['pastes', 'Pastes', 'clipboard', d.pastes.length || '']];
+    },
+    pct(n) { return Math.max(0, n / Math.max(1, this.total) * 100); },
+    kind(p) { if (p.isolated || p.status === 'alert') return 'alert'; return ({ active: 'ok', idle: 'idle', warning: 'watch', offline: 'off' })[p.status] || 'ok'; },
+    seatClass(p) { if (!p) return 'empty'; const k = p.isolated ? 'iso' : this.kind(p); return 's-' + k + (this.editing ? ' editing' : ''); },
+    tileClass(p) { const k = p.isolated ? 'iso' : this.kind(p); return { alert: 't-alert', watch: 't-watch', iso: 't-iso', off: 't-off' }[k] || ''; },
+    dotOf(p) { if (p.isolated) return 'iso'; return ({ ok: 'ok', idle: '', watch: 'watch', alert: 'alert', off: 'off' })[this.kind(p)] || ''; },
+    scoreClass(p) { return typeof p.score !== 'number' ? '' : (p.score < 70 ? 'low' : (p.score < 95 ? 'mid' : '')); },
+    ringColor(p) { return typeof p.score !== 'number' ? 'var(--off)' : (p.score < 70 ? 'var(--alert)' : (p.score < 95 ? 'var(--watch)' : 'var(--ok)')); },
+    statusText(p) { return p.isolated ? 'Isolated' : ({ active: 'Online', idle: 'Not in use', warning: 'Needs a look', alert: 'Alert', offline: 'Offline' })[p.status]; },
+    pc(id) { return XG.pcs.find(p => p.id === id); },
+
+    /* selection / inspector */
+    select(id) { if (this.editing) return; this.activePcId = id; },
+    openInspector(id, tab) { if (this.editing) return; this.activePcId = id; this.tab = tab || 'screen'; this.screenMode = 'snapshot'; this.monitor = 0; this.inspector = true; },
+    closeInspector() { this.inspector = false; },
+    clear() { this.inspector = false; this.messageModal = false; this.closeModal = false; },
+    toggleIsolate(pc) { pc.isolated = !pc.isolated; Alpine.store('toasts').add(pc.isolated ? `${pc.name} is cut off from the lab network.` : `${pc.name} is back on the network.`, pc.isolated ? 'alert' : 'ok'); },
+    rescan(pc) { Alpine.store('toasts').add(`Rescanning ${pc.name}…`, 'info'); },
+    closeProgram() { if (!this.closeName.trim()) return; Alpine.store('toasts').add(`Asked ${this.active.name} to close ${this.closeName}.`, 'watch'); this.closeModal = false; this.closeName = ''; },
+    snapshot() { this.snapT = performance.now(); this.snapAt = new Date().toTimeString().slice(0, 8); this.screenMode = 'snapshot'; this.paintLive(); Alpine.store('toasts').add('Snapshot taken.', 'ok'); },
+    goLive() { this.screenMode = 'live'; },
+    evidence() { Alpine.store('toasts').add('Snapshot saved to the PC’s alert as evidence.', 'ok'); },
+
+    /* wall */
+    togglePin(id) { const i = this.pinned.indexOf(id); if (i >= 0) this.pinned.splice(i, 1); else if (this.pinned.length < 4) this.pinned.push(id); else Alpine.store('toasts').add('You can pin up to 4 PCs.', 'watch'); },
+    tileSize(s) { this.tile = s; },
+
+    /* messages & alerts */
+    message(id) { this.messageTarget = id ? this.pcs.find(p => p.id === id) : null; this.messageText = ''; this.messageModal = true; },
+    sendMessage() { if (!this.messageText.trim()) return; Alpine.store('toasts').add(`Message sent to ${this.messageTarget ? this.messageTarget.name : 'every student screen'}.`, 'ok'); this.messageModal = false; this.messageText = ''; },
+    ackGroup(g) { g.items.forEach(a => { const x = this.alerts.find(y => y.id === a.id); if (x) { x.acked = true; x.by = 'KUET admin'; } }); Alpine.store('toasts').add(`${g.pc}: ${g.count > 1 ? g.count + ' alerts' : 'alert'} marked as reviewed.`, 'ok'); },
+
+    /* seat map editing */
+    startDrag(pc) { if (this.editing) this.dragId = pc.id; },
+    dropOn(cell) {
+      this.dropKey = null; const mv = this.pcs.find(p => p.id === this.dragId); this.dragId = null; if (!mv) return;
+      const other = cell.pc, from = mv.seat; if (other && other.id === mv.id) return;
+      if (other) other.seat = from ? { ...from } : null; mv.seat = { x: cell.x, y: cell.y };
+    },
+    dropShelf() { const mv = this.pcs.find(p => p.id === this.dragId); this.dragId = null; this.dropKey = null; if (mv) mv.seat = null; },
+    saveLayout() { this.editing = false; Alpine.store('toasts').add('Seat map saved.', 'ok'); }
+  }));
 });
 
-window.fmtTime = function(val) {
-    if (!val) return '';
-    if (typeof val === 'string' && val.length === 8 && val[2] === ':' && val[5] === ':') return val;
-    try {
-        const d = new Date(val);
-        if (!isNaN(d.getTime())) { const tz = document.querySelector('meta[name="xg-tz"]')?.content; return d.toLocaleTimeString('en-GB', tz ? { hour12: false, timeZone: tz } : { hour12: false }); }
-    } catch (e) {}
-    return (val || '').length > 19 ? val.substring(11, 19) : val;
-};
-
-/* Live lab view: seat-map grid, real-time tiles, detail drawer, drag-and-drop layout editor. */
-Alpine.data('labView', (cfg) => ({
-    labId: cfg.labId,
-    cols: cfg.cols,
-    rows: cfg.rows,
-    pcs: Object.fromEntries(cfg.pcs.map((p) => [p.id, p])),
-    seats: cfg.seats,
-    alerts: cfg.alerts,
-    fmtTime: window.fmtTime,
-    placement: {},          // "x,y" -> pc id
-    editing: false,
-    dragging: null,
-    drawer: null,
-    tab: 'timeline',
-    filter: '',
-    procSearch: '',
-    procFilter: 'all',
-    procSort: 'ram',
-    procSortDir: 'desc',
-    screenMode: 'live',
-    screenStreaming: false,
-    screenHasFrame: false,
-    screenStatus: '',
-    screenAuditId: null,
-    screenViewer: null,
-    screenRenewTimer: null,
-    screenReqSeq: 0,
-    openSeq: 0,
-    init() {
-        for (const s of this.seats) {
-            const pc = Object.values(this.pcs).find((p) => p.seat_id === s.id);
-            if (pc) this.placement[`${s.x},${s.y}`] = pc.id;
-        }
-        if (window.Echo) {
-            window.Echo.private(`lab.${this.labId}`)
-                .listen('.pc.updated', (t) => { this.pcs[t.id] = { ...(this.pcs[t.id] || {}), ...t }; })
-                .listen('.alert.raised', (a) => {
-                    this.alerts.unshift(a);
-                    this.alerts = this.alerts.slice(0, 50);
-                    Alpine.store('toasts').push({ title: `${a.pc}: ${a.title}`, severity: a.severity });
-                    if (this.drawer && this.drawer.pc.id === a.pc_id) this.open(a.pc_id);
-                })
-                .listen('.session.changed', () => window.location.reload());
-        }
-        setInterval(() => this.tick(), 5000);
-    },
-    async tick() {
-        // Mark tiles offline locally if no update arrived (the server also broadcasts this).
-        const now = Date.now();
-        for (const p of Object.values(this.pcs)) {
-            if (p.last_seen && now - Date.parse(p.last_seen) > 20000 && p.status !== 'offline') p.status = 'offline';
-        }
-        if (this.drawer && this.drawer.pc?.id) {
-            try {
-                const refreshed = await api(`/pcs/${this.drawer.pc.id}`);
-                if (this.drawer && this.drawer.pc?.id === refreshed.pc?.id) {
-                    this.drawer = refreshed;
-                }
-            } catch (e) {}
-        }
-    },
-    cell(x, y) { const id = this.placement[`${x},${y}`]; return id ? this.pcs[id] : null; },
-    get unplaced() {
-        const placed = new Set(Object.values(this.placement));
-        return Object.values(this.pcs).filter((p) => !placed.has(p.id));
-    },
-    get counts() {
-        const c = { clean: 0, warning: 0, alert: 0, offline: 0 };
-        for (const p of Object.values(this.pcs)) c[p.status] = (c[p.status] || 0) + 1;
-        return c;
-    },
-    tileClass(p) {
-        if (!p) return 'border-dashed border-slate-300 bg-slate-50';
-        return {
-            clean: 'border-emerald-400 bg-emerald-50',
-            warning: 'border-amber-400 bg-amber-50',
-            alert: 'border-red-500 bg-red-50 ring-2 ring-red-300',
-            offline: 'border-slate-300 bg-slate-100 text-slate-400',
-        }[p.status] || 'border-slate-300';
-    },
-    dragStart(id) { if (this.editing) this.dragging = id; },
-    drop(x, y) {
-        if (!this.editing || !this.dragging) return;
-        for (const [k, v] of Object.entries(this.placement)) if (v === this.dragging) delete this.placement[k];
-        const prev = this.placement[`${x},${y}`];
-        this.placement[`${x},${y}`] = this.dragging;
-        if (prev && prev !== this.dragging) { /* swapped-out PC returns to the tray */ }
-        this.dragging = null;
-    },
-    unplace() {
-        if (!this.dragging) return;
-        for (const [k, v] of Object.entries(this.placement)) if (v === this.dragging) delete this.placement[k];
-        this.dragging = null;
-    },
-    async saveLayout() {
-        const tiles = Object.entries(this.placement).map(([k, id]) => {
-            const [x, y] = k.split(',').map(Number);
-            return { pc_id: id, x, y };
-        });
-        await api('/lab/layout', { method: 'POST', body: JSON.stringify({ cols: this.cols, rows: this.rows, tiles }) });
-        this.editing = false;
-        Alpine.store('toasts').push({ title: 'Seat map saved', severity: 'info' });
-    },
-    async open(id) {
-        if (this.editing) return;
-        const prevPcId = this.drawer?.pc?.id;
-        const wasStreaming = this.screenStreaming;
-        const currentMode = this.screenMode || 'live';
-        const isScreenTab = this.tab === 'screen';
-
-        if (prevPcId !== id) {
-            await this.stopScreen(false);
-        }
-
-        const currentOpenSeq = ++this.openSeq;
-        try {
-            const data = await api(`/pcs/${id}`);
-            if (this.openSeq !== currentOpenSeq) return;
-            this.drawer = data;
-
-            // If the instructor was watching screen feeds or is on the screen tab, seamlessly stream the newly selected PC!
-            if (this.drawer?.pc?.id && (wasStreaming || isScreenTab)) {
-                await this.startScreen(currentMode);
-            }
-        } catch (e) {
-            if (this.openSeq === currentOpenSeq) {
-                Alpine.store('toasts').push({ title: `Failed to open PC #${id}: ${e.message}`, severity: 'alert' });
-            }
-        }
-    },
-    switchTab(t) {
-        const prevTab = this.tab;
-        this.tab = t;
-        if (t === 'screen' && !this.screenStreaming && this.drawer?.pc?.id) {
-            this.startScreen(this.screenMode || 'live');
-        } else if (prevTab === 'screen' && t !== 'screen' && this.screenStreaming) {
-            this.stopScreen();
-        }
-    },
-    async closeDrawer() {
-        await this.stopScreen();
-        this.drawer = null;
-    },
-    async startScreen(mode = 'live') {
-        const studentId = this.drawer?.student?.id;
-        const pcId = this.drawer?.pc?.id;
-        if (!studentId && !pcId) {
-            this.screenStatus = 'No PC selected';
-            return;
-        }
-
-        this.screenMode = mode;
-        const currentReqSeq = ++this.screenReqSeq;
-        const targetPcId = pcId;
-
-        try {
-            await this.stopScreen(false);
-            if (this.screenReqSeq !== currentReqSeq) return;
-
-            this.screenStreaming = true;
-            this.screenHasFrame = false;
-            this.screenStatus = `Connecting to ${this.drawer?.pc?.name || 'PC'} (${mode})…`;
-
-            const tokenUrl = studentId ? `/api/screen/${studentId}/token` : `/api/screen/pc/${pcId}/token`;
-            const data = await api(tokenUrl, {
-                method: 'POST',
-                body: JSON.stringify({ mode })
-            });
-
-            if (this.screenReqSeq !== currentReqSeq || this.drawer?.pc?.id !== targetPcId) {
-                if (data.audit_id) {
-                    api(`/api/screen/${data.audit_id}/stop`, { method: 'POST' }).catch(() => {});
-                }
-                return;
-            }
-
-            this.screenAuditId = data.audit_id;
-            this.screenStatus = `Connecting to stream #${data.stream_id}…`;
-
-            // Wait a tick to ensure canvas is in DOM
-            await new Promise((r) => setTimeout(r, 20));
-
-            const canvas = document.getElementById('xg-screen-canvas');
-            if (canvas) {
-                const ctx = (canvas && typeof canvas.getContext === 'function') ? canvas.getContext('2d') : null;
-                if (ctx && canvas.width > 0 && canvas.height > 0) {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                }
-
-                let gwUrl = String(data.gateway_url || '').trim();
-                const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                if (!gwUrl) {
-                    gwUrl = `${wsProto}//${window.location.host}/screen-gw`;
-                } else if (gwUrl.startsWith('/')) {
-                    gwUrl = `${wsProto}//${window.location.host}${gwUrl.replace(/\/$/, '')}`;
-                } else {
-                    try {
-                        const parsed = new URL(gwUrl);
-                        const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-                        if (window.location.protocol === 'https:' && parsed.protocol === 'ws:') {
-                            parsed.protocol = 'wss:';
-                            if (isLocal) {
-                                parsed.hostname = window.location.hostname;
-                                parsed.port = window.location.port;
-                                parsed.pathname = '/screen-gw';
-                            }
-                        } else if (isLocal) {
-                            parsed.hostname = window.location.hostname;
-                        }
-                        if (!parsed.port && window.location.port && parsed.pathname.startsWith('/screen-gw')) {
-                            parsed.port = window.location.port;
-                        }
-                        gwUrl = parsed.toString().replace(/\/$/, '');
-                    } catch (e) {}
-                }
-
-                const wsUrl = `${gwUrl}/view?token=${data.token}`;
-                this.screenViewer = new ScreenViewer(canvas, {
-                    onOpen: () => {
-                        if (this.screenReqSeq === currentReqSeq) {
-                            this.screenStatus = `Connected · ${this.drawer?.pc?.name || 'PC'} (${mode})`;
-                        }
-                    },
-                    onControlMessage: (msg) => {
-                        if (this.screenReqSeq !== currentReqSeq || !msg) return;
-                        if (msg.type === 'status') {
-                            if (msg.agent_connected) {
-                                if (!this.screenHasFrame) {
-                                    this.screenStatus = `Agent connected · waiting for frame…`;
-                                }
-                                this.screenViewer?.requestKeyframe(msg.stream_id || 0, 0);
-                            } else {
-                                this.screenHasFrame = false;
-                                this.screenViewer?.tileCanvas?.clear();
-                                this.screenStatus = `Waiting for agent screen stream (${this.drawer?.pc?.name || 'PC'})…`;
-                            }
-                        } else if (msg.type === 'error' && msg.message) {
-                            this.screenStatus = `Stream error: ${msg.message}`;
-                        }
-                    },
-                    onFrame: () => {
-                        if (this.screenReqSeq === currentReqSeq) {
-                            this.screenHasFrame = true;
-                            this.screenStatus = `${mode === 'live' ? 'Live stream' : 'Snapshot'} · ${this.drawer?.pc?.name || 'PC'}`;
-                        }
-                    },
-                    onError: (err) => {
-                        if (this.screenReqSeq === currentReqSeq) {
-                            this.screenStatus = 'Screen feed error';
-                        }
-                    },
-                    onClose: () => {
-                        if (this.screenReqSeq === currentReqSeq && this.screenStreaming) {
-                            this.screenStatus = 'Stream disconnected';
-                        }
-                    }
-                });
-                this.screenViewer.connect(wsUrl);
-
-                if (mode === 'live') {
-                    this.screenRenewTimer = setInterval(async () => {
-                        try {
-                            if (this.screenAuditId && this.screenStreaming) {
-                                await api(`/api/screen/${this.screenAuditId}/renew`, { method: 'POST' });
-                            }
-                        } catch (e) {
-                            console.warn('Screen lease renewal failed', e);
-                        }
-                    }, 20000);
-                }
-            }
-        } catch (e) {
-            if (this.screenReqSeq === currentReqSeq) {
-                this.screenStatus = `Error: ${e.message}`;
-                this.screenStreaming = false;
-                this.screenHasFrame = false;
-            }
-        }
-    },
-    async stopScreen(clearStatus = true) {
-        if (this.screenRenewTimer) {
-            clearInterval(this.screenRenewTimer);
-            this.screenRenewTimer = null;
-        }
-        if (this.screenViewer) {
-            this.screenViewer.disconnect();
-            this.screenViewer = null;
-        }
-        if (this.screenAuditId) {
-            const auditId = this.screenAuditId;
-            this.screenAuditId = null;
-            try {
-                await api(`/api/screen/${auditId}/stop`, { method: 'POST' });
-            } catch (e) {}
-        }
-        this.screenStreaming = false;
-        this.screenHasFrame = false;
-        if (clearStatus) {
-            this.screenStatus = 'Stream stopped';
-        }
-    },
-    async message(ids) {
-        const text = prompt(ids ? 'Message to this PC:' : 'Message to all PCs:');
-        if (!text) return;
-        const r = await api('/sessions/message', { method: 'POST', body: JSON.stringify({ text, pc_ids: ids || [] }) });
-        Alpine.store('toasts').push({ title: `Message sent to ${r.sent} PC(s)`, severity: 'info' });
-    },
-    async isolate(pc) {
-        const on = !pc.isolated;
-        if (on && !confirm(`Cut network access for ${pc.name}? The agent stays connected.`)) return;
-        await api(`/pcs/${pc.id}/isolate`, { method: 'POST', body: JSON.stringify({ isolated: on, reason: 'dashboard' }) });
-        this.pcs[pc.id].isolated = on;
-        if (this.drawer) this.drawer.pc.isolated = on;
-    },
-    async kill(pc, exe, pid = null) {
-        if (!exe && !pid) {
-            exe = prompt('Program to close (executable name, e.g. ollama):');
-            if (!exe) return;
-        }
-        const payload = pid ? { pid: Number(pid), ...(exe ? { exe } : {}) } : { exe };
-        await api(`/pcs/${pc.id}/kill`, { method: 'POST', body: JSON.stringify(payload) });
-        Alpine.store('toasts').push({ title: `Close "${exe || ('PID ' + pid)}" sent to ${pc.name}`, severity: 'info' });
-        setTimeout(() => { if (this.drawer && this.drawer.pc.id === pc.id) this.open(pc.id); }, 1500);
-    },
-    async rescan(pc, what = 'processes') {
-        await api(`/pcs/${pc.id}/rescan`, { method: 'POST', body: JSON.stringify({ what }) });
-        Alpine.store('toasts').push({ title: `Refreshing ${what} on ${pc.name}…`, severity: 'info' });
-        setTimeout(() => { if (this.drawer && this.drawer.pc.id === pc.id) this.open(pc.id); }, 1500);
-    },
-    setProcSort(col) {
-        if (this.procSort === col) {
-            this.procSortDir = this.procSortDir === 'desc' ? 'asc' : 'desc';
-        } else {
-            this.procSort = col;
-            this.procSortDir = 'desc';
-        }
-    },
-    filteredProcesses() {
-        const list = this.drawer?.running_processes || [];
-        const q = (this.procSearch || '').trim().toLowerCase();
-        const isSys = (u) => {
-            const l = (u || '').toLowerCase();
-            return !l || l === 'system' || l === 'local service' || l === 'network service' || l === 'root' || l.startsWith('dwm-') || l.startsWith('umfd-');
-        };
-        const filtered = list.filter((p) => {
-            if (this.procFilter === 'flagged' && !p.rule_id) return false;
-            if (this.procFilter === 'user' && isSys(p.user) && !p.rule_id) return false;
-            if (!q) return true;
-            return (p.exe || '').toLowerCase().includes(q) ||
-                   (p.name || '').toLowerCase().includes(q) ||
-                   (p.user || '').toLowerCase().includes(q) ||
-                   (p.rule_id || '').toLowerCase().includes(q) ||
-                   String(p.pid || '').includes(q);
-        });
-        const dir = this.procSortDir === 'asc' ? 1 : -1;
-        const col = this.procSort || 'ram';
-        return [...filtered].sort((a, b) => {
-            let va = 0, vb = 0;
-            if (col === 'cpu') {
-                va = Number(a.cpu_pct || 0);
-                vb = Number(b.cpu_pct || 0);
-            } else if (col === 'net') {
-                va = Number(a.net_kbps || 0) * 1000 + Number(a.net_conns || 0);
-                vb = Number(b.net_kbps || 0) * 1000 + Number(b.net_conns || 0);
-            } else {
-                va = Number(a.rss_mb || 0);
-                vb = Number(b.rss_mb || 0);
-            }
-            if (va !== vb) return (va - vb) * dir;
-            const ra = Number(a.rss_mb || 0), rb = Number(b.rss_mb || 0);
-            if (ra !== rb) return rb - ra;
-            return Number(a.pid || 0) - Number(b.pid || 0);
-        });
-    },
-    async ack(alert) {
-        await api(`/alerts/${alert.id}/ack`, { method: 'POST', body: JSON.stringify({}) });
-        alert.acknowledged_at = new Date().toISOString();
-    },
-    bars(series, key) {
-        const max = Math.max(1, ...series.map((s) => s[key]));
-        return series.map((s) => Math.round((s[key] / max) * 100));
-    },
-}));
-
-Alpine.start();
-window.Alpine = Alpine;
+/* ---------- Shortcuts ---------- */
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); window.dispatchEvent(new CustomEvent('xg-palette')); return; }
+  if (!e.altKey || e.ctrlKey || e.metaKey) return;
+  const map = { 1: 'index', 2: 'alerts', 3: 'sessions', 4: 'profiles', 5: 'roster', 6: 'signatures', 7: 'reports', 8: 'enroll', 9: 'admin-health' };
+  const code = e.code && e.code.startsWith('Digit') ? e.code.slice(5) : e.key;
+  if (map[code]) { e.preventDefault(); location.href = map[code] + '.html'; }
+});
