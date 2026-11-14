@@ -46,36 +46,46 @@
       ];
   })->values()->all() : null;
 @endphp
+<script>
+window.XG_SIG_PAGE = {
+  cat: @json(!empty($category) ? $category : 'all'),
+  hasLiveSites: @json($liveSites !== null),
+  counts: @json($liveCounts),
+  sites: @json($liveSites),
+  rules: @json($liveRules),
+  versions: @json($liveVersions),
+};
+</script>
 <div class="doc" x-data="{
-  tab: 'sites', cat: @json(!empty($category) ? $category : 'all'), q: '', newDomain: '', newCat: 'custom', rq: '', rk: 'all', importOpen: false, ruleModal: false,
-  ruleForm: { rule_id: '', kind: 'process', severity: 'high', description: '', definition: '{\n  &quot;exe&quot;: [&quot;ollama&quot;]\n}', actions: ['log', 'alert'] },
-  counts: {{ $liveCounts !== null ? json_encode($liveCounts) : '{ all: 285, ai: 169, ide: 47, marketplace: 8, doh: 38, vpn: 23, custom: 0 }' }},
-  sites: {{ $liveSites !== null ? json_encode($liveSites) : '[
-    { id: 1, real: false, d: \'ai.google.dev\', c: \'ai\', s: \'built-in\', off: false }, { id: 2, real: false, d: \'ai21.com\', c: \'ai\', s: \'built-in\', off: false },
-    { id: 3, real: false, d: \'aistudio.google.com\', c: \'ai\', s: \'built-in\', off: false }, { id: 4, real: false, d: \'chatgpt.com\', c: \'ai\', s: \'built-in\', off: false },
-    { id: 5, real: false, d: \'claude.ai\', c: \'ai\', s: \'built-in\', off: false }, { id: 6, real: false, d: \'cdn.grok.com\', c: \'ai\', s: \'built-in\', off: false },
-    { id: 7, real: false, d: \'api.githubcopilot.com\', c: \'ide\', s: \'built-in\', off: false }, { id: 8, real: false, d: \'codeium.com\', c: \'ide\', s: \'built-in\', off: true },
-    { id: 9, real: false, d: \'replit.com\', c: \'marketplace\', s: \'built-in\', off: false }, { id: 10, real: false, d: \'dns.google\', c: \'doh\', s: \'built-in\', off: false },
-    { id: 11, real: false, d: \'cloudflare-dns.com\', c: \'doh\', s: \'built-in\', off: false }, { id: 12, real: false, d: \'nordvpn.com\', c: \'vpn\', s: \'built-in\', off: false }
-  ]' }},
-  rules: {{ $liveRules !== null ? json_encode($liveRules) : '[
-    { dbId: null, id: \'proc.ollama\', kind: \'process\', sev: \'critical\', desc: \'Ollama local AI server\', on: true, definition: \'{\\n  &quot;exe&quot;: [&quot;ollama&quot;]\\n}\', actions: [\'log\', \'warn\', \'kill\', \'alert\'] },
-    { dbId: null, id: \'proc.llamacpp\', kind: \'process\', sev: \'critical\', desc: \'llama.cpp local server\', on: true, definition: \'{\\n  &quot;exe&quot;: [&quot;llama-server&quot;]\\n}\', actions: [\'log\', \'warn\', \'kill\', \'alert\'] },
-    { dbId: null, id: \'proc.lmstudio\', kind: \'process\', sev: \'critical\', desc: \'LM Studio local AI\', on: true, definition: \'{\\n  &quot;exe&quot;: [&quot;lm-studio&quot;]\\n}\', actions: [\'log\', \'warn\', \'kill\', \'alert\'] },
-    { dbId: null, id: \'web.grok\', kind: \'traffic\', sev: \'high\', desc: \'Grok (xAI) stream\', on: true, definition: \'{}\', actions: [\'log\', \'alert\'] },
-    { dbId: null, id: \'web.chatgpt\', kind: \'traffic\', sev: \'high\', desc: \'ChatGPT stream\', on: true, definition: \'{}\', actions: [\'log\', \'alert\'] },
-    { dbId: null, id: \'net.second_route\', kind: \'network\', sev: \'critical\', desc: \'A second network route appeared\', on: true, definition: \'{}\', actions: [\'log\', \'alert\', \'isolate\'] },
-    { dbId: null, id: \'hw.adapter_added\', kind: \'device\', sev: \'critical\', desc: \'Extra network adapter or tethered phone\', on: true, definition: \'{}\', actions: [\'log\', \'alert\'] },
-    { dbId: null, id: \'dev.usb_device\', kind: \'device\', sev: \'low\', desc: \'External USB device attached\', on: true, definition: \'{}\', actions: [\'log\'] },
-    { dbId: null, id: \'tamper.helper_terminated\', kind: \'agent\', sev: \'high\', desc: \'Session helper was ended\', on: true, definition: \'{}\', actions: [\'log\', \'alert\'] },
-    { dbId: null, id: \'tamper.machine_silent\', kind: \'agent\', sev: \'high\', desc: \'No heartbeat from the agent\', on: true, definition: \'{}\', actions: [\'log\', \'alert\'] },
-    { dbId: null, id: \'paste.large\', kind: \'clipboard\', sev: \'low\', desc: \'Paste above the size limit in Settings\', on: true, definition: \'{}\', actions: [\'log\'] },
-    { dbId: null, id: \'ext.ai_assistant\', kind: \'extension\', sev: \'medium\', desc: \'AI assistant browser extension\', on: false, definition: \'{}\', actions: [\'log\', \'alert\'] }
-  ]' }},
-  versions: {{ $liveVersions !== null ? json_encode($liveVersions) : '[
-    { id: null, v: \'2026.11.08-b2a25a\', note: \'Added Grok and LM Studio rules\', when: \'Today 09:14\', active: true },
-    { id: null, v: \'2026.11.05-5ac910\', note: \'Baseline profiles and rules\', when: \'3 days ago\', active: false }
-  ]' }},
+  tab: 'sites', cat: window.XG_SIG_PAGE.cat, q: '', newDomain: '', newCat: 'custom', rq: '', rk: 'all', importOpen: false, ruleModal: false,
+  ruleForm: { rule_id: '', kind: 'process', severity: 'high', description: '', definition: '{}', actions: ['log', 'alert'] },
+  counts: window.XG_SIG_PAGE.counts !== null ? window.XG_SIG_PAGE.counts : { all: 285, ai: 169, ide: 47, marketplace: 8, doh: 38, vpn: 23, custom: 0 },
+  sites: window.XG_SIG_PAGE.sites !== null ? window.XG_SIG_PAGE.sites : [
+    { id: 1, real: false, d: 'ai.google.dev', c: 'ai', s: 'built-in', off: false }, { id: 2, real: false, d: 'ai21.com', c: 'ai', s: 'built-in', off: false },
+    { id: 3, real: false, d: 'aistudio.google.com', c: 'ai', s: 'built-in', off: false }, { id: 4, real: false, d: 'chatgpt.com', c: 'ai', s: 'built-in', off: false },
+    { id: 5, real: false, d: 'claude.ai', c: 'ai', s: 'built-in', off: false }, { id: 6, real: false, d: 'cdn.grok.com', c: 'ai', s: 'built-in', off: false },
+    { id: 7, real: false, d: 'api.githubcopilot.com', c: 'ide', s: 'built-in', off: false }, { id: 8, real: false, d: 'codeium.com', c: 'ide', s: 'built-in', off: true },
+    { id: 9, real: false, d: 'replit.com', c: 'marketplace', s: 'built-in', off: false }, { id: 10, real: false, d: 'dns.google', c: 'doh', s: 'built-in', off: false },
+    { id: 11, real: false, d: 'cloudflare-dns.com', c: 'doh', s: 'built-in', off: false }, { id: 12, real: false, d: 'nordvpn.com', c: 'vpn', s: 'built-in', off: false }
+  ],
+  rules: window.XG_SIG_PAGE.rules !== null ? window.XG_SIG_PAGE.rules : [
+    { dbId: null, id: 'proc.ollama', kind: 'process', sev: 'critical', desc: 'Ollama local AI server', on: true, definition: '{}', actions: ['log', 'warn', 'kill', 'alert'] },
+    { dbId: null, id: 'proc.llamacpp', kind: 'process', sev: 'critical', desc: 'llama.cpp local server', on: true, definition: '{}', actions: ['log', 'warn', 'kill', 'alert'] },
+    { dbId: null, id: 'proc.lmstudio', kind: 'process', sev: 'critical', desc: 'LM Studio local AI', on: true, definition: '{}', actions: ['log', 'warn', 'kill', 'alert'] },
+    { dbId: null, id: 'web.grok', kind: 'traffic', sev: 'high', desc: 'Grok (xAI) stream', on: true, definition: '{}', actions: ['log', 'alert'] },
+    { dbId: null, id: 'web.chatgpt', kind: 'traffic', sev: 'high', desc: 'ChatGPT stream', on: true, definition: '{}', actions: ['log', 'alert'] },
+    { dbId: null, id: 'net.second_route', kind: 'network', sev: 'critical', desc: 'A second network route appeared', on: true, definition: '{}', actions: ['log', 'alert', 'isolate'] },
+    { dbId: null, id: 'hw.adapter_added', kind: 'device', sev: 'critical', desc: 'Extra network adapter or tethered phone', on: true, definition: '{}', actions: ['log', 'alert'] },
+    { dbId: null, id: 'dev.usb_device', kind: 'device', sev: 'low', desc: 'External USB device attached', on: true, definition: '{}', actions: ['log'] },
+    { dbId: null, id: 'tamper.helper_terminated', kind: 'agent', sev: 'high', desc: 'Session helper was ended', on: true, definition: '{}', actions: ['log', 'alert'] },
+    { dbId: null, id: 'tamper.machine_silent', kind: 'agent', sev: 'high', desc: 'No heartbeat from the agent', on: true, definition: '{}', actions: ['log', 'alert'] },
+    { dbId: null, id: 'paste.large', kind: 'clipboard', sev: 'low', desc: 'Paste above the size limit in Settings', on: true, definition: '{}', actions: ['log'] },
+    { dbId: null, id: 'ext.ai_assistant', kind: 'extension', sev: 'medium', desc: 'AI assistant browser extension', on: false, definition: '{}', actions: ['log', 'alert'] }
+  ],
+  versions: window.XG_SIG_PAGE.versions !== null ? window.XG_SIG_PAGE.versions : [
+    { id: null, v: '2026.11.08-b2a25a', note: 'Added Grok and LM Studio rules', when: 'Today 09:14', active: true },
+    { id: null, v: '2026.11.05-5ac910', note: 'Baseline profiles and rules', when: '3 days ago', active: false }
+  ],
   lab(k) { return ({ all: 'All', ai: 'AI', ide: 'Editor', marketplace: 'Marketplace', doh: 'Encrypted DNS', vpn: 'VPN', custom: 'Custom' })[k] || k; },
   get catKeys() { return Object.keys(this.counts); },
   get shown() { const q = this.q.toLowerCase(); return this.sites.filter(s => (this.cat === 'all' || s.c === this.cat) && (!q || s.d.includes(q))); },
@@ -109,7 +119,7 @@
         kind: 'process',
         severity: 'high',
         description: '',
-        definition: '{\n  \"exe\": [\"custom-ai\"]\n}',
+        definition: '{}',
         actions: ['log', 'alert'],
       };
     }
@@ -129,7 +139,7 @@
       <div class="pills"><template x-for="k in catKeys" :key="k"><button class="pill" :aria-pressed="cat === k" @click="cat = k"><span x-text="lab(k)"></span> <span class="n" x-text="counts[k]"></span></button></template></div>
       <span class="grow"></span><input class="input input-sm" style="width:220px" placeholder="Search sites" x-model="q"><button class="btn btn-sm" @click="importOpen = !importOpen"><svg class="i i-sm" aria-hidden="true"><use href="#i-upload"/></svg> Import list</button>
     </div>
-    <form method="post" action="{{ route('blocklist.add') }}" class="row" style="padding:12px 20px;background:var(--surface-2);border-bottom:1px solid var(--border)" @submit="if(!{{ $liveSites !== null ? 'true' : 'false' }}) { $event.preventDefault(); addSite(); }">
+    <form method="post" action="{{ route('blocklist.add') }}" class="row" style="padding:12px 20px;background:var(--surface-2);border-bottom:1px solid var(--border)" @submit="if(!window.XG_SIG_PAGE.hasLiveSites) { $event.preventDefault(); addSite(); }">
       @csrf
       <input name="value" class="input input-sm mono" style="flex:1;min-width:220px" placeholder="Block a site, e.g. example.com" x-model="newDomain" required>
       <select name="category" class="select select-sm" style="width:150px" x-model="newCat"><option value="custom">Custom</option><option value="ai">AI</option><option value="ide">Editor</option><option value="marketplace">Marketplace</option><option value="doh">Encrypted DNS</option><option value="vpn">VPN</option></select>

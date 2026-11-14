@@ -9,12 +9,19 @@
   ];
   $initialHist = !empty($history) ? $history : $defaultHist;
 @endphp
-<div class="doc" x-data="{
+<script>
+window.XG_SHARE = {
   text: @json($text ?? ''),
-  cmd: false,
-  editing: false,
   last: @json($updatedAt ?? 'Today 12:01 by KUET admin'),
   hist: @json($initialHist),
+};
+</script>
+<div class="doc" x-data="{
+  text: window.XG_SHARE.text,
+  cmd: false,
+  editing: false,
+  last: window.XG_SHARE.last,
+  hist: window.XG_SHARE.hist,
   init() {
     setInterval(async () => {
       if (this.editing) return;

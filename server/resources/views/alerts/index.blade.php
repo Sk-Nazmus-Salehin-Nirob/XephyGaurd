@@ -19,9 +19,17 @@
       ];
   })->values()->all() : null;
 @endphp
+<script>
+window.XG_ALERTS_PAGE = {
+  sev: @json($filters['severity'] ?? ''),
+  unacked: @json((bool) ($filters['open'] ?? false)),
+  byName: @json(auth()->user()?->name ?? 'KUET admin'),
+  items: @json($liveAlerts),
+};
+</script>
 <div class="doc" x-data="{
-  sev: @json($filters['severity'] ?? ''), unacked: @json((bool) ($filters['open'] ?? false)), grouped: true, q: '', openKey: null, notes: {},
-  all: {{ $liveAlerts !== null ? json_encode($liveAlerts) : 'structuredClone(XG.alerts)' }},
+  sev: window.XG_ALERTS_PAGE.sev, unacked: window.XG_ALERTS_PAGE.unacked, grouped: true, q: '', openKey: null, notes: {},
+  all: window.XG_ALERTS_PAGE.items !== null ? window.XG_ALERTS_PAGE.items : structuredClone(XG.alerts),
   get filtered() { const q = this.q.toLowerCase(); return this.all.filter(a => (!this.sev || a.sev === this.sev) && (!this.unacked || !a.acked) && (!q || (a.pc + a.title + a.rule).toLowerCase().includes(q))); },
   get rows() { return this.grouped ? xgGroup(this.filtered) : this.filtered.map(a => ({ ...a, key: 'a' + a.id, count: 1, items: [a] })); },
   get waiting() { return xgGroup(this.all.filter(a => !a.acked)).length; },
@@ -30,7 +38,7 @@
     const note = (this.notes[r.key] || '').trim() || 'Reviewed.';
     r.items.forEach(i => {
       const a = this.all.find(x => x.id === i.id);
-      if (a) { a.acked = true; a.by = @json(auth()->user()?->name ?? 'KUET admin'); a.note = note; }
+      if (a) { a.acked = true; a.by = window.XG_ALERTS_PAGE.byName; a.note = note; }
       if (window.xgApi && i.id) {
         window.xgApi('/alerts/' + i.id + '/ack', { method: 'POST', body: JSON.stringify({ comment: note }) });
       }

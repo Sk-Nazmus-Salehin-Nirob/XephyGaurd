@@ -22,8 +22,14 @@
     @endif
   @endforeach
 </section>
+<script>
+window.XG_DL_PAGE = {
+  win: @json($winCmd),
+  lin: @json($linCmd),
+};
+</script>
 <div class="cols-2">
-  <section class="panel panel-pad stack" x-data="{ win: @js($winCmd), lin: @js($linCmd) }">
+  <section class="panel panel-pad stack" x-data="{ win: window.XG_DL_PAGE.win, lin: window.XG_DL_PAGE.lin }">
     <h2 class="h2">Silent install</h2>
     <div><div class="cmd-label">Windows (as administrator)</div><div class="cmd"><pre x-text="win"></pre><button class="btn btn-sm copy" @click="xgCopy(win, 'Copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg></button></div></div>
     <div><div class="cmd-label">Ubuntu / Debian</div><div class="cmd"><pre x-text="lin"></pre><button class="btn btn-sm copy" @click="xgCopy(lin, 'Copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg></button></div></div>

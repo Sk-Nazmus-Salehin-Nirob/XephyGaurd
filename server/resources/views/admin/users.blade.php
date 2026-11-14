@@ -14,8 +14,13 @@
       ];
   })->values()->all() : null;
 @endphp
+<script>
+window.XG_USERS_PAGE = {
+  users: @json($liveUsers),
+};
+</script>
 <div class="doc" x-data="{
-  users: {{ $liveUsers !== null ? json_encode($liveUsers) : '[ { id: null, name: \'KUET Admin\', email: \'tahmid.tts@gmail.com\', role: \'admin\', on: true, pwOpen: false, pw: \'\' }, { id: null, name: \'Course Instructor\', email: \'instructor@cse.kuet.ac.bd\', role: \'instructor\', on: true, pwOpen: false, pw: \'\' }, { id: null, name: \'Lab Assistant\', email: \'assistant@cse.kuet.ac.bd\', role: \'assistant\', on: true, pwOpen: false, pw: \'\' } ]' }},
+  users: window.XG_USERS_PAGE.users !== null ? window.XG_USERS_PAGE.users : [ { id: null, name: 'KUET Admin', email: 'tahmid.tts@gmail.com', role: 'admin', on: true, pwOpen: false, pw: '' }, { id: null, name: 'Course Instructor', email: 'instructor@cse.kuet.ac.bd', role: 'instructor', on: true, pwOpen: false, pw: '' }, { id: null, name: 'Lab Assistant', email: 'assistant@cse.kuet.ac.bd', role: 'assistant', on: true, pwOpen: false, pw: '' } ],
   addOpen: false,
   caps: [['Watch the live lab', 1, 1, 1], ['View student screens', 0, 1, 1], ['Enrol and approve PCs', 1, 0, 1], ['Start sessions and edit the timetable', 0, 1, 1], ['Reports and roster', 0, 1, 1], ['Blocklists, settings and staff', 0, 0, 1]],
   initials(n) { return (n || '').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase(); },

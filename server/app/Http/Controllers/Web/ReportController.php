@@ -46,9 +46,17 @@ class ReportController extends Controller
         ];
     }
 
-    public function show(LabSession $session)
+    public function show(string|int $session)
     {
-        return view('reports.session', $this->data($session));
+        $model = LabSession::find($session);
+        if (! $model) {
+            if (in_array((int) $session, [1, 2], true) && LabSession::count() === 0) {
+                return $this->showByNumber((int) $session);
+            }
+            abort(404);
+        }
+
+        return view('reports.session', $this->data($model));
     }
 
     public function showByNumber(int $num)

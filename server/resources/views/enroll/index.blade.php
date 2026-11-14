@@ -36,20 +36,33 @@
       ];
   })->values()->all() : null;
 @endphp
-<div class="doc" x-data="{
-  os: 'win', q: '',
+<script>
+window.XG_ENROLL_PAGE = {
   auto: @json((bool) ($lab?->auto_approve ?? true)),
   key: @json($key ?? 'XG-A77CFB-6554C8-489B53'),
   fp: @json($fingerprint ?? 'B2:8E:59:71:6C:33:9A:81:40:DE:FD:31:07:95:2E:8C:31:F9:67:8B:10:98:99:A2:05:4B:37:F1:C0:01:22:98'),
   macs: @json(!empty($lab?->auto_approve_macs) ? implode("\n", $lab->auto_approve_macs) : "70:85:c2:55:1a:40\nb4:2e:99:11:80:cc"),
-  pending: {{ $livePending !== null ? json_encode($livePending) : '[
-    { id: 1, real: false, host: \'LAB-PC-DESK25\', os: \'Windows 11 Pro\', ip: \'192.168.0.125\', mac: \'70:85:C2:55:1A:40\', name: \'PC-25\' },
-    { id: 2, real: false, host: \'DESKTOP-KUET-09\', os: \'Ubuntu 24.04 LTS\', ip: \'192.168.0.126\', mac: \'B4:2E:99:11:80:CC\', name: \'PC-26\' }
-  ]' }},
-  enrolled: {{ $livePcs !== null ? json_encode($livePcs) : 'XG.pcs.map(p => ({ ...p, real: false, lastSeen: p.status === \"offline\" ? \"25m ago\" : \"Just now\", certExpires: \"2027-11-14\", retired: false, editingName: false }))' }},
+  exeName: @json($exeName),
+  baseUrl: @json($baseUrl),
+  hasLivePending: @json($livePending !== null),
+  pending: @json($livePending),
+  enrolled: @json($livePcs),
+};
+</script>
+<div class="doc" x-data="{
+  os: 'win', q: '',
+  auto: window.XG_ENROLL_PAGE.auto,
+  key: window.XG_ENROLL_PAGE.key,
+  fp: window.XG_ENROLL_PAGE.fp,
+  macs: window.XG_ENROLL_PAGE.macs,
+  pending: window.XG_ENROLL_PAGE.pending !== null ? window.XG_ENROLL_PAGE.pending : [
+    { id: 1, real: false, host: 'LAB-PC-DESK25', os: 'Windows 11 Pro', ip: '192.168.0.125', mac: '70:85:C2:55:1A:40', name: 'PC-25' },
+    { id: 2, real: false, host: 'DESKTOP-KUET-09', os: 'Ubuntu 24.04 LTS', ip: '192.168.0.126', mac: 'B4:2E:99:11:80:CC', name: 'PC-26' }
+  ],
+  enrolled: window.XG_ENROLL_PAGE.enrolled !== null ? window.XG_ENROLL_PAGE.enrolled : XG.pcs.map(p => ({ ...p, real: false, lastSeen: p.status === 'offline' ? '25m ago' : 'Just now', certExpires: '2027-11-14', retired: false, editingName: false })),
   get cmd() { return this.os === 'win'
-      ? @js($exeName) + ' /S /KEY=' + this.key + ' /CCC=' + @js($baseUrl) + ' /CAFP=' + this.fp
-      : 'curl -fsSL ' + @js($baseUrl) + '/install/linux.sh | sudo bash -s -- --key ' + this.key; },
+      ? window.XG_ENROLL_PAGE.exeName + ' /S /KEY=' + this.key + ' /CCC=' + window.XG_ENROLL_PAGE.baseUrl + ' /CAFP=' + this.fp
+      : 'curl -fsSL ' + window.XG_ENROLL_PAGE.baseUrl + '/install/linux.sh | sudo bash -s -- --key ' + this.key; },
   get shown() { const q = this.q.toLowerCase(); return this.enrolled.filter(p => !q || (p.name + p.host + p.ip).toLowerCase().includes(q)); },
   approve(p) {
     if (p.real && window.xgApi) window.xgApi('/enroll/' + p.id + '/approve', { method: 'POST', body: JSON.stringify({ name: p.name }) });
@@ -102,7 +115,7 @@
       <div class="panel-head">
         <h2 class="h2">2. Approve new PCs</h2>
         <span class="chip alert" x-show="pending.length" x-text="pending.length + ' waiting'"></span>
-        <form method="post" action="{{ route('enroll.approve_all') }}" x-show="pending.length" style="display:inline" @submit="if(!{{ $livePending !== null ? 'true' : 'false' }}) { $event.preventDefault(); pending = []; $store.toasts.add('Approved everything waiting.', 'ok'); }">
+        <form method="post" action="{{ route('enroll.approve_all') }}" x-show="pending.length" style="display:inline" @submit="if(!window.XG_ENROLL_PAGE.hasLivePending) { $event.preventDefault(); pending = []; $store.toasts.add('Approved everything waiting.', 'ok'); }">
           @csrf
           <button type="submit" class="btn btn-sm">Approve all</button>
         </form>

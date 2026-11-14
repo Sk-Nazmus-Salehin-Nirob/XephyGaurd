@@ -9,8 +9,8 @@
   $logHosts = (bool) ($v['log_urls']['enabled'] ?? true);
   $logQueries = (bool) ($v['log_urls']['query'] ?? false);
 @endphp
-<div class="doc" x-data="{
-  cur: 'network',
+<script>
+window.XG_SETTINGS_PAGE = {
   mode: @json($netMode),
   pasteAt: @json((int) ($v['paste_alert_chars'] ?? 800)),
   tAlways: @json($tAlways),
@@ -18,6 +18,17 @@
   tTest: @json($tTest),
   hosts: @json($logHosts),
   queries: @json($logQueries),
+};
+</script>
+<div class="doc" x-data="{
+  cur: 'network',
+  mode: window.XG_SETTINGS_PAGE.mode,
+  pasteAt: window.XG_SETTINGS_PAGE.pasteAt,
+  tAlways: window.XG_SETTINGS_PAGE.tAlways,
+  tPractice: window.XG_SETTINGS_PAGE.tPractice,
+  tTest: window.XG_SETTINGS_PAGE.tTest,
+  hosts: window.XG_SETTINGS_PAGE.hosts,
+  queries: window.XG_SETTINGS_PAGE.queries,
   go(id) { this.cur = id; document.getElementById(id).scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 }"><div class="optbar"><span class="otitle">Settings</span><span class="osub">Network, privacy and the notice students see.</span><span class="grow"></span></div><div class="canvas ">
   
