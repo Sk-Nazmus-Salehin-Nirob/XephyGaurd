@@ -107,8 +107,14 @@ class AdminController extends Controller
 
     public function audit(Request $request)
     {
-        return view('admin.audit', ['entries' => AuditLog::query()->with('user:id,name')
-            ->when($request->string('action')->toString(), fn ($q, $a) => $q->where('action', 'like', "$a%"))
-            ->latest('id')->paginate(100)->withQueryString()]);
+        try {
+            $entries = AuditLog::query()->with('user:id,name')
+                ->when($request->string('action')->toString(), fn ($q, $a) => $q->where('action', 'like', "$a%"))
+                ->latest('id')->paginate(100)->withQueryString();
+        } catch (\Throwable) {
+            $entries = new \Illuminate\Pagination\LengthAwarePaginator([], 0, 100);
+        }
+
+        return view('admin.audit', ['entries' => $entries]);
     }
 }
