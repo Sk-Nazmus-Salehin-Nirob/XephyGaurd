@@ -1,56 +1,69 @@
-@extends('layouts.app')
-@section('title', 'Blocklists & signatures')
+@extends('layouts.app', ['activePage' => 'signatures.html'])
+@section('title', 'Blocklists and rules')
 @section('content')
-<div class="grid gap-4 xl:grid-cols-2">
-  <div class="card">
-    <h2 class="mb-2 text-lg font-semibold">Network blocklists</h2>
-    <div class="mb-3 flex flex-wrap gap-2 text-sm">
-      <a href="{{ route('signatures.index') }}" @class(['badge', 'bg-indigo-600 text-white' => ! $category, 'sev-info' => $category])>all</a>
-      @foreach (\App\Models\BlocklistEntry::CATEGORIES as $c)
-        <a href="?category={{ $c }}" @class(['badge', 'bg-indigo-600 text-white' => $category === $c, 'sev-info' => $category !== $c])>{{ $c }} ({{ $counts[$c] ?? 0 }})</a>@endforeach
+<div class="doc" x-data="{
+  tab: 'sites', cat: 'all', q: '', newDomain: '', newCat: 'custom', rq: '', rk: 'all', importOpen: false,
+  counts: { all: 285, ai: 169, ide: 47, marketplace: 8, doh: 38, vpn: 23, custom: 0 },
+  sites: [
+    { id: 1, d: 'ai.google.dev', c: 'ai', s: 'built-in', off: false }, { id: 2, d: 'ai21.com', c: 'ai', s: 'built-in', off: false },
+    { id: 3, d: 'aistudio.google.com', c: 'ai', s: 'built-in', off: false }, { id: 4, d: 'chatgpt.com', c: 'ai', s: 'built-in', off: false },
+    { id: 5, d: 'claude.ai', c: 'ai', s: 'built-in', off: false }, { id: 6, d: 'cdn.grok.com', c: 'ai', s: 'built-in', off: false },
+    { id: 7, d: 'api.githubcopilot.com', c: 'ide', s: 'built-in', off: false }, { id: 8, d: 'codeium.com', c: 'ide', s: 'built-in', off: true },
+    { id: 9, d: 'replit.com', c: 'marketplace', s: 'built-in', off: false }, { id: 10, d: 'dns.google', c: 'doh', s: 'built-in', off: false },
+    { id: 11, d: 'cloudflare-dns.com', c: 'doh', s: 'built-in', off: false }, { id: 12, d: 'nordvpn.com', c: 'vpn', s: 'built-in', off: false }
+  ],
+  rules: [
+    { id: 'proc.ollama', kind: 'process', sev: 'critical', desc: 'Ollama local AI server', on: true }, { id: 'proc.llamacpp', kind: 'process', sev: 'critical', desc: 'llama.cpp local server', on: true },
+    { id: 'proc.lmstudio', kind: 'process', sev: 'critical', desc: 'LM Studio local AI', on: true }, { id: 'web.grok', kind: 'traffic', sev: 'high', desc: 'Grok (xAI) stream', on: true },
+    { id: 'web.chatgpt', kind: 'traffic', sev: 'high', desc: 'ChatGPT stream', on: true }, { id: 'net.second_route', kind: 'network', sev: 'critical', desc: 'A second network route appeared', on: true },
+    { id: 'hw.adapter_added', kind: 'device', sev: 'critical', desc: 'Extra network adapter or tethered phone', on: true }, { id: 'dev.usb_device', kind: 'device', sev: 'low', desc: 'External USB device attached', on: true },
+    { id: 'tamper.helper_terminated', kind: 'agent', sev: 'high', desc: 'Session helper was ended', on: true }, { id: 'tamper.machine_silent', kind: 'agent', sev: 'high', desc: 'No heartbeat from the agent', on: true },
+    { id: 'paste.large', kind: 'clipboard', sev: 'low', desc: 'Paste above the size limit in Settings', on: true }, { id: 'ext.ai_assistant', kind: 'extension', sev: 'medium', desc: 'AI assistant browser extension', on: false }
+  ],
+  versions: [
+    { v: '2026.11.08-b2a25a', note: 'Added Grok and LM Studio rules', when: 'Today 09:14', active: true },
+    { v: '2026.11.05-5ac910', note: 'Baseline profiles and rules', when: '3 days ago', active: false }
+  ],
+  lab(k) { return ({ all: 'All', ai: 'AI', ide: 'Editor', marketplace: 'Marketplace', doh: 'Encrypted DNS', vpn: 'VPN', custom: 'Custom' })[k] || k; },
+  get catKeys() { return Object.keys(this.counts); },
+  get shown() { const q = this.q.toLowerCase(); return this.sites.filter(s => (this.cat === 'all' || s.c === this.cat) && (!q || s.d.includes(q))); },
+  get rshown() { const q = this.rq.toLowerCase(); return this.rules.filter(r => (this.rk === 'all' || r.kind === this.rk) && (!q || (r.id + r.desc).toLowerCase().includes(q))); },
+  get kinds() { return ['all', ...new Set(this.rules.map(r => r.kind))]; },
+  addSite() { const d = this.newDomain.trim().toLowerCase(); if (!d) return; this.sites.unshift({ id: Date.now(), d, c: this.newCat, s: 'custom', off: false }); this.newDomain = ''; $store.toasts.add(d + ' is now blocked.', 'ok'); }
+}"><div class="optbar"><span class="otitle">Blocklists and rules</span><span class="osub">What gets blocked and noticed on each PC.</span><span class="grow"></span></div><div class="canvas ">
+  
+  <div class="tabs" role="tablist"><button role="tab" :aria-selected="tab === 'sites'" @click="tab = 'sites'">Websites</button><button role="tab" :aria-selected="tab === 'rules'" @click="tab = 'rules'">Detection rules <span class="count" x-text="rules.length"></span></button><button role="tab" :aria-selected="tab === 'versions'" @click="tab = 'versions'">Published versions</button></div>
+
+  <section x-show="tab === 'sites'">
+    <div class="toolbar">
+      <div class="pills"><template x-for="k in catKeys" :key="k"><button class="pill" :aria-pressed="cat === k" @click="cat = k"><span x-text="lab(k)"></span> <span class="n" x-text="counts[k]"></span></button></template></div>
+      <span class="grow"></span><input class="input input-sm" style="width:220px" placeholder="Search sites" x-model="q"><button class="btn btn-sm" @click="importOpen = !importOpen"><svg class="i i-sm" aria-hidden="true"><use href="#i-upload"/></svg> Import list</button>
     </div>
-    <form method="post" action="{{ route('blocklist.add') }}" class="mb-2 flex gap-2">@csrf
-      <select name="category" class="input w-36">@foreach (\App\Models\BlocklistEntry::CATEGORIES as $c)<option @selected($category === $c)>{{ $c }}</option>@endforeach</select>
-      <input name="value" class="input" placeholder="domain.com or host.com/path" required><button class="btn btn-primary">Add</button></form>
-    <form method="post" action="{{ route('blocklist.import') }}" enctype="multipart/form-data" class="mb-3 flex gap-2">@csrf
-      <select name="category" class="input w-36">@foreach (\App\Models\BlocklistEntry::CATEGORIES as $c)<option>{{ $c }}</option>@endforeach</select>
-      <input type="file" name="file" class="input" required><input name="source" class="input w-32" placeholder="list name"><button class="btn">Import</button></form>
-    <form class="mb-2"><input type="hidden" name="category" value="{{ $category }}"><input name="q" class="input" placeholder="Search…" value="{{ request('q') }}"></form>
-    <table class="tbl"><tr><th>Category</th><th>Entry</th><th>Kind</th><th>Source</th><th></th></tr>
-      @foreach ($entries as $e)
-        <tr @class(['opacity-40' => ! $e->enabled])><td>{{ $e->category }}</td><td class="font-mono text-xs">{{ $e->value }}</td><td class="text-xs">{{ $e->kind }}</td><td class="text-xs">{{ $e->source }}</td>
-          <td class="flex gap-1"><form method="post" action="{{ route('blocklist.toggle', $e) }}">@csrf<button class="btn btn-sm">{{ $e->enabled ? 'Disable' : 'Enable' }}</button></form>
-            <form method="post" action="{{ route('blocklist.delete', $e) }}">@csrf @method('delete')<button class="btn btn-sm">✕</button></form></td></tr>
-      @endforeach
-    </table>{{ $entries->links() }}
-    <p class="mt-2 text-xs text-slate-500">Changes reach DNS and the proxy within seconds (hot reload). Path rules apply only on inspected hosts.</p>
-  </div>
-  <div class="space-y-4">
-    <div class="card">
-      <div class="flex items-center justify-between"><h2 class="text-lg font-semibold">Agent signatures</h2>
-        <form method="post" action="{{ route('signatures.publish') }}" class="flex gap-2">@csrf<input name="note" class="input w-48" placeholder="change note"><button class="btn btn-primary">Publish to agents</button></form></div>
-      <table class="tbl mt-2"><tr><th>Version</th><th>Note</th><th>Created</th><th></th></tr>
-        @foreach ($versions as $v)<tr><td class="font-mono text-xs">{{ $v->version }}</td><td>{{ $v->note }}</td><td class="text-xs">{{ $v->created_at->diffForHumans() }}</td>
-          <td>@if ($v->active)<span class="badge bg-emerald-100 text-emerald-800">active</span>@else<form method="post" action="{{ route('signatures.activate', $v) }}">@csrf<button class="btn btn-sm">Roll back</button></form>@endif</td></tr>@endforeach
-      </table>
-    </div>
-    <div class="card">
-      <h2 class="mb-2 text-lg font-semibold">Rules ({{ $rules->count() }})</h2>
-      <div class="max-h-[50vh] overflow-y-auto"><table class="tbl"><tr><th>Rule</th><th>Kind</th><th>Severity</th><th>Description</th><th></th></tr>
-        @foreach ($rules as $r)<tr @class(['opacity-40' => ! $r->enabled])><td class="font-mono text-xs">{{ $r->rule_id }}</td><td class="text-xs">{{ $r->kind }}</td>
-          <td><span class="badge sev-{{ $r->severity }}">{{ $r->severity }}</span></td><td class="text-xs">{{ $r->description }}</td>
-          <td><form method="post" action="{{ route('rules.toggle', $r) }}">@csrf<button class="btn btn-sm">{{ $r->enabled ? 'Disable' : 'Enable' }}</button></form></td></tr>@endforeach
-      </table></div>
-      <details class="mt-3"><summary class="cursor-pointer text-sm font-semibold">Add / edit a rule</summary>
-        <form method="post" action="{{ route('rules.save') }}" class="mt-2 grid grid-cols-3 gap-2 text-sm">@csrf
-          <input name="rule_id" class="input" placeholder="proc.myapp" required>
-          <select name="kind" class="input">@foreach (['process', 'extension', 'port', 'artifact', 'adapter', 'device'] as $k)<option>{{ $k }}</option>@endforeach</select>
-          <select name="severity" class="input">@foreach (['low', 'medium', 'high', 'critical'] as $s)<option>{{ $s }}</option>@endforeach</select>
-          <input name="description" class="input col-span-3" placeholder="Description">
-          <textarea name="definition" rows="4" class="input col-span-3 font-mono text-xs" placeholder='{"match": {"exe": ["myapp"]}}' required></textarea>
-          <div class="col-span-3">Test-mode actions: @foreach (['log', 'warn', 'kill', 'alert', 'isolate'] as $a)<label class="mr-2"><input type="checkbox" name="test_actions[]" value="{{ $a }}"> {{ $a }}</label>@endforeach</div>
-          <button class="btn btn-primary">Save rule</button></form></details>
-    </div>
-  </div>
-</div>
+    <form class="row" style="padding:12px 20px;background:var(--surface-2);border-bottom:1px solid var(--border)" @submit.prevent="addSite()">
+      <input class="input input-sm mono" style="flex:1;min-width:220px" placeholder="Block a site, e.g. example.com" x-model="newDomain"><select class="select select-sm" style="width:150px" x-model="newCat"><option value="custom">Custom</option><option value="ai">AI</option><option value="ide">Editor</option><option value="marketplace">Marketplace</option><option value="vpn">VPN</option></select><button class="btn btn-sm btn-solid">Block site</button>
+    </form>
+    <div class="panel-body stack" x-show="importOpen" x-cloak style="background:var(--surface-2);border-bottom:1px solid var(--border)"><textarea class="textarea mono" rows="4" placeholder="One domain per line"></textarea><div class="row"><button class="btn btn-sm btn-solid" @click="importOpen = false; $store.toasts.add('List imported.', 'ok')">Import</button><button class="btn btn-sm btn-quiet" @click="importOpen = false">Cancel</button></div></div>
+    <section class="panel"><div class="table-wrap"><table class="tbl">
+      <thead><tr><th>Site</th><th>Type</th><th>Source</th><th class="right">Blocked</th></tr></thead>
+      <tbody><template x-for="s in shown" :key="s.id"><tr :style="s.off && 'opacity:.5'">
+        <td class="mono" x-text="s.d"></td><td><span class="chip" :class="s.c === 'ai' && 'alert'" x-text="lab(s.c)"></span></td><td class="muted" x-text="s.s"></td>
+        <td class="right"><label class="switch"><input type="checkbox" :checked="!s.off" @change="s.off = !s.off" :aria-label="'Block ' + s.d"><i></i></label></td></tr></template></tbody>
+    </table></div><div class="tbl-foot">Changes apply to PCs within seconds.</div></section>
+  </section>
+
+  <section x-show="tab === 'rules'" x-cloak>
+    <div class="toolbar"><div class="pills"><template x-for="k in kinds" :key="k"><button class="pill" :aria-pressed="rk === k" @click="rk = k" style="text-transform:capitalize" x-text="k"></button></template></div><span class="grow"></span><input class="input input-sm" style="width:220px" placeholder="Search rules" x-model="rq"></div>
+    <section class="panel"><div class="table-wrap"><table class="tbl">
+      <thead><tr><th>Rule</th><th>Severity</th><th>What it catches</th><th class="right">Enabled</th></tr></thead>
+      <tbody><template x-for="r in rshown" :key="r.id"><tr :style="!r.on && 'opacity:.5'"><td><div class="mono" style="font-weight:500" x-text="r.id"></div><div class="tiny muted" style="text-transform:capitalize" x-text="r.kind"></div></td><td><span class="sev" :class="r.sev" x-text="r.sev"></span></td><td x-text="r.desc"></td><td class="right"><label class="switch"><input type="checkbox" x-model="r.on" :aria-label="'Enable ' + r.id"><i></i></label></td></tr></template></tbody>
+    </table></div><div class="tbl-foot">Showing <span x-text="rshown.length"></span> of 72 rules</div></section>
+  </section>
+
+  <section x-show="tab === 'versions'" x-cloak>
+    <div class="panel panel-pad stack" style="max-width:none"><div><h2 class="h2">Publish the current rules</h2><p class="muted small" style="margin-top:2px">Signs the blocklists and rules and sends them to every PC.</p></div>
+      <div class="row"><input class="input" style="max-width:420px" placeholder="What changed? (optional)"><button class="btn btn-solid" @click="if(confirm('Publish to all PCs?')) $store.toasts.add('New version signed and sent.', 'ok')">Publish to PCs</button></div></div>
+    <section class="panel"><table class="tbl"><thead><tr><th>Version</th><th>Note</th><th>Published</th><th></th></tr></thead><tbody>
+      <template x-for="v in versions" :key="v.v"><tr><td class="mono small" style="font-weight:500" x-text="v.v"></td><td x-text="v.note"></td><td class="muted" x-text="v.when"></td><td class="right"><span class="chip ok" x-show="v.active">In use</span><button class="btn btn-sm" x-show="!v.active" @click="if(confirm('Roll every PC back to this version?')) $store.toasts.add('Rolled back.', 'watch')">Roll back</button></td></tr></template></tbody></table></section>
+  </section>
+</div></div>
 @endsection

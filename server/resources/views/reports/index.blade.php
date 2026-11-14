@@ -1,22 +1,20 @@
-@extends('layouts.app')
+@extends('layouts.app', ['activePage' => 'reports.html'])
 @section('title', 'Reports')
 @section('content')
-<div class="card">
-  <div class="mb-3 flex items-end justify-between">
-    <h2 class="text-lg font-semibold">Session reports</h2>
-    <form action="{{ route('research.export') }}" class="flex items-end gap-2">
-      <div><label class="label">Research export from</label><input type="date" name="from" class="input"></div>
-      <div><label class="label">until</label><input type="date" name="until" class="input"></div>
-      <button class="btn">Export CSV (consenting, pseudonymized)</button></form>
+<div class="doc" x-data="{ from: '2026-10-01', to: '2026-11-08' }"><div class="optbar"><span class="otitle">Reports</span><span class="osub">Every session is scored once it ends. A person decides what it means.</span><span class="grow"></span></div><div class="canvas ">
+  
+  <div class="cols-main">
+    <section>
+      <div class="rep"><div class="datebox"><b>07</b><span>Nov</span></div><div><div style="font-weight:600">CSE 1101 practice</div><div class="small muted" style="margin-top:2px">14:00 · Practice · 15 PCs</div></div><span class="chip ok"><span class="dot ok"></span>No flags</span><div class="row"><a class="btn btn-sm btn-solid" href="report-session-2.html">Open</a><button class="btn btn-sm" onclick="window.print()">PDF</button><button class="btn btn-sm" onclick="Alpine.store('toasts').add('CSV is downloading.', 'info')">CSV</button></div></div>
+      <div class="rep"><div class="datebox"><b>05</b><span>Nov</span></div><div><div style="font-weight:600">CSE 3201 quiz</div><div class="small muted" style="margin-top:2px">09:30 · Test · 15 PCs</div></div><span class="chip alert"><span class="dot alert"></span>2 flagged</span><div class="row"><a class="btn btn-sm btn-solid" href="report-session-1.html">Open</a><button class="btn btn-sm" onclick="window.print()">PDF</button><button class="btn btn-sm" onclick="Alpine.store('toasts').add('CSV is downloading.', 'info')">CSV</button></div></div>
+      <div class="rep"><div class="datebox"><b>03</b><span>Nov</span></div><div><div style="font-weight:600">CSE 2200 project lab</div><div class="small muted" style="margin-top:2px">10:00 · Always-on · 12 PCs</div></div><span class="chip watch"><span class="dot watch"></span>1 flagged</span><div class="row"><a class="btn btn-sm btn-solid" href="report-session-1.html">Open</a><button class="btn btn-sm" onclick="window.print()">PDF</button><button class="btn btn-sm" onclick="Alpine.store('toasts').add('CSV is downloading.', 'info')">CSV</button></div></div>
+    </section>
+    <aside class="panel panel-pad stack">
+      <div><h2 class="h2">Research export</h2><p class="muted small" style="margin-top:2px">Pseudonymised data for students who gave consent. Names never leave this server.</p></div>
+      <label class="field"><span>From</span><input class="input" type="date" x-model="from"></label>
+      <label class="field"><span>Until</span><input class="input" type="date" x-model="to"></label>
+      <button class="btn btn-solid" @click="$store.toasts.add('Research CSV is being prepared.', 'info')"><svg class="i i-sm" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</button>
+    </aside>
   </div>
-  <table class="tbl"><tr><th>Date</th><th>Course</th><th>Profile</th><th>Report</th><th>Flagged</th><th></th></tr>
-    @foreach ($sessions as $s)
-      @php($r = $reports[$s->id] ?? null)
-      <tr><td>{{ $s->starts_at->format('Y-m-d H:i') }}</td><td>{{ $s->course }}</td><td>{{ $s->profile?->name }}</td>
-        <td><span class="badge {{ $r?->status === 'ready' ? 'bg-emerald-100 text-emerald-800' : ($r?->status === 'failed' ? 'sev-high' : 'sev-info') }}">{{ $r?->status ?? 'none' }}</span></td>
-        <td>{{ count($r?->summary['flagged'] ?? []) }}</td>
-        <td class="flex gap-2"><a class="text-indigo-600" href="{{ route('reports.show', $s) }}">Open</a><a class="text-indigo-600" href="{{ route('reports.pdf', $s) }}">PDF</a><a class="text-indigo-600" href="{{ route('reports.csv', $s) }}">CSV</a></td></tr>
-    @endforeach
-  </table>{{ $sessions->links() }}
-</div>
+</div></div>
 @endsection
