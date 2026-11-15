@@ -20,12 +20,24 @@ class AgentHealthClassifierTest extends TestCase
         $this->assertSame(AgentHealthClassifier::STATUS_OK, $status);
     }
 
-    public function test_missed_three_heartbeats_is_agent_unavailable(): void
+    public function test_single_missed_heartbeat_remains_ok(): void
     {
-        // 35s ago (> 30s, missed 3 10s heartbeats, but < 5 min)
+        // With 15s heartbeat / 45s timeout, missing 1-2 beats stays OK
         $pc = [
             'id' => 1,
             'last_heartbeat_at' => $this->now - 35,
+        ];
+
+        $status = AgentHealthClassifier::classify($pc, [], $this->now);
+        $this->assertSame(AgentHealthClassifier::STATUS_OK, $status);
+    }
+
+    public function test_missed_three_heartbeats_is_agent_unavailable(): void
+    {
+        // 50s ago (> 45s default 3x 15s timeout, < 5 min)
+        $pc = [
+            'id' => 1,
+            'last_heartbeat_at' => $this->now - 50,
         ];
 
         $status = AgentHealthClassifier::classify($pc, [], $this->now);
@@ -146,6 +158,19 @@ class AgentHealthClassifierTest extends TestCase
         $labSnapshot = [$pc];
 
         $status = AgentHealthClassifier::classify($pc, $labSnapshot, $this->now);
+        $this->assertSame(AgentHealthClassifier::STATUS_UNAVAILABLE, $status);
+    }
+
+    public function test_custom_heartbeat_interval_adjusts_threshold(): void
+    {
+        // Custom 5s heartbeat => 15s threshold (3x interval)
+        $pc = [
+            'id' => 1,
+            'last_heartbeat_at' => $this->now - 20,
+            'heartbeat_s' => 5,
+        ];
+
+        $status = AgentHealthClassifier::classify($pc, [], $this->now);
         $this->assertSame(AgentHealthClassifier::STATUS_UNAVAILABLE, $status);
     }
 }

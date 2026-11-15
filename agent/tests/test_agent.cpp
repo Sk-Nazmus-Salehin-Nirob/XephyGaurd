@@ -132,14 +132,14 @@ TEST_CASE("agent detects tethering, VPN and a second default route") {
     CHECK(h.of(ev::net_adapter).back().data["change"] == "added");
 }
 
-TEST_CASE("agent inventories installed AI extensions and only alerts when actively used") {
+TEST_CASE("agent inventories installed AI extensions and alerts on test mode or active use") {
     Harness h;
-    h.agent->apply_policy(Policy::default_for(Mode::test));
+    // Practice mode: installed idle AI extensions are inventoried, but do not raise alerts until used.
+    h.agent->apply_policy(Policy::default_for(Mode::practice));
     h.exts->list = {{"vscode", "ms-python.python", "1", "alice", ""}};
     h.agent->scan_extensions();
     CHECK(h.of(ev::extension_scan).size() == 1);
     CHECK(h.of(ev::rule_hit).empty());
-    // Installed on disk in both VS Code and JetBrains, but idle -> listed in extension_scan.ai, NO rule_hit alert!
     h.exts->list.push_back({"vscode", "github.copilot", "1.2", "alice", "", false, ""});
     h.exts->list.push_back({"jetbrains", "ml-llm", "1.5", "alice", "", false, ""});
     h.procs->procs = {{100, 1, "C:\\Users\\alice\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe", "Code.exe", "", "alice", 0, 1},
@@ -150,6 +150,7 @@ TEST_CASE("agent inventories installed AI extensions and only alerts when active
     CHECK(h.of(ev::extension_scan).back().data["ai"][0]["active"] == false);
     CHECK(h.of(ev::extension_scan).back().data["ai"][1]["active"] == false);
     CHECK(h.of(ev::rule_hit).empty());
+
     // Now the student actively uses Copilot in VS Code -> ONLY vscode is marked active, NOT jetbrains!
     h.net->flows = {{8356, "copilot-runtime", "140.82.114.22", 443, "api.individual.githubcopilot.com", 4096, 16384}};
     h.agent->scan_extensions();
@@ -161,13 +162,29 @@ TEST_CASE("agent inventories installed AI extensions and only alerts when active
     CHECK(h.of(ev::rule_hit)[0].data["context"]["ide"] == "vscode");
     CHECK(h.of(ev::rule_hit)[0].data["context"]["domain"] == "api.individual.githubcopilot.com");
 
-    // Browser AI tab & outbound browser stream detection
+    // In Test/Exam mode, an installed Antigravity AI extension raises a low alert even when idle.
+    h.net->flows.clear();
+    h.exts->list.push_back({"antigravity", "codeium.codeium", "1.8.0", "alice", "", false, ""});
+    h.agent->apply_policy(Policy::default_for(Mode::test));
+    h.agent->scan_extensions();
+    const auto all_hits = h.of(ev::rule_hit);
+    bool saw_antigravity_low = false;
+    for (const auto& rh : all_hits) {
+        if (rh.data["rule_id"] == "ext.codeium" && rh.data["context"]["ide"] == "antigravity" &&
+            rh.data["severity"] == "low") {
+            saw_antigravity_low = true;
+        }
+    }
+    CHECK(saw_antigravity_low);
+
+    // Browser AI tab detection
+    const size_t before_tab = h.of(ev::rule_hit).size();
     IIpcServer::Peer peer{1, 1000, 555, "alice"};
     h.agent->on_helper_message(peer, R"({"t":"window","app":"chrome.exe","title":"ChatGPT - Google Chrome"})");
     REQUIRE(h.of(ev::window_focus).size() == 1);
     CHECK(h.of(ev::window_focus)[0].data["ai_site"] == "ChatGPT");
-    CHECK(h.of(ev::rule_hit).size() == 2);
-    CHECK(h.of(ev::rule_hit)[1].data["rule_id"] == "web.ai_tab");
+    REQUIRE(h.of(ev::rule_hit).size() == before_tab + 1);
+    CHECK(h.of(ev::rule_hit).back().data["rule_id"] == "web.ai_tab");
 }
 
 TEST_CASE("ports and helper messages respect policy and privacy") {
@@ -344,4 +361,37 @@ TEST_CASE("agent pushes proxy_pac_url to helper in proxy_only mode") {
     p.proxy_mode = "gateway";
     h.agent->apply_policy(p);
     CHECK(h.ipc->count_containing("\"proxy_pac_url\":\"\"") >= 1);
+}
+
+TEST_CASE("agent heartbeat reports honest capabilities.gpu from IGpuMonitor::available") {
+    struct StubGpu final : public IGpuMonitor {
+        bool avail = false;
+        bool available() const override { return avail; }
+        std::optional<Sample> sample() override { return std::nullopt; }
+    };
+
+    Harness h;
+    CHECK(h.agent->build_heartbeat()["capabilities"]["gpu"] == false);
+
+    const std::filesystem::path dir2 = std::filesystem::temp_directory_path() / ("xga-gpu-" + random_hex(4));
+    std::filesystem::create_directories(dir2);
+    ServicePlatform plat2;
+    plat2.processes = std::make_unique<test::FakeProcesses>();
+    plat2.network = std::make_unique<test::FakeNetwork>();
+    plat2.isolator = std::make_unique<test::FakeIsolator>();
+    plat2.extensions = std::make_unique<test::FakeExtensions>();
+    plat2.ipc = std::make_unique<test::FakeIpc>();
+    plat2.system = std::make_unique<test::FakeSystem>();
+    auto gpu = std::make_unique<StubGpu>();
+    StubGpu* gpu_ptr = gpu.get();
+    plat2.gpu = std::move(gpu);
+
+    Config cfg = Config::defaults();
+    cfg.data_dir = dir2.string();
+    Agent a(cfg, (dir2 / "agent.toml").string(), plat2);
+    CHECK(a.build_heartbeat()["capabilities"]["gpu"] == false);
+
+    gpu_ptr->avail = true;
+    CHECK(a.build_heartbeat()["capabilities"]["gpu"] == true);
+    std::filesystem::remove_all(dir2);
 }

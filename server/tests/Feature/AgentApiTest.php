@@ -226,4 +226,47 @@ class AgentApiTest extends TestCase
         $res2 = $this->withHeaders($h)->getJson('/api/agent/v1/policy')->assertOk()->json();
         $this->assertFalse($res2['policy']['suppress_ai_overview']);
     }
+
+    public function test_test_mode_extension_and_local_model_rule_hits_create_alerts(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        [$pc, $token, $cert] = $this->enrolledPc();
+        app(SessionManager::class)->start($lab, $this->profile('Exam: strict'), 'EXAM-AI');
+        $h = $this->agentHeaders($token, $cert);
+
+        $events = [
+            $this->ev(1, 'rule_hit', [
+                'rule_id' => 'ext.codeium',
+                'severity' => 'low',
+                'category' => 'extension',
+                'description' => 'Codeium / Windsurf plugin (installed in antigravity)',
+                'subject' => 'installed:antigravity:codeium.codeium:student1',
+                'actions' => ['log', 'alert'],
+                'mode' => 'test',
+                'context' => ['ide' => 'antigravity', 'extension' => 'codeium.codeium', 'activity' => ''],
+                'user' => 'student1',
+            ]),
+            $this->ev(2, 'rule_hit', [
+                'rule_id' => 'file.gguf',
+                'severity' => 'high',
+                'category' => 'local_model',
+                'description' => 'Quantized LLM weights',
+                'subject' => '/mnt/usb/llama-3.gguf',
+                'actions' => ['log', 'warn', 'alert'],
+                'mode' => 'test',
+                'context' => ['path' => '/mnt/usb/llama-3.gguf', 'size_mb' => 4200.0, 'rule_id' => 'file.gguf'],
+                'user' => 'student1',
+            ]),
+        ];
+
+        $this->withHeaders($h)->postJson('/api/agent/v1/events', $this->batch($pc->id, $events))
+            ->assertOk()->assertJson(['ack_seq' => 2]);
+
+        $this->assertEqualsCanonicalizing(['ext.codeium', 'file.gguf'], Alert::pluck('rule_id')->all());
+        $dash = $this->actingAs($this->user('instructor'))->getJson("/pcs/{$pc->id}")->assertOk()->json();
+        $rulesInTimeline = collect($dash['timeline'])->pluck('summary')->implode("\n");
+        $this->assertStringContainsString('antigravity', $rulesInTimeline);
+        $this->assertStringContainsString('/mnt/usb/llama-3.gguf', $rulesInTimeline);
+    }
 }

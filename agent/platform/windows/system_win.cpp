@@ -339,6 +339,7 @@ public:
         if (!init || !handle || init() != 0 || handle(0, &dev_) != 0) dev_ = nullptr;
     }
     ~GpuMonitor() override { if (lib_) FreeLibrary(lib_); }
+    bool available() const override { return dev_ != nullptr; }
     std::optional<Sample> sample() override {
         if (!dev_ || !util_ || !mem_) return std::nullopt;
         NvmlUtil u{};

@@ -76,6 +76,7 @@ public:
         const uint64_t sys_ticks = read_total_cpu_ticks();
         const uint64_t delta_sys = (last_sys_ticks_ > 0 && sys_ticks > last_sys_ticks_) ? (sys_ticks - last_sys_ticks_) : 0;
         last_sys_ticks_ = sys_ticks;
+        const auto net_stats = sample_pid_net_stats();
 
         for (const auto& d : list_dir("/proc")) {
             if (d.empty() || !std::isdigit(static_cast<unsigned char>(d[0]))) continue;
@@ -89,15 +90,23 @@ public:
             }
             next_cpu[pid] = cpu_ticks;
 
+            auto nit = net_stats.find(pid);
+            const double net_kbps = (nit != net_stats.end()) ? nit->second.net_kbps : 0.0;
+            const uint32_t net_conns = (nit != net_stats.end()) ? nit->second.net_conns : 0;
+
             auto it = cache_.find(pid);
             if (it != cache_.end() && it->second.start_time == light.start_time) {
                 it->second.rss_bytes = light.rss_bytes;
                 it->second.cpu_pct = cpu_pct;
+                it->second.net_kbps = net_kbps;
+                it->second.net_conns = net_conns;
                 next.emplace(pid, it->second);
             } else {
                 ProcessInfo full;
                 if (!read_proc(pid, full, true)) continue;
                 full.cpu_pct = cpu_pct;
+                full.net_kbps = net_kbps;
+                full.net_conns = net_conns;
                 next.emplace(pid, std::move(full));
             }
         }

@@ -34,4 +34,11 @@
   <tr><th>Time</th><th>User</th><th>Chars</th><th>Lines</th><th>Code-like</th><th>From → to</th></tr>
   @foreach ($pastes as $p)<tr><td>{{ $p->occurred_at->format('H:i:s') }}</td><td>{{ $p->user }}</td><td>{{ $p->chars }}</td><td>{{ $p->lines }}</td><td>{{ $p->looks_like_code ? 'yes' : '' }}</td><td>{{ $p->source_app }} → {{ $p->target_app }}</td></tr>@endforeach
 </table>
-<p><small>Generated {{ now()->format('Y-m-d H:i') }} by XephyGuard. Clipboard text, keystrokes and screen content are never recorded.</small></p>
+@if (!empty($evidence) && $evidence->count())
+<h2>Saved screen evidence ({{ $evidence->count() }})</h2>
+<table class="tbl" width="100%" cellspacing="0" cellpadding="4" border="1" style="border-collapse:collapse">
+  <tr><th>Time</th><th>PC</th><th>User</th><th>Mode</th><th>Captured by</th><th>SHA-256</th></tr>
+  @foreach ($evidence as $e)<tr><td>{{ $e->occurred_at?->format('H:i:s') }}</td><td>{{ $e->pc?->name ?? ('PC-' . $e->pc_id) }}</td><td>{{ $e->user ?: '—' }}</td><td>{{ $e->source_mode }} (mon {{ $e->monitor + 1 }})</td><td>{{ $e->capturer?->name ?? '—' }}</td><td><small>{{ substr($e->sha256, 0, 12) }}</small></td></tr>@endforeach
+</table>
+@endif
+<p><small>Generated {{ now()->format('Y-m-d H:i') }} by XephyGuard. Keystrokes and clipboard text are never recorded; screen evidence is saved only on explicit instructor capture.</small></p>

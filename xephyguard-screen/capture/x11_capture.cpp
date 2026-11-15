@@ -77,7 +77,6 @@ bool X11Capture::initialize() {
 
 bool X11Capture::start() {
   running_ = true;
-  first_ = true;
   return true;
 }
 
@@ -102,14 +101,39 @@ CaptureStatus X11Capture::capture(Frame& out) {
 
   out.width = width_;
   out.height = height_;
-  out.stride = shm_image_->bytes_per_line;
-  size_t size = static_cast<size_t>(out.stride * height_);
+  out.stride = width_ * 4;
+  size_t size = static_cast<size_t>(out.stride) * static_cast<size_t>(height_);
   out.bgra.resize(size);
-  std::memcpy(out.bgra.data(), shm_image_->data, size);
+
+  const uint8_t* src_base = reinterpret_cast<const uint8_t*>(shm_image_->data);
+  if (shm_image_->bits_per_pixel == 32) {
+    for (int y = 0; y < height_; ++y) {
+      const uint8_t* src_row = src_base + static_cast<size_t>(y) * static_cast<size_t>(shm_image_->bytes_per_line);
+      uint8_t* dst_row = out.bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(out.stride);
+      std::memcpy(dst_row, src_row, static_cast<size_t>(width_) * 4);
+      // X11 24-bit TrueColor leaves the padding (X) byte as 0x00; normalize alpha to opaque 0xFF.
+      for (int x = 0; x < width_; ++x) {
+        dst_row[x * 4 + 3] = 0xFF;
+      }
+    }
+  } else if (shm_image_->bits_per_pixel == 24) {
+    for (int y = 0; y < height_; ++y) {
+      const uint8_t* src_row = src_base + static_cast<size_t>(y) * static_cast<size_t>(shm_image_->bytes_per_line);
+      uint8_t* dst_row = out.bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(out.stride);
+      for (int x = 0; x < width_; ++x) {
+        dst_row[x * 4 + 0] = src_row[x * 3 + 0];
+        dst_row[x * 4 + 1] = src_row[x * 3 + 1];
+        dst_row[x * 4 + 2] = src_row[x * 3 + 2];
+        dst_row[x * 4 + 3] = 0xFF;
+      }
+    }
+  } else {
+    return CaptureStatus::Error;
+  }
 
   out.dirty.clear();
-  out.full_dirty = first_;
-  first_ = false;
+  // Full-frame XShm capture has no hardware dirty rect list; TileTracker XXH64 hashes skip unchanged tiles.
+  out.full_dirty = true;
   out.secure_desktop = false;
 
   return CaptureStatus::Ok;

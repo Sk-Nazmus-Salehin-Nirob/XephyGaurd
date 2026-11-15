@@ -1,6 +1,16 @@
 #include "xg/websocket.hpp"
 
+#include <algorithm>
+#include <cerrno>
 #include <cstring>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <poll.h>
+#include <sys/socket.h>
+#endif
 
 #include "xg/crypto.hpp"
 #include "xg/http.hpp"
@@ -71,54 +81,199 @@ std::optional<WsFrame> ws_decode_frame(const std::string& b, size_t* consumed, b
     return fr;
 }
 
+namespace {
+std::string sanitize_hdr(const std::string& v) {
+    std::string out;
+    out.reserve(v.size());
+    for (char c : v) {
+        if (c != '\r' && c != '\n' && c != '\0') out.push_back(c);
+    }
+    return out;
+}
+}  // namespace
+
+WebSocketClient::~WebSocketClient() { close(); }
+
+void WebSocketClient::raw_close_locked() {
+    open_.store(false);
+    conn_.close();
+    if (plain_sock_ >= 0) {
+        socket_close(plain_sock_);
+        plain_sock_ = -1;
+    }
+}
+
+bool WebSocketClient::raw_write_all(const void* data, size_t len) {
+    if (use_tls_) return conn_.write_all(data, len);
+    if (plain_sock_ < 0) return false;
+    const char* p = static_cast<const char*>(data);
+    while (len > 0) {
+#ifdef _WIN32
+        int n = ::send(static_cast<SOCKET>(plain_sock_), p, int(len), 0);
+        if (n <= 0) {
+            if (n < 0 && WSAGetLastError() == WSAEINTR) continue;
+            return false;
+        }
+#else
+        ssize_t n = ::send(int(plain_sock_), p, len, MSG_NOSIGNAL);
+        if (n <= 0) {
+            if (n < 0 && errno == EINTR) continue;
+            return false;
+        }
+#endif
+        p += size_t(n);
+        len -= size_t(n);
+    }
+    return true;
+}
+
+long WebSocketClient::raw_read_some(void* buf, size_t len) {
+    if (use_tls_) return conn_.read_some(buf, len);
+    if (plain_sock_ < 0) return -1;
+#ifdef _WIN32
+    int n = ::recv(static_cast<SOCKET>(plain_sock_), static_cast<char*>(buf), int(len), 0);
+    if (n < 0) {
+        int e = WSAGetLastError();
+        if (e == WSAEINTR || e == WSAEWOULDBLOCK || e == WSAETIMEDOUT) return -2;
+        return -1;
+    }
+    return long(n);
+#else
+    ssize_t n = ::recv(int(plain_sock_), buf, len, 0);
+    if (n < 0) {
+        if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) return -2;
+        return -1;
+    }
+    return long(n);
+#endif
+}
+
+bool WebSocketClient::raw_wait_readable(int timeout_ms) {
+    long long fd = -1;
+    {
+        std::lock_guard lk(io_mu_);
+        if (!open_.load()) return false;
+        if (use_tls_) {
+            if (conn_.has_buffered()) return true;
+            fd = conn_.native_handle();
+        } else {
+            fd = plain_sock_;
+        }
+    }
+    if (fd < 0) return false;
+#ifdef _WIN32
+    WSAPOLLFD pfd{static_cast<SOCKET>(fd), POLLRDNORM, 0};
+    return WSAPoll(&pfd, 1, timeout_ms) > 0;
+#else
+    pollfd pfd{int(fd), POLLIN, 0};
+    return ::poll(&pfd, 1, timeout_ms) > 0;
+#endif
+}
+
 bool WebSocketClient::connect(const std::string& host, uint16_t port, const std::string& path, const TlsOptions& opts,
-                              std::string* err) {
-    open_ = false;
+                              std::string* err,
+                              const std::vector<std::pair<std::string, std::string>>& extra_headers,
+                              bool use_tls) {
+    std::lock_guard lk(io_mu_);
+    raw_close_locked();
+    use_tls_ = use_tls;
     buf_.clear();
     partial_.clear();
-    if (!conn_.connect(host, port, opts, err)) return false;
+    if (use_tls_) {
+        if (!conn_.connect(host, port, opts, err)) return false;
+    } else {
+        plain_sock_ = tcp_connect(host, port, opts.timeout_ms, err);
+        if (plain_sock_ < 0) return false;
+    }
     const std::string key = crypto::base64_encode(crypto::random_bytes(16));
-    std::string req = "GET " + path + " HTTP/1.1\r\nHost: " + host + ":" + std::to_string(port) +
+    const bool std_port = (use_tls_ && port == 443) || (!use_tls_ && port == 80);
+    std::string req = "GET " + path + " HTTP/1.1\r\nHost: " + host + (std_port ? "" : ":" + std::to_string(port)) +
                       "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " + key +
-                      "\r\nSec-WebSocket-Version: 13\r\nUser-Agent: xephyguard-agent\r\n\r\n";
-    if (!conn_.write_all(req.data(), req.size())) { if (err) *err = "ws: write failed"; return false; }
+                      "\r\nSec-WebSocket-Version: 13\r\nUser-Agent: xephyguard-agent\r\n";
+    for (const auto& [hk, hv] : extra_headers) {
+        const std::string sk = sanitize_hdr(hk);
+        const std::string sv = sanitize_hdr(hv);
+        if (!sk.empty()) req += sk + ": " + sv + "\r\n";
+    }
+    req += "\r\n";
+    if (!raw_write_all(req.data(), req.size())) {
+        if (err) *err = "ws: write failed";
+        raw_close_locked();
+        return false;
+    }
     std::string raw;
     char b[4096];
+    const int64_t deadline = steady_ms() + opts.timeout_ms;
     while (raw.find("\r\n\r\n") == std::string::npos) {
-        if (!conn_.wait_readable(opts.timeout_ms)) { if (err) *err = "ws: handshake timeout"; return false; }
-        long n = conn_.read_some(b, sizeof b);
-        if (n <= 0) { if (err) *err = "ws: handshake read failed"; return false; }
+        const int64_t left = deadline - steady_ms();
+        if (left <= 0) { if (err) *err = "ws: handshake timeout"; raw_close_locked(); return false; }
+        bool readable = false;
+        if (use_tls_) {
+            readable = conn_.wait_readable(int(left));
+        } else {
+#ifdef _WIN32
+            WSAPOLLFD pfd{static_cast<SOCKET>(plain_sock_), POLLRDNORM, 0};
+            readable = WSAPoll(&pfd, 1, int(left)) > 0;
+#else
+            pollfd pfd{int(plain_sock_), POLLIN, 0};
+            readable = ::poll(&pfd, 1, int(left)) > 0;
+#endif
+        }
+        if (!readable) { if (err) *err = "ws: handshake timeout"; raw_close_locked(); return false; }
+        long n = raw_read_some(b, sizeof b);
+        if (n == -2) continue;
+        if (n <= 0) { if (err) *err = "ws: handshake read failed"; raw_close_locked(); return false; }
         raw.append(b, size_t(n));
-        if (raw.size() > 65536) { if (err) *err = "ws: handshake too large"; return false; }
+        if (raw.size() > 65536) { if (err) *err = "ws: handshake too large"; raw_close_locked(); return false; }
     }
     const size_t he = raw.find("\r\n\r\n");
     HttpResponse r;
     std::string hdrs = raw.substr(0, he) + "\r\nContent-Length: 0\r\n\r\n";
     if (!parse_http_response(hdrs, r, nullptr) || r.status != 101) {
         if (err) *err = "ws: upgrade refused (status " + std::to_string(r.status) + ")";
+        raw_close_locked();
         return false;
     }
-    if (r.headers["sec-websocket-accept"] != ws_accept_key(key)) { if (err) *err = "ws: bad accept key"; return false; }
+    if (r.headers["sec-websocket-accept"] != ws_accept_key(key)) {
+        if (err) *err = "ws: bad accept key";
+        raw_close_locked();
+        return false;
+    }
     buf_ = raw.substr(he + 4);
-    open_ = true;
+    open_.store(true);
     return true;
 }
 
 bool WebSocketClient::send_frame(WsOpcode op, const std::string& payload) {
+    std::lock_guard lk(io_mu_);
+    if (!open_.load()) return false;
     uint8_t mk[4];
     auto rb = crypto::random_bytes(4);
     std::memcpy(mk, rb.data(), 4);
     auto f = ws_encode_frame(op, payload, true, mk);
-    if (!conn_.write_all(f.data(), f.size())) { open_ = false; return false; }
+    if (!raw_write_all(f.data(), f.size())) {
+        raw_close_locked();
+        return false;
+    }
     return true;
 }
 
-bool WebSocketClient::send_text(const std::string& text) { return open_ && send_frame(WsOpcode::text, text); }
+bool WebSocketClient::send_text(const std::string& text) { return open_.load() && send_frame(WsOpcode::text, text); }
+
+bool WebSocketClient::send_binary(const void* data, size_t len) {
+    if (!open_.load()) return false;
+    std::string payload(static_cast<const char*>(data), len);
+    return send_frame(WsOpcode::binary, payload);
+}
+
+bool WebSocketClient::send_binary(const std::string& data) {
+    return open_.load() && send_frame(WsOpcode::binary, data);
+}
 
 std::optional<std::string> WebSocketClient::receive(int timeout_ms) {
     const int64_t deadline = steady_ms() + timeout_ms;
     char b[16384];
-    while (open_) {
+    while (open_.load()) {
         size_t consumed = 0;
         bool perr = false;
         if (auto fr = ws_decode_frame(buf_, &consumed, &perr)) {
@@ -126,32 +281,63 @@ std::optional<std::string> WebSocketClient::receive(int timeout_ms) {
             switch (fr->opcode) {
                 case WsOpcode::ping: send_frame(WsOpcode::pong, fr->payload); continue;
                 case WsOpcode::pong: continue;
-                case WsOpcode::close: send_frame(WsOpcode::close, {}); open_ = false; conn_.close(); return std::nullopt;
+                case WsOpcode::close: {
+                    std::lock_guard lk(io_mu_);
+                    if (open_.load()) {
+                        uint8_t mk[4] = {0, 0, 0, 0};
+                        auto cf = ws_encode_frame(WsOpcode::close, {}, true, mk);
+                        raw_write_all(cf.data(), cf.size());
+                    }
+                    raw_close_locked();
+                    return std::nullopt;
+                }
                 case WsOpcode::text:
                 case WsOpcode::binary:
                 case WsOpcode::cont:
                     partial_ += fr->payload;
                     if (fr->fin) { std::string m = std::move(partial_); partial_.clear(); return m; }
-                    if (partial_.size() > 16 * 1024 * 1024) { open_ = false; return std::nullopt; }
+                    if (partial_.size() > 16 * 1024 * 1024) {
+                        std::lock_guard lk(io_mu_);
+                        raw_close_locked();
+                        return std::nullopt;
+                    }
                     continue;
                 default: continue;
             }
         }
-        if (perr) { open_ = false; conn_.close(); return std::nullopt; }
+        if (perr) {
+            std::lock_guard lk(io_mu_);
+            raw_close_locked();
+            return std::nullopt;
+        }
         const int64_t left = deadline - steady_ms();
         if (left <= 0) return std::nullopt;
-        if (!conn_.wait_readable(int(left))) return std::nullopt;
-        long n = conn_.read_some(b, sizeof b);
-        if (n <= 0) { open_ = false; conn_.close(); return std::nullopt; }
+        const int slice = int(std::min<int64_t>(left, 50));
+        if (!raw_wait_readable(slice)) continue;
+        long n = 0;
+        {
+            std::lock_guard lk(io_mu_);
+            if (!open_.load()) return std::nullopt;
+            n = raw_read_some(b, sizeof b);
+            if (n == -2) continue;
+            if (n <= 0) {
+                raw_close_locked();
+                return std::nullopt;
+            }
+        }
         buf_.append(b, size_t(n));
     }
     return std::nullopt;
 }
 
 void WebSocketClient::close() {
-    if (open_) send_frame(WsOpcode::close, {});
-    open_ = false;
-    conn_.close();
+    std::lock_guard lk(io_mu_);
+    if (open_.load()) {
+        uint8_t mk[4] = {0, 0, 0, 0};
+        auto cf = ws_encode_frame(WsOpcode::close, {}, true, mk);
+        raw_write_all(cf.data(), cf.size());
+    }
+    raw_close_locked();
 }
 
 }  // namespace xg::net

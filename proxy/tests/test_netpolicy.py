@@ -131,3 +131,40 @@ def test_ai_observation_matching_and_dedup(state_file, tmp_path):
         assert ev["client_ip"] == "192.168.10.30"
     finally:
         shipper.stop()
+
+
+def test_apply_skips_nft_in_proxy_only_or_without_table(state_file, tmp_path, monkeypatch):
+    out = tmp_path / "net"
+    changed = generate.generate(state_file, out)
+    calls = []
+
+    class Res:
+        def __init__(self, code=0, stdout="", stderr=""):
+            self.returncode = code
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(cmd, capture_output=True, text=True):
+        calls.append(cmd)
+        if cmd[:3] == ["nft", "list", "table"]:
+            return Res(1, "", "No such file or directory")
+        return Res(0, "", "")
+
+    monkeypatch.setattr(generate.subprocess, "run", fake_run)
+
+    # proxy_only skips nft entirely and still reloads unbound
+    generate.apply(out, changed, network_mode="proxy_only")
+    assert all(c[0] != "nft" for c in calls)
+    assert ["unbound-control", "reload"] in calls
+
+    # missing inet xephyguard table in gateway mode skips nft -f sets.nft cleanly
+    calls.clear()
+    generate.apply(out, changed, network_mode="gateway")
+    assert ["nft", "list", "table", "inet", "xephyguard"] in calls
+    assert not any(c[:2] == ["nft", "-f"] for c in calls)
+
+    # existing table invokes nft -f sets.nft
+    calls.clear()
+    monkeypatch.setattr(generate.subprocess, "run", lambda cmd, **kw: (calls.append(cmd) or Res(0)))
+    generate.apply(out, changed, network_mode="gateway")
+    assert ["nft", "-f", str(out / "sets.nft")] in calls

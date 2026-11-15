@@ -1,8 +1,12 @@
 #!/bin/sh
 set -e
 cd /var/www/html
-mkdir -p storage/app/private storage/app/public/downloads storage/framework/cache storage/framework/sessions storage/framework/views storage/logs /var/lib/xephyguard/net
-chown -R www-data:www-data storage /var/lib/xephyguard/net
+mkdir -p storage/app/private/evidence storage/app/public/downloads storage/framework/cache storage/framework/sessions storage/framework/views storage/logs /var/lib/xephyguard/net
+chown www-data:www-data storage storage/app storage/app/public
+chown -R www-data:www-data storage/app/private storage/framework storage/logs /var/lib/xephyguard/net
+if [ -w storage/app/public/downloads ]; then
+  chown -R www-data:www-data storage/app/public/downloads 2>/dev/null || true
+fi
 case "$1" in
   web)
     php artisan config:cache && php artisan route:cache && php artisan view:cache

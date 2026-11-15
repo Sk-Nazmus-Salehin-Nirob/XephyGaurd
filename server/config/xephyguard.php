@@ -26,7 +26,7 @@ return [
     'analysis_url' => env('XG_ANALYSIS_URL', 'http://analysis:8090'),
 
     // Agent behaviour
-    'heartbeat_timeout_s' => (int) env('XG_HEARTBEAT_TIMEOUT', 15),   // 3 missed heartbeats (5 s)
+    'heartbeat_timeout_s' => (int) env('XG_HEARTBEAT_TIMEOUT', 45),   // 3 missed heartbeats (15 s default)
     'max_events_per_batch' => 500,
     'max_batch_bytes' => 1024 * 1024,
     'agent_rate_limit_per_minute' => (int) env('XG_AGENT_RATE', 120),

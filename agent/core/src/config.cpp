@@ -59,6 +59,7 @@ Config Config::load(const std::string& path, bool* ok, std::string* err) {
     if (auto v = t["ccc"]["http_port"].value<int64_t>()) c.http_port = uint16_t(*v);
     if (auto v = t["ccc"]["discovery_port"].value<int64_t>()) c.discovery_port = uint16_t(*v);
     str("ccc", "ca_fingerprint", c.ca_fingerprint);
+    if (auto v = t["screen"]["enabled"].value<bool>()) c.screen_enabled = *v;
     if (auto v = t["screen"]["port"].value<int64_t>()) c.screen_port = uint16_t(*v);
     str("screen", "path", c.screen_path);
     if (auto v = t["screen"]["tls"].value<bool>()) c.screen_tls = *v;
@@ -88,6 +89,9 @@ Config Config::load(const std::string& path, bool* ok, std::string* err) {
         c.screen_tls = (std::string(stls) == "1" || std::string(stls) == "true");
     }
     if (const char* stok = std::getenv("XG_SCREEN_TOKEN"); stok && *stok) c.screen_token = stok;
+    if (const char* sen = std::getenv("XG_SCREEN_ENABLE"); sen && *sen) {
+        c.screen_enabled = (std::string(sen) == "1" || std::string(sen) == "true");
+    }
     if (ok) *ok = true;
     return c;
 }
@@ -97,8 +101,8 @@ bool Config::save(const std::string& path) const {
         {"ccc", toml::table{{"host", ccc_host}, {"api_port", int64_t(api_port)},
                             {"http_port", int64_t(http_port)}, {"discovery_port", int64_t(discovery_port)},
                             {"ca_fingerprint", ca_fingerprint}}},
-        {"screen", toml::table{{"port", int64_t(screen_port)}, {"path", screen_path},
-                               {"tls", screen_tls}, {"token", screen_token}}},
+        {"screen", toml::table{{"enabled", screen_enabled}, {"port", int64_t(screen_port)},
+                               {"path", screen_path}, {"tls", screen_tls}, {"token", screen_token}}},
         {"identity", toml::table{{"pc_id", pc_id}, {"token", token}, {"enrollment_id", enrollment_id},
                                  {"poll_token", poll_token}}},
         {"paths", toml::table{{"data_dir", data_dir}, {"log_dir", log_dir}, {"ca_file", ca_file},

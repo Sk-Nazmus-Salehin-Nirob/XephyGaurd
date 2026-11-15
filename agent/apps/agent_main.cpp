@@ -62,9 +62,16 @@ int main(int argc, char** argv) {
     }
     const std::string config_path = arg_value(args, "--config", default_config_path());
     const bool foreground = arg_flag(args, "--foreground");
+    std::error_code ec;
+    const bool cfg_exists = std::filesystem::exists(config_path, ec);
+    if (ec) {
+        std::cerr << "Cannot access " << config_path << ": " << ec.message()
+                  << " (try running with sudo)\n";
+        return 1;
+    }
     bool loaded = false;
     std::string err;
-    Config cfg = std::filesystem::exists(config_path) ? Config::load(config_path, &loaded, &err) : Config::defaults();
+    Config cfg = cfg_exists ? Config::load(config_path, &loaded, &err) : Config::defaults();
     if (!err.empty()) std::cerr << "warning: " << err << "\n";
 
     if (cmd == "enroll") {
@@ -84,13 +91,29 @@ int main(int argc, char** argv) {
         std::cout << "config:      " << config_path << (loaded ? "" : " (not found, defaults)") << "\n"
                   << "ccc:         " << (cfg.ccc_host.empty() ? "(auto-discovery)" : cfg.ccc_host) << ":" << cfg.api_port << "\n"
                   << "enrolled:    " << (cfg.enrolled() ? "yes, pc #" + cfg.pc_id : (cfg.enrollment_id.empty() ? "no" : "pending (request " + cfg.enrollment_id + ")")) << "\n";
-        EventQueue q((std::filesystem::path(cfg.data_dir) / "queue.db").string());
-        std::cout << "queue:       " << q.size() << " events buffered, last seq " << q.last_seq() << "\n";
-        if (auto p = q.kv_get("policy")) {
-            auto j = json::parse(*p, nullptr, false);
-            if (!j.is_discarded())
-                std::cout << "policy:      v" << j.value("version", 0) << " mode=" << j.value("mode", "?") << " profile='"
-                          << j.value("profile", "") << "'\n";
+        std::error_code qec;
+        const auto db_path = std::filesystem::path(cfg.data_dir) / "queue.db";
+        const bool db_exists = std::filesystem::exists(db_path, qec);
+        if (qec) {
+            std::cerr << "queue:       cannot access " << db_path << ": " << qec.message() << " (try running with sudo)\n";
+            return 1;
+        }
+        if (!db_exists) {
+            std::cout << "queue:       not initialized (" << db_path << " missing)\n";
+            return 0;
+        }
+        try {
+            EventQueue q(db_path.string());
+            std::cout << "queue:       " << q.size() << " events buffered, last seq " << q.last_seq() << "\n";
+            if (auto p = q.kv_get("policy")) {
+                auto j = json::parse(*p, nullptr, false);
+                if (!j.is_discarded())
+                    std::cout << "policy:      v" << j.value("version", 0) << " mode=" << j.value("mode", "?") << " profile='"
+                              << j.value("profile", "") << "'\n";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "queue:       cannot open " << db_path << ": " << e.what() << " (try running with sudo)\n";
+            return 1;
         }
         return 0;
     }

@@ -86,7 +86,7 @@ std::optional<RuleHit> RuleEngine::match_extension(const ExtensionInfo& e) const
     const auto ide = to_lower(e.ide);
     // VS Code forks share the VS Code extension format.
     const bool vscode_like = ide == "vscode" || ide == "vscodium" || ide == "cursor" || ide == "windsurf" ||
-                             ide == "code-oss" || ide == "vscode-insiders";
+                             ide == "code-oss" || ide == "vscode-insiders" || ide == "antigravity";
     const bool browser_like = ide == "chrome" || ide == "chromium" || ide == "edge" || ide == "brave" || ide == "browser";
     for (const auto& r : set_.extensions) {
         if (!enabled(r.id)) continue;

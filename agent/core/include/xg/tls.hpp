@@ -31,6 +31,8 @@ public:
     void set_read_timeout(int ms);
     /// True if data is buffered or the socket becomes readable within `ms`.
     bool wait_readable(int ms);
+    bool has_buffered() const;
+    long long native_handle() const;
     void close();
     bool is_open() const;
 

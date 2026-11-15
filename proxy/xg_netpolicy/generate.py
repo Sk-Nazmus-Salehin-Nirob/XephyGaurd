@@ -113,13 +113,26 @@ def generate(state_path: pathlib.Path, out: pathlib.Path) -> dict[str, bool]:
     }
 
 
-def apply(out: pathlib.Path, changed: dict[str, bool]) -> None:
+def _nft_table_present() -> bool:
+    try:
+        r = subprocess.run(["nft", "list", "table", "inet", "xephyguard"], capture_output=True, text=True)
+        return r.returncode == 0
+    except FileNotFoundError:
+        return False
+
+
+def apply(out: pathlib.Path, changed: dict[str, bool], network_mode: str | None = None) -> None:
     if changed.get("nft"):
-        r = subprocess.run(["nft", "-f", str(out / "sets.nft")], capture_output=True, text=True)
-        if r.returncode:
-            log.error("nft failed: %s", r.stderr.strip())
+        mode = (network_mode or os.environ.get("XG_NETWORK_MODE", "")).strip()
+        if mode == "proxy_only" or not _nft_table_present():
+            log.info("skipping nft sets reload (%s)",
+                     "proxy_only mode" if mode == "proxy_only" else "table inet xephyguard unavailable")
         else:
-            log.info("nftables sets updated")
+            r = subprocess.run(["nft", "-f", str(out / "sets.nft")], capture_output=True, text=True)
+            if r.returncode:
+                log.error("nft failed: %s", r.stderr.strip())
+            else:
+                log.info("nftables sets updated")
     if changed.get("unbound"):
         r = subprocess.run(["unbound-control", "reload"], capture_output=True, text=True)
         if r.returncode:
@@ -145,7 +158,8 @@ def main(argv: list[str] | None = None) -> int:
                 changed = generate(a.state, a.out)
                 log.info("state %s -> %s", digest[:12], {k: v for k, v in changed.items() if v} or "no changes")
                 if a.apply:
-                    apply(a.out, changed)
+                    raw_mode = json.loads(a.state.read_text()).get("network_mode")
+                    apply(a.out, changed, network_mode=raw_mode)
                 last = digest
         except (ValueError, KeyError, json.JSONDecodeError) as e:
             log.error("invalid state document, keeping previous configuration: %s", e)

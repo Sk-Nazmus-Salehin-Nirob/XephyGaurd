@@ -6,6 +6,7 @@ use App\Jobs\ScoreSession;
 use App\Models\Alert;
 use App\Models\Command;
 use App\Models\LabSession;
+use App\Models\NetEvent;
 use App\Models\TimetableEntry;
 use App\Services\PolicyBuilder;
 use App\Services\SessionManager;
@@ -110,8 +111,13 @@ class SessionNetworkTest extends TestCase
         [$pc] = $this->enrolledPc();
         [$pc2] = $this->enrolledPc('192.168.10.22', 'PC-02');
         app(SessionManager::class)->start($lab, $this->profile('Test: AI blocked'), 'CS101');
+        // One missed 15s beat (30s ago) must stay online under 45s default timeout
         $pc->update(['last_seen_at' => now()->subSeconds(30), 'status' => 'clean']);
-        $pc2->update(['last_seen_at' => now()->subSeconds(30), 'status' => 'clean', 'clean_shutdown' => true]);
+        $this->assertTrue($pc->fresh()->online());
+        $this->assertSame(0, app(SessionManager::class)->detectSilent());
+        // Beyond 45s triggers machine_silent once
+        $pc->update(['last_seen_at' => now()->subSeconds(50), 'status' => 'clean']);
+        $pc2->update(['last_seen_at' => now()->subSeconds(50), 'status' => 'clean', 'clean_shutdown' => true]);
         $this->assertSame(1, app(SessionManager::class)->detectSilent());
         $alert = Alert::sole();
         $this->assertSame('tamper.machine_silent', $alert->rule_id);
@@ -169,5 +175,36 @@ class SessionNetworkTest extends TestCase
             ->assertJsonPath('ai_traffic.0.mode', 'Observed')
             ->assertJsonPath('ai_traffic.0.count', 2)
             ->assertJsonPath('network.0.action', 'observed');
+    }
+
+    public function test_report_show_and_pdf_render_when_blocked_net_events_exist(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        [$pc] = $this->enrolledPc('192.168.10.21', 'PC-01');
+        $session = app(SessionManager::class)->start($lab, $this->profile('Test: AI blocked'), 'CS101');
+        NetEvent::create([
+            'pc_id' => $pc->id,
+            'lab_session_id' => $session->id,
+            'client_ip' => '192.168.10.21',
+            'host' => 'chatgpt.com',
+            'layer' => 'sni',
+            'action' => 'blocked',
+            'category' => 'ai',
+            'matched' => 'chatgpt.com',
+            'occurred_at' => now(),
+        ]);
+        app(SessionManager::class)->stop($session);
+
+        $this->actingAs($this->user('instructor'))
+            ->get("/reports/{$session->id}")
+            ->assertOk()
+            ->assertSee('chatgpt.com')
+            ->assertSee('PC-01');
+
+        $pdf = $this->actingAs($this->user('instructor'))
+            ->get("/reports/{$session->id}/pdf")
+            ->assertOk();
+        $this->assertStringStartsWith('%PDF', $pdf->getContent());
     }
 }

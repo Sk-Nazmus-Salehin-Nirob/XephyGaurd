@@ -3,6 +3,7 @@
 #include <filesystem>
 
 #include "fakes.hpp"
+#include "xg/artifact_scan.hpp"
 #include "xg/config.hpp"
 #include "xg/event_queue.hpp"
 #include "xg/isolation.hpp"
@@ -59,6 +60,7 @@ TEST_CASE("rule engine: extensions, ports, artifacts, adapters, devices") {
     RuleEngine re(SignatureSet::from_json(test::sample_signatures()));
     CHECK(re.match_extension({"vscode", "GitHub.Copilot", "1.0", "alice", ""})->rule_id == "ext.copilot");
     CHECK(re.match_extension({"cursor", "github.copilot-chat", "1.0", "alice", ""})->rule_id == "ext.copilot");
+    CHECK(re.match_extension({"antigravity", "github.copilot", "1.0", "alice", ""})->rule_id == "ext.copilot");
     CHECK_FALSE(re.match_extension({"vscode", "ms-python.python", "1.0", "alice", ""}));
     CHECK(re.match_extension({"jetbrains", "ml-llm-plugin", "", "", ""})->rule_id == "ext.jb.ai");
     CHECK(re.match_port(11434)->rule_id == "port.ollama");
@@ -249,4 +251,57 @@ TEST_CASE("isolation range math keeps LAN and the CCC reachable") {
     CHECK_FALSE(in_ranges(carved, "203.0.113.9"));
     CHECK(in_ranges(carved, "203.0.113.8"));
     CHECK(in_ranges(carved, "203.0.113.10"));
+}
+
+TEST_CASE("artifact scan gives each root its own file budget and skips noisy cache dirs") {
+    const fs::path base = fs::temp_directory_path() / ("xg-art-" + random_hex(4));
+    const fs::path home = base / "home";
+    const fs::path usb = base / "usb";
+    fs::create_directories(home / ".cache/huge");
+    fs::create_directories(home / ".antigravity/extensions");
+    fs::create_directories(home / "docs");
+    fs::create_directories(usb);
+
+    // Exhaust > max_files inside home docs AND noise inside skipped dirs, plus a real model on usb root
+    for (int i = 0; i < 6; ++i) write_file_atomic((home / "docs" / ("f" + std::to_string(i) + ".txt")).string(), "x");
+    write_file_atomic((home / ".cache/huge/junk.txt").string(), "j");
+    write_file_atomic((home / ".antigravity/extensions/cached.gguf").string(), "skipme");
+    write_file_atomic((usb / "phi3.gguf").string(), "weights");
+
+    json sig = test::sample_signatures();
+    sig["artifacts"]["scan"] = {{"roots", {home.string(), usb.string()}}, {"max_depth", 4}, {"max_files", 4}, {"skip_dirs", json::array()}};
+    RuleEngine re(SignatureSet::from_json(sig));
+    std::atomic<bool> stop{false};
+    const auto res = scan_artifacts(re, {home.string()}, stop);
+
+    CHECK(res.truncated);  // home root hit max_files=4
+    bool saw_usb = false, saw_skipped = false;
+    for (const auto& a : res.found) {
+        if (a.path == (usb / "phi3.gguf").string() && a.rule_id == "file.gguf") saw_usb = true;
+        if (a.path.find(".antigravity") != std::string::npos) saw_skipped = true;
+    }
+    CHECK(saw_usb);
+    CHECK_FALSE(saw_skipped);
+    fs::remove_all(base);
+}
+
+TEST_CASE("Policy reload replaces work_dirs instead of accumulating stale directories") {
+    json p1 = {
+        {"version", 1},
+        {"profile", "exam"},
+        {"mode", "test"},
+        {"work_dirs", {"/tmp/lab-a", "/tmp/lab-b"}},
+    };
+    const Policy first = Policy::from_json(p1);
+    REQUIRE(first.work_dirs.size() == 2);
+
+    json p2 = {
+        {"version", 2},
+        {"profile", "exam"},
+        {"mode", "test"},
+        {"work_dirs", {"/tmp/lab-c"}},
+    };
+    const Policy second = Policy::from_json(p2);
+    REQUIRE(second.work_dirs.size() == 1);
+    CHECK(second.work_dirs[0] == "/tmp/lab-c");
 }

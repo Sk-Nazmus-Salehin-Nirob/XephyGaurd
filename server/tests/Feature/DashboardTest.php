@@ -109,4 +109,26 @@ class DashboardTest extends TestCase
             @unlink($path);
         }
     }
+
+    public function test_downloads_serves_deb_and_generates_http_linux_installer_command(): void
+    {
+        $lab = $this->bootLab();
+        $lab->update(['ccc_ip' => '192.168.10.2']);
+        $dir = storage_path('app/public/downloads');
+        @mkdir($dir, 0755, true);
+        $deb = $dir.'/xephyguard-agent_test_amd64.deb';
+        file_put_contents($deb, "deb-stub");
+        try {
+            $this->get('/downloads/xephyguard-agent_test_amd64.deb')->assertOk();
+            $res = $this->actingAs($this->user('assistant'))
+                ->get('https://192.168.10.2/downloads')
+                ->assertOk();
+            $res->assertSee('xephyguard-agent_test_amd64.deb');
+            preg_match('/<script type="application\/json" id="xg-page-data">(.*?)<\/script>/s', $res->getContent(), $m);
+            $page = json_decode($m[1] ?? '{}', true, 512, JSON_THROW_ON_ERROR);
+            $this->assertStringStartsWith('curl -fsSL http://192.168.10.2/install/linux.sh', $page['lin'] ?? '');
+        } finally {
+            @unlink($deb);
+        }
+    }
 }

@@ -12,7 +12,7 @@ WatchdogSec=30
 NotifyAccess=main
 # Hardening that keeps the access the agent needs (/proc of all users, evdev, netlink, kill).
 ProtectSystem=strict
-ReadWritePaths=/var/lib/xephyguard /var/log/xephyguard /etc/xephyguard /run/xephyguard
+ReadWritePaths=/var/lib/xephyguard /var/log/xephyguard /etc/xephyguard /run/xephyguard /etc/opt/chrome/policies/managed /etc/chromium/policies/managed /etc/opt/edge/policies/managed /etc/firefox/policies /etc/systemd/resolved.conf.d
 RuntimeDirectory=xephyguard
 RuntimeDirectoryMode=0755
 ProtectKernelTunables=yes
@@ -23,7 +23,7 @@ RestrictRealtime=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 NoNewPrivileges=yes
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
 CPUQuota=20%
 MemoryMax=128M
 

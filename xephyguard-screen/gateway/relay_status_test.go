@@ -125,3 +125,71 @@ func TestDisconnectedAgentDoesNotReplayStaleKeyframeToNewViewer(t *testing.T) {
 		t.Fatalf("expected agent_connected=false for stream 22, got %+v", st)
 	}
 }
+
+func TestGatewayHealthEndpointAndZeroViewerIdleStatus(t *testing.T) {
+	auth := &FakeAuth{}
+	relay := NewRelayServer(auth)
+	srv := httptest.NewServer(relay.Routes())
+	defer srv.Close()
+
+	for _, p := range []string{"/health", "/screen-gw/health"} {
+		resp, err := srv.Client().Get(srv.URL + p)
+		if err != nil {
+			t.Fatalf("GET %s failed: %v", p, err)
+		}
+		var doc map[string]any
+		err = json.NewDecoder(resp.Body).Decode(&doc)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatalf("decode %s: %v", p, err)
+		}
+		if resp.StatusCode != 200 || doc["ok"] != true {
+			t.Fatalf("unexpected %s response: status=%d doc=%v", p, resp.StatusCode, doc)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	agentConn, _, err := websocket.Dial(ctx, toWSURL(srv.URL, "/agent")+"?stream_id=77", nil)
+	if err != nil {
+		t.Fatalf("dial agent: %v", err)
+	}
+	defer agentConn.Close(websocket.StatusNormalClosure, "bye")
+
+	viewerConn, _, err := websocket.Dial(ctx, toWSURL(srv.URL, "/view")+"?stream_id=77", nil)
+	if err != nil {
+		t.Fatalf("dial viewer: %v", err)
+	}
+
+	// Viewer join must ask agent for a keyframe (MsgType 4)
+	_, msg1, err := agentConn.Read(ctx)
+	if err != nil {
+		t.Fatalf("agent read keyframe req: %v", err)
+	}
+	if len(msg1) < kHeaderSize || msg1[3] != kMsgTypeKeyReq {
+		t.Fatalf("expected KeyframeReq (4), got len=%d type=%d", len(msg1), msg1[3])
+	}
+
+	// Health reflects 1 active stream
+	resp, err := srv.Client().Get(srv.URL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health failed: %v", err)
+	}
+	var doc map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&doc)
+	resp.Body.Close()
+	if int(doc["active_streams"].(float64)) != 1 {
+		t.Fatalf("expected active_streams=1, got %v", doc)
+	}
+
+	// Closing last viewer must send MsgType Status (5) with flags=0 so agent pauses capture
+	_ = viewerConn.Close(websocket.StatusNormalClosure, "done")
+	_, msg2, err := agentConn.Read(ctx)
+	if err != nil {
+		t.Fatalf("agent read viewer=0 status: %v", err)
+	}
+	if len(msg2) < kHeaderSize || msg2[3] != kMsgTypeStatus || msg2[4] != 0 || msg2[5] != 0 {
+		t.Fatalf("expected Status(0) after viewer disconnect, got len=%d type=%d flags=(%d,%d)", len(msg2), msg2[3], msg2[4], msg2[5])
+	}
+}

@@ -82,9 +82,18 @@ private:
                     if (code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT) { shift = value != 0; continue; }
                     if (value != 1) continue;
                     if (code >= BTN_MISC) continue;  // mouse buttons etc.
-                    const bool paste = (ctrl && code == KEY_V) || (shift && code == KEY_INSERT);
+                    bool paste = (ctrl && code == KEY_V) || (shift && code == KEY_INSERT);
+                    const int64_t wall_now = now_ms();
+                    if (paste) {
+                        static int64_t last_paste_wall_ms = 0;
+                        if (last_paste_wall_ms > 0 && (wall_now - last_paste_wall_ms) < 250) {
+                            paste = false;
+                        } else {
+                            last_paste_wall_ms = wall_now;
+                        }
+                    }
                     const int64_t t = int64_t(ev[i].input_event_sec) * 1000 + int64_t(ev[i].input_event_usec) / 1000;
-                    on_key(t > 0 ? t : now_ms(), code == KEY_BACKSPACE, paste);
+                    on_key(t > 0 ? t : wall_now, code == KEY_BACKSPACE, paste);
                 }
             }
         }

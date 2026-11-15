@@ -324,7 +324,7 @@ export class ScreenViewer {
             rgba[p * 4 + 0] = tile.payload[p * 4 + 2]; // R
             rgba[p * 4 + 1] = tile.payload[p * 4 + 1]; // G
             rgba[p * 4 + 2] = tile.payload[p * 4 + 0]; // B
-            rgba[p * 4 + 3] = tile.payload[p * 4 + 3]; // A
+            rgba[p * 4 + 3] = 255; // A (force opaque; BGRX byte 3 can be 0x00)
           }
           const imgData = new ImageData(rgba, tileW, tileH);
           bitmap = await createImageBitmap(imgData);

@@ -139,4 +139,44 @@ bool write_file_atomic(const std::string& path, const std::string& content) {
     return true;
 }
 
+std::string parse_tls_sni(const uint8_t* buf, size_t len) {
+    if (!buf || len < 43) return {};
+    if (buf[0] != 0x16 || buf[1] != 0x03) return {};
+    const size_t rec_len = (size_t(buf[3]) << 8) | buf[4];
+    size_t p = 5;
+    const size_t end = std::min(len, p + rec_len);
+    if (p + 38 > end || buf[p] != 0x01) return {};
+    p += 4 + 2 + 32;  // Handshake header + version + random
+    if (p >= end) return {};
+    p += 1 + buf[p];  // Session ID
+    if (p + 2 > end) return {};
+    p += 2 + ((size_t(buf[p]) << 8) | buf[p + 1]);  // Cipher suites
+    if (p + 1 > end) return {};
+    p += 1 + buf[p];  // Compression methods
+    if (p + 2 > end) return {};
+    const size_t ext_total = (size_t(buf[p]) << 8) | buf[p + 1];
+    p += 2;
+    const size_t ext_end = std::min(end, p + ext_total);
+    while (p + 4 <= ext_end) {
+        const uint16_t ext_type = (uint16_t(buf[p]) << 8) | buf[p + 1];
+        const uint16_t ext_len = (uint16_t(buf[p + 2]) << 8) | buf[p + 3];
+        p += 4;
+        if (ext_type == 0x0000 && p + 5 <= ext_end) {
+            const uint8_t name_type = buf[p + 2];
+            const uint16_t name_len = (uint16_t(buf[p + 3]) << 8) | buf[p + 4];
+            if (name_type == 0 && name_len > 0 && name_len < 256 && p + 5 + name_len <= ext_end) {
+                return to_lower(std::string(reinterpret_cast<const char*>(buf + p + 5), name_len));
+            }
+        }
+        p += ext_len;
+    }
+    return {};
+}
+
+bool is_ai_telemetry_domain(std::string_view d) {
+    if (d.empty()) return true;
+    return icontains(d, "telemetry") || icontains(d, "exp.individual.") || icontains(d, "exp-tas.com") ||
+           icontains(d, "events.data.microsoft.com") || icontains(d, "applicationinsights");
+}
+
 }  // namespace xg

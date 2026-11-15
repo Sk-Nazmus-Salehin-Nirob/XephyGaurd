@@ -26,6 +26,7 @@ class Pc extends Model
     public function agents(): HasMany { return $this->hasMany(Agent::class); }
     public function alerts(): HasMany { return $this->hasMany(Alert::class); }
     public function events(): HasMany { return $this->hasMany(Event::class); }
+    public function evidenceCaptures(): HasMany { return $this->hasMany(EvidenceCapture::class); }
 
     public function scopeActive(Builder $q): Builder { return $q->whereNull('retired_at'); }
 

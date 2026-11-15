@@ -36,5 +36,9 @@ std::string hex_encode(const unsigned char* data, size_t len);
 std::string random_hex(size_t bytes);
 std::string read_file(const std::string& path, bool* ok = nullptr);
 bool write_file_atomic(const std::string& path, const std::string& content);
+/// Extracts the lowercase TLS ClientHello SNI hostname (extension 0x0000), or empty if absent.
+std::string parse_tls_sni(const uint8_t* data, size_t len);
+/// True for passive telemetry/experiment subdomains that must not raise AI alerts.
+bool is_ai_telemetry_domain(std::string_view domain);
 
 }  // namespace xg

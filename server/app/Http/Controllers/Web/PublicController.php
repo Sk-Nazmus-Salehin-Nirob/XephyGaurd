@@ -89,6 +89,13 @@ class PublicController extends Controller
         if (! is_file($path) && $file === 'start-screen-stream.bat') {
             return $this->dynamicScreenStreamBat();
         }
+        if (! is_file($path) && preg_match('/^xephyguard-agent_latest_([A-Za-z0-9]+)\.(deb|rpm)$/', $file, $m)) {
+            $matches = glob(storage_path('app/public/downloads/xephyguard-agent_*_'.$m[1].'.'.$m[2])) ?: [];
+            if ($matches !== []) {
+                usort($matches, fn (string $a, string $b): int => version_compare(basename($b), basename($a)));
+                $path = $matches[0];
+            }
+        }
         abort_unless(is_file($path), 404, 'Installer not uploaded yet. Copy release artifacts to storage/app/public/downloads.');
 
         return response()->download($path);

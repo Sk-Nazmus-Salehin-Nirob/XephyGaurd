@@ -22,6 +22,7 @@ const (
 	kViewerQueueSize = 8
 	kMsgTypeFrame    = uint8(1)
 	kMsgTypeKeyReq   = uint8(4)
+	kMsgTypeStatus   = uint8(5)
 )
 
 type Viewer struct {
@@ -112,6 +113,19 @@ func buildKeyframeReq(streamID uint32, monitorID uint16) []byte {
 	binary.LittleEndian.PutUint16(buf[4:6], 0)
 	binary.LittleEndian.PutUint16(buf[6:8], monitorID)
 	binary.LittleEndian.PutUint32(buf[8:12], streamID)
+	return buf
+}
+
+// Build a binary Status message reporting active viewer count to the agent.
+func buildViewerStatus(streamID uint32, viewers uint16) []byte {
+	buf := make([]byte, kHeaderSize)
+	binary.LittleEndian.PutUint16(buf[0:2], kMagic)
+	buf[2] = kVersion
+	buf[3] = kMsgTypeStatus
+	binary.LittleEndian.PutUint16(buf[4:6], viewers)
+	binary.LittleEndian.PutUint16(buf[6:8], 0)
+	binary.LittleEndian.PutUint32(buf[8:12], streamID)
+	binary.LittleEndian.PutUint16(buf[20:22], viewers)
 	return buf
 }
 
@@ -357,6 +371,12 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		stream.mu.Lock()
 		delete(stream.viewers, viewerID)
+		if len(stream.viewers) == 0 && stream.agentConn != nil {
+			select {
+			case stream.agentOut <- buildViewerStatus(stream.streamID, 0):
+			default:
+			}
+		}
 		stream.mu.Unlock()
 		return
 	}
@@ -454,8 +474,34 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 
 	stream.mu.Lock()
 	delete(stream.viewers, viewerID)
+	if len(stream.viewers) == 0 && stream.agentConn != nil {
+		select {
+		case stream.agentOut <- buildViewerStatus(stream.streamID, 0):
+		default:
+		}
+	}
 	v.closed.Store(true)
 	stream.mu.Unlock()
+}
+
+func (s *RelayServer) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	active := 0
+	for _, st := range s.streams {
+		st.mu.Lock()
+		if st.agentConn != nil {
+			active++
+		}
+		st.mu.Unlock()
+	}
+	s.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":             true,
+		"active_streams": active,
+	})
 }
 
 func (s *RelayServer) Routes() http.Handler {
@@ -464,5 +510,7 @@ func (s *RelayServer) Routes() http.Handler {
 	mux.HandleFunc("/screen-gw/agent", s.HandleAgent)
 	mux.HandleFunc("/view", s.HandleView)
 	mux.HandleFunc("/screen-gw/view", s.HandleView)
+	mux.HandleFunc("/health", s.HandleHealth)
+	mux.HandleFunc("/screen-gw/health", s.HandleHealth)
 	return mux
 }

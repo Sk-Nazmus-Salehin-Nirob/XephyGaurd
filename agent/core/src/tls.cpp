@@ -247,5 +247,7 @@ bool TlsConnection::wait_readable(int ms) {
 
 void TlsConnection::close() { impl_->reset(); }
 bool TlsConnection::is_open() const { return impl_->ssl != nullptr; }
+bool TlsConnection::has_buffered() const { return impl_->ssl && SSL_pending(impl_->ssl) > 0; }
+long long TlsConnection::native_handle() const { return impl_->sock; }
 
 }  // namespace xg::net

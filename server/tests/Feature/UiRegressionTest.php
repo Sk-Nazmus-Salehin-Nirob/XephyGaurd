@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Alert;
+use App\Models\Command;
 use App\Models\Pc;
 use App\Models\Setting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -281,5 +282,43 @@ class UiRegressionTest extends TestCase
         $this->assertSame(0, $renderedPc['score']);
         $this->assertSame(0, $pc->fresh()->live_score);
         $this->assertSame('clean', $pc->fresh()->status);
+    }
+
+    public function test_rescan_endpoint_dispatches_specific_target_for_what_and_kind(): void
+    {
+        Queue::fake();
+        $this->bootLab();
+        [$pc] = $this->enrolledPc('192.168.10.21', 'PC-01');
+        $user = $this->user('assistant');
+
+        foreach (['extensions', 'artifacts', 'network'] as $target) {
+            $this->actingAs($user)
+                ->postJson("/pcs/{$pc->id}/rescan", ['what' => $target])
+                ->assertOk()
+                ->assertJsonStructure(['command_id']);
+            $this->assertDatabaseHas('commands', ['pc_id' => $pc->id, 'type' => 'rescan', 'args->what' => $target]);
+        }
+
+        // Legacy `kind` payload compatibility
+        $this->actingAs($user)
+            ->postJson("/pcs/{$pc->id}/rescan", ['kind' => 'devices'])
+            ->assertOk();
+        $this->assertDatabaseHas('commands', ['pc_id' => $pc->id, 'type' => 'rescan', 'args->what' => 'devices']);
+    }
+
+    public function test_views_cache_bust_app_js_with_filemtime(): void
+    {
+        Queue::fake();
+        $this->bootLab();
+        $mtime = (string) filemtime(public_path('js/app.js'));
+        $expected = 'js/app.js?v='.$mtime;
+
+        foreach (['/login', '/notice'] as $guestUrl) {
+            $html = $this->get($guestUrl)->assertOk()->getContent();
+            $this->assertStringContainsString($expected, $html, "Missing cache-busted app.js on $guestUrl");
+        }
+
+        $dashHtml = $this->actingAs($this->user('admin'))->get('/')->assertOk()->getContent();
+        $this->assertStringContainsString($expected, $dashHtml);
     }
 }
