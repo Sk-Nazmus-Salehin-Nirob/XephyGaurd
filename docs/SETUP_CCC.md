@@ -34,9 +34,16 @@ time sync, disk, containers, CA expiry, signatures, analysis service, silent PCs
 
 ## Lab network
 * **Gateway mode:** lab PCs get the CCC as **default gateway and DNS** (DHCP option 3 and 6). Nothing
-  else to configure on the PCs — proxy settings on a PC cannot bypass the CCC.
+  else to configure on the PCs — proxy settings, custom Chrome flags, CLI tools, or IDE agents cannot bypass
+  the CCC's `nftables` TCP 80/443 redirect, UDP/TCP 53 DNAT, and UDP 443 QUIC drop. On managed Linux lab
+  hosts running `systemd-resolved`, the agent also writes `/etc/systemd/resolved.conf.d/xephyguard.conf`
+  during active sessions so split/VPN/Tailscale DNS cannot leak queries past Unbound. Note that DNS + SNI
+  blocking works **without** trusting `ca.crt`; the lab CA is required only for HTTPS URL-path rules and
+  Google `&udm=14` AI-overview suppression.
 * **Proxy-only mode** (fallback): configure the lab router to forward TCP 80/443 from the lab subnet to
   `<CCC IP>:8080` and to hand out the CCC as DNS server; block UDP 443 and TCP/UDP 853 at the router.
+  On Linux PCs, `xephyguard-agent` also writes Chromium/Edge/Firefox PAC policies and GNOME `gsettings`
+  autoconfig hints as defense-in-depth for standard browsers.
 
 ## Day to day
 | Task | Command |

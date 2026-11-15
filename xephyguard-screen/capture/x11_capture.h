@@ -31,7 +31,6 @@ private:
   int width_ = 0;
   int height_ = 0;
   bool running_ = false;
-  bool first_ = true;
 };
 
 }  // namespace xg

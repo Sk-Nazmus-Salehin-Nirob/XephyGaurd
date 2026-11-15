@@ -125,12 +125,15 @@ public:
     virtual void set_browser_ai_overview_suppressed(bool /*suppressed*/, const std::string& /*search_url*/ = {}) {}
     /// Configures or clears browser PAC proxy policies (Chrome, Edge, Brave, Opera, Vivaldi, Firefox) for proxy_only mode.
     virtual void set_browser_proxy_pac(const std::string& /*pac_url*/) {}
+    /// Pins system DNS to the lab resolver when gateway mode is active on Linux; empty clears the override.
+    virtual void set_lab_dns(const std::string& /*dns_ip*/) {}
 };
 
 class IGpuMonitor {
 public:
     virtual ~IGpuMonitor() = default;
     struct Sample { double util_pct = 0; double mem_used_mb = 0; double mem_total_mb = 0; std::string name; };
+    virtual bool available() const { return true; }
     virtual std::optional<Sample> sample() = 0;
 };
 

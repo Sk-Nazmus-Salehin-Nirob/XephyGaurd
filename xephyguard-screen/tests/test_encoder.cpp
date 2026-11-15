@@ -137,3 +137,37 @@ TEST_CASE("FrameEncoder: Keyframe sets KEY, FULL, and base_seq = 0") {
   CHECK(m.base_seq == 0);
   CHECK(m.seq == 1);
 }
+
+TEST_CASE("FrameEncoder: BGRX input with zero alpha produces opaque WebP and Raw tiles") {
+  xg::Frame f;
+  f.width = 64;
+  f.height = 64;
+  f.stride = 64 * 4;
+  f.bgra.resize(static_cast<size_t>(64 * 64 * 4));
+  for (int i = 0; i < 64 * 64; ++i) {
+    f.bgra[i * 4 + 0] = 0x40;
+    f.bgra[i * 4 + 1] = 0x80;
+    f.bgra[i * 4 + 2] = 0xC0;
+    f.bgra[i * 4 + 3] = 0x00;  // Zero padding byte as returned by X11 XShmGetImage / GDI
+  }
+
+  xg::EncoderConfig webp_cfg;
+  webp_cfg.codec = xg::Codec::Webp;
+  webp_cfg.quality_text = 85;
+  xg::FrameEncoder webp_enc(webp_cfg);
+  auto mw = webp_enc.build(f, {0}, 1, 1, 0, true);
+  REQUIRE(mw.tiles.size() == 1);
+  int dw = 0, dh = 0;
+  uint8_t* decoded = WebPDecodeBGRA(mw.tiles[0].payload.data(), mw.tiles[0].payload.size(), &dw, &dh);
+  REQUIRE(decoded != nullptr);
+  CHECK(decoded[3] == 0xFF);
+  WebPFree(decoded);
+
+  xg::EncoderConfig raw_cfg;
+  raw_cfg.codec = xg::Codec::Raw;
+  xg::FrameEncoder raw_enc(raw_cfg);
+  auto mr = raw_enc.build(f, {0}, 1, 1, 0, true);
+  REQUIRE(mr.tiles.size() == 1);
+  REQUIRE(mr.tiles[0].payload.size() == 64 * 64 * 4);
+  CHECK(mr.tiles[0].payload[3] == 0xFF);
+}

@@ -37,6 +37,8 @@ public:
             scan_vscode_dir(home + "/.vscode-server/extensions", "vscode", user, out);
             scan_vscode_dir(home + "/.cursor/extensions", "cursor", user, out);
             scan_vscode_dir(home + "/.windsurf/extensions", "windsurf", user, out);
+            scan_vscode_dir(home + "/.antigravity/extensions", "antigravity", user, out);
+            scan_vscode_dir(home + "/.antigravity-server/extensions", "antigravity", user, out);
             // JetBrains: ~/.local/share/JetBrains/<Product><ver>/<plugin>
             for (const auto& prod : list_dir(home + "/.local/share/JetBrains"))
                 for (const auto& plugin : list_dir(home + "/.local/share/JetBrains/" + prod))

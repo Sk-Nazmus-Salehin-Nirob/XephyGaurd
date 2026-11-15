@@ -16,7 +16,7 @@ case "$1" in configure)
     update-ca-certificates >/dev/null 2>&1 || true
     /usr/lib/xephyguard/install-browser-ca.sh || true
   fi
-  install -d /etc/opt/chrome/policies/managed /etc/chromium/policies/managed /etc/opt/edge/policies/managed /etc/firefox/policies
+  install -d /etc/opt/chrome/policies/managed /etc/chromium/policies/managed /etc/opt/edge/policies/managed /etc/firefox/policies /etc/systemd/resolved.conf.d
   install -m 0644 /usr/share/xephyguard/browser-policies/chromium.json /etc/opt/chrome/policies/managed/xephyguard.json
   install -m 0644 /usr/share/xephyguard/browser-policies/chromium.json /etc/chromium/policies/managed/xephyguard.json
   install -m 0644 /usr/share/xephyguard/browser-policies/edge.json /etc/opt/edge/policies/managed/xephyguard.json
@@ -29,6 +29,12 @@ case "$1" in configure)
     systemctl enable xephyguard-agent.service >/dev/null
     systemctl --global enable xephyguard-helper.service >/dev/null 2>&1 || true
     systemctl restart xephyguard-agent.service || true
+    # Restart active user session helpers so /proc/<pid>/exe matches the newly installed binary.
+    if command -v loginctl >/dev/null 2>&1; then
+      for uid in $(loginctl list-users --no-legend 2>/dev/null | awk '$1 >= 1000 {print $1}'); do
+        systemctl --machine="${uid}@.host" --user try-restart xephyguard-helper.service >/dev/null 2>&1 || true
+      done
+    fi
   fi
   echo "XephyGuard agent installed. Enroll with: sudo xephyguard-agent enroll --key <KEY>"
 ;; esac

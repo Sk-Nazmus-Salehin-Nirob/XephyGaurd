@@ -5,6 +5,7 @@
   $cccHost = $ccc ?: request()->getHost();
   $portSuffix = request()->getPort() && !in_array(request()->getPort(), [80, 443], true) ? ':' . request()->getPort() : '';
   $baseUrl = (request()->isSecure() ? 'https://' : 'http://') . $cccHost . $portSuffix;
+  $httpBaseUrl = 'http://' . $cccHost . $portSuffix;
   $enrollKey = $key ?? '';
   $caFp = $fingerprint ?? '';
   $exeName = $setupFile ?? '';
@@ -15,7 +16,7 @@
       . ' /S /KEY=' . ($enrollKey ?: '<ROTATE_KEY_FIRST>')
       . ' /CCC=' . $cccHost
       . ($caFp !== '' ? ' /CAFP=' . $caFp : '');
-  $linCmd = 'curl -fsSL ' . $baseUrl . '/install/linux.sh | sudo bash -s -- --key ' . ($enrollKey ?: '<ROTATE_KEY_FIRST>');
+  $linCmd = 'curl -fsSL ' . $httpBaseUrl . '/install/linux.sh | sudo bash -s -- --key ' . ($enrollKey ?: '<ROTATE_KEY_FIRST>');
 @endphp
 <script type="application/json" id="xg-page-data">{!! json_encode([
   'cccHost' => $cccHost,

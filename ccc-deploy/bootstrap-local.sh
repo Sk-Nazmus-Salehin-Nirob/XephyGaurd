@@ -44,8 +44,11 @@ dc run --rm -T --no-deps --entrypoint sh \
         chown 33:33 /var/lib/xephyguard/ca/*.key 2>/dev/null || true
         chmod 0600 /var/lib/xephyguard/ca/*.key 2>/dev/null || true
 
-        cp -a /src/downloads/. /var/www/html/storage/app/public/downloads/
-        chown -R 33:33 /var/www/html/storage/app
+        if [ -w /var/www/html/storage/app/public/downloads ]; then
+            cp -a /src/downloads/. /var/www/html/storage/app/public/downloads/
+            chown -R 33:33 /var/www/html/storage/app/public/downloads
+        fi
+        chown -R 33:33 /var/www/html/storage/app/private /var/www/html/storage/app/net 2>/dev/null || true
     '
 
 dc run --rm -T --no-deps --user 0:0 --entrypoint sh \

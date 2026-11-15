@@ -87,49 +87,8 @@ void ensure_browser_os_dns() {
     }
 }
 
-// Returns the matched AI domain if `d` is an active AI prompt/completion/web domain (excluding telemetry).
-// Telemetry / experiment domain exclusion filter helper for dynamic signature domains
-bool is_ignored_ai_telemetry_domain(const std::string& d) {
-    if (d.empty()) return true;
-    return d.find("telemetry") != std::string::npos || d.find("exp.individual.") != std::string::npos ||
-           d.find("exp-tas.com") != std::string::npos || d.find("events.data.microsoft.com") != std::string::npos ||
-           d.find("applicationinsights") != std::string::npos;
-}
-
-// Parse TLS ClientHello SNI extension (0x0000) from a TCP payload.
-std::string parse_tls_sni(const uint8_t* buf, size_t len) {
-    if (len < 43) return {};
-    if (buf[0] != 0x16 || buf[1] != 0x03) return {};
-    size_t rec_len = (size_t(buf[3]) << 8) | buf[4];
-    size_t p = 5;
-    size_t end = std::min(len, p + rec_len);
-    if (p + 38 > end || buf[p] != 0x01) return {};
-    p += 4 + 2 + 32;  // Handshake header + version + random
-    if (p >= end) return {};
-    p += 1 + buf[p];  // Session ID
-    if (p + 2 > end) return {};
-    p += 2 + ((size_t(buf[p]) << 8) | buf[p + 1]);  // Cipher suites
-    if (p + 1 > end) return {};
-    p += 1 + buf[p];  // Compression methods
-    if (p + 2 > end) return {};
-    size_t ext_total = (size_t(buf[p]) << 8) | buf[p + 1];
-    p += 2;
-    size_t ext_end = std::min(end, p + ext_total);
-    while (p + 4 <= ext_end) {
-        uint16_t ext_type = (uint16_t(buf[p]) << 8) | buf[p + 1];
-        uint16_t ext_len = (uint16_t(buf[p + 2]) << 8) | buf[p + 3];
-        p += 4;
-        if (ext_type == 0x0000 && p + 5 <= ext_end) {
-            uint8_t name_type = buf[p + 2];
-            uint16_t name_len = (uint16_t(buf[p + 3]) << 8) | buf[p + 4];
-            if (name_type == 0 && name_len > 0 && name_len < 256 && p + 5 + name_len <= ext_end) {
-                return to_lower(std::string(reinterpret_cast<const char*>(buf + p + 5), name_len));
-            }
-        }
-        p += ext_len;
-    }
-    return {};
-}
+// Returns true for passive telemetry domains that must not raise AI alerts.
+bool is_ignored_ai_telemetry_domain(const std::string& d) { return is_ai_telemetry_domain(d); }
 
 class NetworkMonitor final : public INetworkMonitor {
 public:

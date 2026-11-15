@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Web;
 use App\Http\Controllers\Controller;
 use App\Models\Alert;
 use App\Models\Event;
+use App\Models\EvidenceCapture;
 use App\Models\KeyStat;
 use App\Models\Lab;
 use App\Models\LabSession;
@@ -75,9 +76,9 @@ class DashboardController extends Controller
         $events = Event::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)
             ->whereNotIn('type', ['key_stats', 'heartbeat', 'process_snapshot', 'extension_scan', 'artifact_scan'])->latest('occurred_at')->limit(200)->get(['type', 'occurred_at', 'data', 'user'])
             ->reject(fn ($e) => $e->type === 'rule_hit' && (
-                (($e->data['category'] ?? '') === 'extension' && empty($e->data['context']['activity'] ?? ''))
-                || ($e->data['category'] ?? '') === 'local_model'
-                || str_starts_with((string) ($e->data['rule_id'] ?? ''), 'file.')
+                ($e->data['category'] ?? '') === 'extension'
+                && empty($e->data['context']['activity'] ?? '')
+                && ($e->data['mode'] ?? '') !== 'test'
             ))
             ->values();
         $latestSnap = Event::query()->where('pc_id', $pc->id)->where('type', 'process_snapshot')->latest('seq')->first(['occurred_at', 'data']);
@@ -214,6 +215,9 @@ class DashboardController extends Controller
                     'target_app' => $p->target_app, 'occurred_at' => $p->occurred_at?->format('H:i:s'),
                 ]),
             'keyrate' => ['labels' => $perMinute->keys()->values(), 'series' => $perMinute->values()],
+            'evidence' => EvidenceCapture::query()->with('capturer:id,name')->where('pc_id', $pc->id)
+                ->where('occurred_at', '>=', $since)->latest('occurred_at')->limit(20)
+                ->get()->map->toApiArray()->values(),
         ]);
     }
 

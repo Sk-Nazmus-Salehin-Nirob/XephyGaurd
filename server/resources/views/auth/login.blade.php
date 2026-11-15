@@ -9,7 +9,7 @@
 <link rel="icon" href="favicon.ico">
 <script src="js/theme.js"></script>
 <link rel="stylesheet" href="css/xg.css">
-<script defer src="js/app.js"></script>
+<script defer src="js/app.js?v={{ filemtime(public_path('js/app.js')) }}"></script>
 <script defer src="js/alpine.min.js"></script>
 </head>
 <body>

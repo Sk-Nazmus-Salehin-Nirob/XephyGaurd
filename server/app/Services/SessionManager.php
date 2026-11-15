@@ -146,10 +146,24 @@ class SessionManager
     /** "Machine silent": 3 missed heartbeats without a clean-shutdown announcement. */
     public function detectSilent(): int
     {
-        $cutoff = now()->subSeconds(config('xephyguard.heartbeat_timeout_s'));
+        $defaultTimeout = max(10, (int) config('xephyguard.heartbeat_timeout_s', 45));
+        $sessions = [];
+        $cutoffs = [];
+        foreach (Lab::all() as $lab) {
+            $session = LabSession::activeFor($lab->id);
+            $sessions[$lab->id] = $session;
+            $customHb = (int) data_get($session?->profile?->agent, 'intervals.heartbeat_s', 0);
+            $timeout = $customHb > 0 ? max(10, $customHb * 3) : $defaultTimeout;
+            $cutoffs[$lab->id] = now()->subSeconds($timeout);
+        }
         $n = 0;
-        $silent = Pc::query()->active()->whereNotNull('last_seen_at')->where('last_seen_at', '<', $cutoff)
-            ->whereNull('silent_alerted_at')->get();
+        $silent = Pc::query()->active()->whereNotNull('last_seen_at')
+            ->whereNull('silent_alerted_at')->get()
+            ->filter(function (Pc $pc) use ($cutoffs, $defaultTimeout) {
+                $cutoff = $cutoffs[$pc->lab_id] ?? now()->subSeconds($defaultTimeout);
+
+                return $pc->last_seen_at->lt($cutoff);
+            });
         foreach ($silent as $pc) {
             $pc->silent_alerted_at = now();
             $was = $pc->status;
@@ -159,7 +173,7 @@ class SessionManager
             if ($pc->clean_shutdown || $was === 'offline') {
                 continue;
             }
-            $session = LabSession::activeFor($pc->lab_id);
+            $session = $sessions[$pc->lab_id] ?? LabSession::activeFor($pc->lab_id);
             $alert = Alert::create([
                 'pc_id' => $pc->id, 'lab_session_id' => $session?->id, 'rule_id' => 'tamper.machine_silent',
                 'severity' => $session ? 'high' : 'low', 'category' => 'tamper',

@@ -99,6 +99,9 @@ void Agent::apply_policy(const Policy& p) {
         plat_.system->set_exam_mode(p.mode == Mode::test);
         plat_.system->set_browser_ai_overview_suppressed(p.suppress_ai_overview, p.google_search_url);
         plat_.system->set_browser_proxy_pac(p.proxy_mode == "proxy_only" ? p.proxy_pac_url : std::string{});
+        const std::string dns_target =
+            (p.proxy_mode == "gateway" && p.mode != Mode::always_on) ? cfg_.ccc_host : std::string{};
+        plat_.system->set_lab_dns(dns_target);
     }
     push_helper_config();
     if (stop_) restart_watchers();
@@ -425,7 +428,8 @@ void Agent::scan_devices() {
 namespace {
 bool is_extension_host_proc(const std::string& p) {
     return p == "code" || p == "code - insiders" || p == "vscodium" || p == "codium" || p == "copilot-runtime" ||
-           p == "copilot-language-server" || p == "copilot" || p == "cursor" || p == "windsurf";
+           p == "copilot-language-server" || p == "copilot" || p == "cursor" || p == "windsurf" ||
+           p == "antigravity";
 }
 
 bool is_browser_proc(const std::string& p) {
@@ -532,6 +536,7 @@ void Agent::scan_extensions() {
         if (ide == "vscodium") return running_exes.contains("vscodium") || running_exes.contains("codium");
         if (ide == "cursor") return running_exes.contains("cursor");
         if (ide == "windsurf") return running_exes.contains("windsurf");
+        if (ide == "antigravity") return running_exes.contains("antigravity");
         if (ide == "jetbrains") {
             return std::any_of(running_exes.begin(), running_exes.end(), is_jetbrains_exe);
         }
@@ -571,18 +576,22 @@ void Agent::scan_extensions() {
         const bool is_windsurf_chain = chain_exes.contains("windsurf") ||
                                        chain_paths.find(".windsurf\\") != std::string::npos ||
                                        chain_paths.find(".windsurf/") != std::string::npos;
+        const bool is_antigravity_chain = chain_exes.contains("antigravity") ||
+                                          chain_paths.find(".antigravity\\") != std::string::npos ||
+                                          chain_paths.find(".antigravity/") != std::string::npos;
         const bool is_jb_chain = std::any_of(chain_exes.begin(), chain_exes.end(), is_jetbrains_exe) ||
                                  chain_paths.find("jetbrains") != std::string::npos ||
                                  chain_paths.find("github-copilot-intellij") != std::string::npos;
 
         const bool any_specific_ide = is_vscode_chain || is_insiders_chain || is_vscodium_chain || is_cursor_chain ||
-                                      is_windsurf_chain || is_jb_chain;
+                                      is_windsurf_chain || is_antigravity_chain || is_jb_chain;
         if (any_specific_ide) {
             if (ide == "vscode") return is_vscode_chain;
             if (ide == "vscode-insiders") return is_insiders_chain;
             if (ide == "vscodium") return is_vscodium_chain;
             if (ide == "cursor") return is_cursor_chain;
             if (ide == "windsurf") return is_windsurf_chain;
+            if (ide == "antigravity") return is_antigravity_chain;
             if (ide == "jetbrains") return is_jb_chain;
             return false;
         }
@@ -643,6 +652,12 @@ void Agent::scan_extensions() {
         std::optional<OutboundAiFlow> flow;
     };
     std::vector<ActiveExtHit> active_hits;
+    struct InactiveExtHit {
+        RuleHit hit;
+        ExtensionInfo ext;
+    };
+    std::vector<InactiveExtHit> inactive_test_hits;
+    const bool test_mode = policy().mode == Mode::test;
     std::vector<bool> flow_claimed(flows.size(), false);
     for (auto& e : exts) {
         auto h = rules_.match_extension(e);
@@ -674,6 +689,8 @@ void Agent::scan_extensions() {
                           {"activity", e.activity}});
             if (e.active) {
                 active_hits.push_back({*h, e, matched_flow});
+            } else if (test_mode) {
+                inactive_test_hits.push_back({*h, e});
             }
         }
     }
@@ -709,6 +726,17 @@ void Agent::scan_extensions() {
             ctx["recv_kb"] = std::round((double(item.flow->bytes_recv) / 1024.0) * 10.0) / 10.0;
         }
         handle_rule_hit(live_hit, item.ext.ide + ":" + item.ext.id + ":" + item.ext.user, std::move(ctx));
+    }
+    for (const auto& item : inactive_test_hits) {
+        RuleHit hit = item.hit;
+        hit.severity = Severity::low;
+        hit.description = item.hit.description + " (installed in " + item.ext.ide + ")";
+        handle_rule_hit(hit, "installed:" + item.ext.ide + ":" + item.ext.id + ":" + item.ext.user,
+                        json{{"ide", item.ext.ide},
+                             {"extension", item.ext.id},
+                             {"version", item.ext.version},
+                             {"user", item.ext.user},
+                             {"activity", ""}});
     }
     // Any extension-host AI stream that did not match an installed extension (e.g., built-in Copilot Chat)
     // must still be emitted rather than silently dropped.
@@ -818,6 +846,16 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
         sink_->emit(ev::key_stats, k);
     } else if (t == "paste_chord") {
         ++paste_chords_;
+    } else if (t == "screen_caps") {
+        std::lock_guard lk(helpers_mu_);
+        screen_caps_ = {
+            {"session_type", j.value("session_type", "x11")},
+            {"snapshot", j.value("snapshot", false)},
+            {"live", j.value("live", false)},
+            {"delta_tiles", j.value("delta_tiles", false)},
+            {"monitors", std::max(1, j.value("monitors", 1))},
+            {"secure_desktop", j.value("secure_desktop", false)},
+        };
     } else if (t == "ping") {
         if (plat_.ipc) plat_.ipc->send(peer.conn_id, ipc::line({{"t", "pong"}}));
     }
@@ -834,9 +872,11 @@ void Agent::push_helper_config() {
                                     {"pc_id", cfg_.pc_id},
                                     {"ext_ids", rules_.extension_ids()},
                                     {"proxy_pac_url", pac_url},
-                                    {"screen", {{"port", cfg_.screen_port},
+                                    {"screen", {{"enabled", cfg_.screen_enabled},
+                                                {"port", cfg_.screen_port},
                                                 {"path", cfg_.screen_path},
                                                 {"tls", cfg_.screen_tls},
+                                                {"ca_file", cfg_.ca_file},
                                                 {"agent_token", cfg_.screen_token}}},
                                     {"collect", {{"window", p.collect.window}, {"clipboard", p.collect.clipboard},
                                                  {"keys", p.collect.keys}}}}));
@@ -1074,7 +1114,45 @@ json Agent::build_heartbeat() {
     caps["extensions"] = plat_.extensions != nullptr;
     caps["files"] = plat_.files != nullptr;
     caps["keys"] = plat_.input != nullptr && plat_.input->available();
-    caps["gpu"] = plat_.gpu != nullptr;
+    caps["gpu"] = plat_.gpu != nullptr && plat_.gpu->available();
+    std::vector<UserSession> sess_list = plat_.system ? plat_.system->sessions() : std::vector<UserSession>{};
+    {
+        std::lock_guard lk(helpers_mu_);
+        if (screen_caps_.is_object() && !screen_caps_.empty()) {
+            caps["screen"] = screen_caps_;
+        } else {
+            bool has_wayland = false, has_x11 = false;
+            for (const auto& s : sess_list) {
+                if (s.session_type == "wayland") has_wayland = true;
+                else if (s.session_type == "x11") has_x11 = true;
+            }
+#ifdef _WIN32
+            caps["screen"] = {{"session_type", "win"},
+                              {"snapshot", cfg_.screen_enabled},
+                              {"live", cfg_.screen_enabled},
+                              {"delta_tiles", cfg_.screen_enabled},
+                              {"monitors", 1},
+                              {"secure_desktop", true}};
+#else
+            if (has_wayland && !has_x11) {
+                caps["screen"] = {{"session_type", "wayland"},
+                                  {"snapshot", false},
+                                  {"live", false},
+                                  {"delta_tiles", false},
+                                  {"monitors", 1},
+                                  {"secure_desktop", false}};
+            } else {
+                const bool x11_ok = has_x11 && cfg_.screen_enabled;
+                caps["screen"] = {{"session_type", "x11"},
+                                  {"snapshot", x11_ok},
+                                  {"live", x11_ok},
+                                  {"delta_tiles", x11_ok},
+                                  {"monitors", 1},
+                                  {"secure_desktop", false}};
+            }
+#endif
+        }
+    }
     json usage = json::object();
     if (plat_.system) {
         auto u = plat_.system->self_usage();
@@ -1408,10 +1486,18 @@ void Agent::artifact_loop(std::atomic<bool>& stop) {
         json found = json::array();
         for (const auto& a : res.found) {
             std::string desc = "Local AI model file / store";
-            for (const auto& r : rules_.artifact_rules())
-                if (r.id == a.rule_id) { desc = r.description; break; }
+            Severity sev = Severity::medium;
+            for (const auto& r : rules_.artifact_rules()) {
+                if (r.id == a.rule_id) {
+                    desc = r.description;
+                    sev = r.severity;
+                    break;
+                }
+            }
             const double size_mb = std::round((double(a.size_bytes) / (1024.0 * 1024.0)) * 10.0) / 10.0;
             found.push_back({{"path", a.path}, {"size_mb", size_mb}, {"rule_id", a.rule_id}, {"description", desc}});
+            handle_rule_hit(RuleHit{a.rule_id, "local_model", desc, sev}, a.path,
+                            json{{"path", a.path}, {"size_mb", size_mb}, {"rule_id", a.rule_id}});
         }
         sink_->emit(ev::artifact_scan, {{"count", res.found.size()}, {"files_visited", res.files_visited},
                                         {"truncated", res.truncated}, {"found", found}});
@@ -1569,6 +1655,7 @@ int Agent::run(std::atomic<bool>& stop) {
         plat_.system->set_exam_mode(false);
         plat_.system->set_browser_ai_overview_suppressed(false);
         plat_.system->set_browser_proxy_pac({});
+        plat_.system->set_lab_dns({});
     }
     if (plat_.processes) plat_.processes->stop();
     if (plat_.network) plat_.network->stop();

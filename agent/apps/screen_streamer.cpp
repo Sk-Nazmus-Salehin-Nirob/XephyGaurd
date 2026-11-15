@@ -18,6 +18,10 @@
 #include <winhttp.h>
 #else
 #include "x11_capture.h"
+#ifdef Status
+#undef Status
+#endif
+#include "xg/websocket.hpp"
 #endif
 
 namespace xg {
@@ -155,6 +159,8 @@ struct ScreenStreamer::Impl {
     std::string path = "/agent";
     bool use_tls = false;
     std::string agent_token;
+    std::string ca_file;
+    std::function<void(bool)> on_viewing_changed;
     std::atomic<bool> running{false};
 
     std::thread worker_thread;
@@ -162,9 +168,18 @@ struct ScreenStreamer::Impl {
 
 #if defined(_WIN32)
     std::shared_ptr<HelperWsClient> ws_client;
+#else
+    std::shared_ptr<xg::net::WebSocketClient> ws_client;
 #endif
 
+    void set_viewing(bool& state, bool active) const {
+        if (state == active) return;
+        state = active;
+        if (on_viewing_changed) on_viewing_changed(active);
+    }
+
     void run() {
+        bool viewing = false;
         std::shared_ptr<xg::ScreenCapture> capture;
 #if defined(_WIN32)
         auto dxgi = std::make_shared<xg::WinDxgiCapture>();
@@ -181,26 +196,21 @@ struct ScreenStreamer::Impl {
         cfg.quality_text = 85;
         cfg.codec = xg::Codec::Webp;
 
-#if defined(_WIN32)
-        ws_client = std::make_shared<HelperWsClient>();
-        std::wstring w_host(host.begin(), host.end());
         std::string base_path = path.empty() ? "/agent" : path;
         if (base_path.front() != '/') base_path.insert(base_path.begin(), '/');
-        std::string full_path = base_path + (base_path.find('?') == std::string::npos ? '?' : '&') +
-                                "stream_id=" + std::to_string(stream_id);
+        const std::string full_path = base_path + (base_path.find('?') == std::string::npos ? '?' : '&') +
+                                      "stream_id=" + std::to_string(stream_id);
+
+#if defined(_WIN32)
+        std::wstring w_host(host.begin(), host.end());
         std::wstring w_path(full_path.begin(), full_path.end());
         std::wstring w_tok(agent_token.begin(), agent_token.end());
         ws_client->connect(w_host, port, w_path, use_tls, w_tok);
-#endif
-
-#if defined(_WIN32)
         auto last_reconnect = std::chrono::steady_clock::now();
-#endif
 
         xg::AgentStateMachine state_machine(
             capture, cfg,
             [&](const std::vector<uint8_t>& data) {
-#if defined(_WIN32)
                 if (ws_client) {
                     if (!ws_client->is_connected()) {
                         auto now = std::chrono::steady_clock::now();
@@ -213,54 +223,138 @@ struct ScreenStreamer::Impl {
                         ws_client->send_binary(data.data(), data.size());
                     }
                 }
-#else
-                (void)data;
-#endif
             });
 
-#if defined(_WIN32)
-        rx_thread = std::thread([this, &state_machine]() {
+        rx_thread = std::thread([this, &state_machine, &viewing]() {
             auto last_rx_reconnect = std::chrono::steady_clock::now();
             while (running.load()) {
                 if (ws_client && ws_client->is_connected()) {
                     std::vector<uint8_t> rx_data;
                     if (ws_client->receive(rx_data)) {
+                        if (auto msg = xg::decode(rx_data.data(), rx_data.size())) {
+                            if (msg->type == xg::MsgType::Status && msg->flags == 0) {
+                                state_machine.on_view_stop();
+                                set_viewing(viewing, false);
+                                continue;
+                            }
+                            if (msg->type == xg::MsgType::KeyframeReq ||
+                                (msg->type == xg::MsgType::Status && msg->flags > 0)) {
+                                if (!state_machine.is_thread_running()) {
+                                    state_machine.on_view_stop();
+                                    state_machine.on_view_start(stream_id, "live");
+                                }
+                                set_viewing(viewing, true);
+                            }
+                        }
                         state_machine.on_incoming_message(rx_data.data(), rx_data.size());
                     } else {
                         std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     }
                 } else if (running.load()) {
+                    if (state_machine.is_thread_running()) {
+                        state_machine.on_view_stop();
+                        set_viewing(viewing, false);
+                    }
                     auto now = std::chrono::steady_clock::now();
                     if (std::chrono::duration_cast<std::chrono::seconds>(now - last_rx_reconnect).count() >= 2) {
                         last_rx_reconnect = now;
-                        if (ws_client && ws_client->reconnect()) {
-                            state_machine.on_view_start(stream_id, "live");
-                        }
+                        ws_client && ws_client->reconnect();
                     }
                     std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 }
             }
         });
-#endif
 
-        if (!state_machine.on_view_start(stream_id, "live")) {
-            running.store(false);
-            return;
-        }
-
-        while (running.load() && state_machine.is_thread_running()) {
+        while (running.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
-        state_machine.on_view_stop();
-
-#if defined(_WIN32)
         if (ws_client) {
             ws_client->close();
         }
         if (rx_thread.joinable()) {
             rx_thread.join();
         }
+        state_machine.on_view_stop();
+        set_viewing(viewing, false);
+#else
+        xg::net::TlsOptions tls_opts;
+        tls_opts.ca_file = ca_file;
+        tls_opts.timeout_ms = 5000;
+        std::vector<std::pair<std::string, std::string>> headers;
+        if (!agent_token.empty()) headers.emplace_back("X-Agent-Token", agent_token);
+
+        auto try_connect = [&]() -> bool {
+            std::string err;
+            return ws_client && ws_client->connect(host, port, full_path, tls_opts, &err, headers, use_tls);
+        };
+        try_connect();
+        auto last_rx_reconnect = std::chrono::steady_clock::now();
+
+        xg::AgentStateMachine state_machine(
+            capture, cfg,
+            [&](const std::vector<uint8_t>& data) {
+                if (ws_client && ws_client->open()) {
+                    ws_client->send_binary(data.data(), data.size());
+                }
+            });
+
+        // Keep capture completely stopped when 0 instructors are viewing so idle helper CPU stays ~0%.
+        rx_thread = std::thread([this, &state_machine, &viewing, &try_connect, &last_rx_reconnect]() {
+            while (running.load()) {
+                if (ws_client && ws_client->open()) {
+                    if (auto rx = ws_client->receive(250)) {
+                        const auto* bytes = reinterpret_cast<const uint8_t*>(rx->data());
+                        if (auto msg = xg::decode(bytes, rx->size())) {
+                            if (msg->type == xg::MsgType::Status && msg->flags == 0) {
+                                if (state_machine.is_thread_running()) state_machine.on_view_stop();
+                                set_viewing(viewing, false);
+                                continue;
+                            }
+                            if (msg->type == xg::MsgType::KeyframeReq ||
+                                (msg->type == xg::MsgType::Status && msg->flags > 0)) {
+                                if (!state_machine.is_thread_running()) {
+                                    state_machine.on_view_stop();
+                                    state_machine.on_view_start(stream_id, "live");
+                                }
+                                set_viewing(viewing, true);
+                            }
+                        }
+                        state_machine.on_incoming_message(bytes, rx->size());
+                    } else if (!ws_client->open() && state_machine.is_thread_running()) {
+                        state_machine.on_view_stop();
+                        set_viewing(viewing, false);
+                    }
+                } else if (running.load()) {
+                    if (state_machine.is_thread_running()) {
+                        state_machine.on_view_stop();
+                        set_viewing(viewing, false);
+                    }
+                    auto now = std::chrono::steady_clock::now();
+                    if (std::chrono::duration_cast<std::chrono::seconds>(now - last_rx_reconnect).count() >= 2) {
+                        last_rx_reconnect = now;
+                        try_connect();
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                    }
+                }
+            }
+        });
+
+        while (running.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        if (ws_client) {
+            ws_client->close();
+        }
+        if (rx_thread.joinable()) {
+            rx_thread.join();
+        }
+        if (state_machine.is_thread_running()) {
+            state_machine.on_view_stop();
+        }
+        set_viewing(viewing, false);
 #endif
     }
 };
@@ -276,13 +370,16 @@ bool ScreenStreamer::start(const std::string& ccc_host,
                            uint16_t gateway_port,
                            const std::string& gateway_path,
                            bool use_tls,
-                           const std::string& agent_token) {
+                           const std::string& agent_token,
+                           const std::string& ca_file,
+                           std::function<void(bool)> on_viewing_changed) {
     if (ccc_host.empty() || stream_id == 0) return false;
     const std::string norm_path = gateway_path.empty() ? std::string("/agent") : gateway_path;
 
     if (impl_->running.load()) {
         if (impl_->host == ccc_host && impl_->stream_id == stream_id && impl_->port == gateway_port &&
-            impl_->path == norm_path && impl_->use_tls == use_tls && impl_->agent_token == agent_token) {
+            impl_->path == norm_path && impl_->use_tls == use_tls && impl_->agent_token == agent_token &&
+            impl_->ca_file == ca_file) {
             return true; // Already streaming with identical parameters
         }
         stop();
@@ -294,6 +391,13 @@ bool ScreenStreamer::start(const std::string& ccc_host,
     impl_->path = norm_path;
     impl_->use_tls = use_tls;
     impl_->agent_token = agent_token;
+    impl_->ca_file = ca_file;
+    impl_->on_viewing_changed = std::move(on_viewing_changed);
+#if defined(_WIN32)
+    impl_->ws_client = std::make_shared<HelperWsClient>();
+#else
+    impl_->ws_client = std::make_shared<xg::net::WebSocketClient>();
+#endif
     impl_->running.store(true);
 
     impl_->worker_thread = std::thread([this]() {
@@ -307,11 +411,9 @@ void ScreenStreamer::stop() {
     if (!impl_ || !impl_->running.load()) return;
 
     impl_->running.store(false);
-#if defined(_WIN32)
     if (impl_->ws_client) {
         impl_->ws_client->close();
     }
-#endif
     if (impl_->worker_thread.joinable()) {
         impl_->worker_thread.join();
     }

@@ -89,6 +89,7 @@ inline json sample_signatures() {
       ],
       "extensions": [
         {"id":"ext.copilot","severity":"high","ide":"vscode","ext_ids":["github.copilot","github.copilot-chat"],"description":"Copilot"},
+        {"id":"ext.codeium","severity":"high","ide":"vscode","ext_ids":["codeium.codeium"],"description":"Codeium"},
         {"id":"ext.jb.ai","severity":"high","ide":"jetbrains","ext_ids":["ml-llm"],"description":"JB AI"}
       ],
       "ports": {"rules":[{"id":"port.ollama","severity":"high","port":11434,"description":"Ollama API"},

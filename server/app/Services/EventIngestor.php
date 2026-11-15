@@ -206,12 +206,10 @@ class EventIngestor
 
         switch ($type) {
             case 'rule_hit':
-                if (($d['category'] ?? '') === 'extension' && empty($d['context']['activity'] ?? '')) {
-                    // Installed-only extension hits (not actively in use) are shown in the Installed tab, not Alerts.
-                    return null;
-                }
-                if (($d['category'] ?? '') === 'local_model' || str_starts_with((string) ($d['rule_id'] ?? ''), 'file.')) {
-                    // On-disk model files/stores are shown in the Installed tab, not Alerts.
+                if (($d['category'] ?? '') === 'extension'
+                    && empty($d['context']['activity'] ?? '')
+                    && ($d['mode'] ?? $pc->mode) !== 'test') {
+                    // Installed-only extension hits outside Test/Exam mode stay in the Installed tab, not Alerts.
                     return null;
                 }
                 $actions = is_array($d['actions'] ?? null) ? $d['actions'] : [];

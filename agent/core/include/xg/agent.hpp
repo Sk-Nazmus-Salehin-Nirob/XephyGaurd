@@ -117,6 +117,7 @@ private:
     std::atomic<uint32_t> paste_chords_{0};
     std::set<std::string> probed_ports_;
     std::string last_ext_hash_;
+    json screen_caps_;
     double last_gpu_mem_ = -1;
     bool warned_not_enrolled_ = false;
     std::map<std::string, std::string> reported_tamper_;

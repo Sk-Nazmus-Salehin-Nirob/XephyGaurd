@@ -2,6 +2,8 @@
 // (focused window, clipboard sizes, key timing on Windows), shows the transparency indicator and
 // student notices, and forwards everything to the service over authenticated local IPC.
 #include <atomic>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -103,6 +105,54 @@ struct TaskMgrGuard {
     }
 };
 }  // namespace
+#else
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+namespace {
+void run_gsettings(const char* key, const char* val) {
+    pid_t pid = ::fork();
+    if (pid == 0) {
+        int devnull = ::open("/dev/null", O_RDWR);
+        if (devnull >= 0) {
+            ::dup2(devnull, 0);
+            ::dup2(devnull, 1);
+            ::dup2(devnull, 2);
+            ::close(devnull);
+        }
+        ::execlp("gsettings", "gsettings", "set", "org.gnome.system.proxy", key, val, static_cast<char*>(nullptr));
+        _exit(127);
+    }
+    if (pid > 0) {
+        int status = 0;
+        ::waitpid(pid, &status, 0);
+    }
+}
+
+void set_user_proxy_pac(const std::string& pac_url) {
+    static std::mutex mu;
+    static std::string applied_pac;
+    std::lock_guard lk(mu);
+    if (pac_url == applied_pac) return;
+    if (!std::getenv("DBUS_SESSION_BUS_ADDRESS")) {
+        applied_pac = pac_url;
+        return;
+    }
+    if (!pac_url.empty()) {
+        run_gsettings("autoconfig-url", pac_url.c_str());
+        run_gsettings("mode", "auto");
+        applied_pac = pac_url;
+    } else if (!applied_pac.empty()) {
+        run_gsettings("mode", "none");
+        run_gsettings("autoconfig-url", "");
+        applied_pac.clear();
+    }
+}
+
+struct TaskMgrGuard {
+    ~TaskMgrGuard() { set_user_proxy_pac({}); }
+};
+}  // namespace
 #endif
 
 using namespace xg;
@@ -180,17 +230,46 @@ struct HelperState {
     bool want_window = false, want_clipboard = false, want_keys = false;
     bool window_on = false, clipboard_on = false, keys_on = false;
     std::string mode = "always_on";
+    std::string indicator_base = "Monitored by XephyGuard";
+    std::string indicator_mode = "always_on";
     std::string last_app;
     std::string last_title;
     std::string last_file;
     LastCopyInfo last_copy;
 };
 
+int count_monitors() {
+#ifdef _WIN32
+    int m = GetSystemMetrics(SM_CMONITORS);
+    return m > 0 ? m : 1;
+#else
+    int connected = 0;
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator("/sys/class/drm", ec)) {
+        const std::string name = entry.path().filename().string();
+        if (name.rfind("card", 0) != 0 || name.find('-') == std::string::npos) continue;
+        std::ifstream f(entry.path() / "status");
+        std::string status;
+        if (std::getline(f, status) && status == "connected") ++connected;
+    }
+    return connected > 0 ? connected : 1;
+#endif
+}
+
+bool linux_screen_ready() {
+#ifdef _WIN32
+    return true;
+#else
+    const char* stype = std::getenv("XDG_SESSION_TYPE");
+    if (stype && std::string(stype) == "wayland") return false;
+    const char* disp = std::getenv("DISPLAY");
+    return disp && *disp;
+#endif
+}
+
 int helper_main() {
     log::init("", log::Level::info, true);
-#ifdef _WIN32
     TaskMgrGuard taskmgr_guard;
-#endif
     auto plat = make_helper_platform();
     HelperState st;
     KeyStatsAggregator keys(5);
@@ -211,19 +290,21 @@ int helper_main() {
             if (is_copy) {
                 std::string app_label = format_app_with_file(st.last_app, st.last_file);
                 if (src.empty()) {
-                    src = !app_label.empty() ? app_label : "unknown";
+                    src = !app_label.empty() ? app_label : pi.target_app;
                 } else if (!st.last_file.empty() && src.find('(') == std::string::npos) {
                     src = format_app_with_file(src, st.last_file);
                 }
-                st.last_copy.source_app = src;
-                st.last_copy.chars = chars;
-                st.last_copy.lines = lines;
-                st.last_copy.looks_like_code = code;
-                st.last_copy.code_score = score;
-                st.last_copy.timestamp_ms = now_ms();
+                if (chars > 0 || lines > 0) {
+                    st.last_copy.source_app = src;
+                    st.last_copy.chars = chars;
+                    st.last_copy.lines = lines;
+                    st.last_copy.looks_like_code = code;
+                    st.last_copy.code_score = score;
+                    st.last_copy.timestamp_ms = now_ms();
+                }
             } else {
                 std::string app_label = format_app_with_file(st.last_app, st.last_file);
-                dst = !app_label.empty() ? app_label : (!pi.target_app.empty() ? pi.target_app : "unknown");
+                dst = !app_label.empty() ? app_label : pi.target_app;
                 if (src.empty() || (src == dst && !st.last_copy.source_app.empty() && st.last_copy.source_app != dst)) {
                     src = st.last_copy.source_app;
                 } else if (src == st.last_app && !st.last_copy.source_app.empty()) {
@@ -238,6 +319,9 @@ int helper_main() {
             }
         }
 
+        if (chars == 0 && lines == 0) {
+            return;
+        }
         send({{"t", "paste"},
               {"copy", is_copy},
               {"chars", chars},
@@ -249,7 +333,7 @@ int helper_main() {
     };
 
     std::atomic<int64_t> last_paste_trigger_ms{0};
-    auto handle_paste_chord = [&] {
+    auto handle_paste_chord = [&](bool from_local_input) {
         const int64_t now = now_ms();
         const int64_t last = last_paste_trigger_ms.load();
         if (now - last < 250) {
@@ -257,7 +341,9 @@ int helper_main() {
         }
         last_paste_trigger_ms.store(now);
 
-        send({{"t", "paste_chord"}});
+        if (from_local_input) {
+            send({{"t", "paste_chord"}});
+        }
 
         // Run clipboard probe in a detached thread with a short delay so the target app
         // (e.g. VS Code) receives the paste message and finishes its clipboard read first.
@@ -269,11 +355,11 @@ int helper_main() {
             if (pplat->probe_clipboard) {
                 probed = pplat->probe_clipboard(pi);
             }
-            if (probed) {
+            if (probed && (pi.chars > 0 || pi.lines > 0)) {
                 report_paste(pi, false);
             } else {
                 // Fallback: clipboard was temporarily held by target app or probe timed out.
-                // Use last known copy attributes!
+                // Use last known copy attributes only if non-empty.
                 PasteInfo fallback_pi;
                 {
                     std::lock_guard lk(st.mu);
@@ -282,8 +368,11 @@ int helper_main() {
                     fallback_pi.lines = st.last_copy.lines;
                     fallback_pi.looks_like_code = st.last_copy.looks_like_code;
                     fallback_pi.code_score = st.last_copy.code_score;
+                    fallback_pi.target_app = pi.target_app;
                 }
-                report_paste(fallback_pi, false);
+                if (fallback_pi.chars > 0 || fallback_pi.lines > 0) {
+                    report_paste(fallback_pi, false);
+                }
             }
         }).detach();
     };
@@ -317,7 +406,7 @@ int helper_main() {
             if (st.want_keys)
                 st.keys_on = plat->input->start([&](int64_t t, bool bs, bool paste_chord) {
                     if (paste_chord) {
-                        handle_paste_chord();
+                        handle_paste_chord(true);
                         return;
                     }
                     std::lock_guard lk3(keys_mu);
@@ -333,18 +422,68 @@ int helper_main() {
     int64_t last_ping = 0;
     bool was_connected = false;
 
+    constexpr bool kDefaultScreenEnabled = true;
+    std::atomic<bool> viewing_active{false};
+    std::atomic<bool> indicator_dirty{false};
+    std::atomic<bool> cfg_screen_enabled{kDefaultScreenEnabled};
+    auto on_viewing_changed = [&](bool active) {
+        viewing_active.store(active);
+        indicator_dirty.store(true);
+    };
+    auto refresh_indicator = [&]() {
+        if (!indicator_dirty.exchange(false)) return;
+        std::string text, mode;
+        {
+            std::lock_guard lk(st.mu);
+            mode = st.indicator_mode;
+            text = viewing_active.load()
+                       ? "Monitored by XephyGuard · instructor is viewing your screen"
+                       : st.indicator_base;
+        }
+        plat->ui->set_indicator(text, mode);
+    };
+    auto send_screen_caps = [&](bool enabled) {
+#ifdef _WIN32
+        const std::string stype = "win";
+        const bool can_live = enabled;
+        const bool secure_desk = true;
+#else
+        const char* env_s = std::getenv("XDG_SESSION_TYPE");
+        const bool is_wayland = env_s && std::string(env_s) == "wayland";
+        const bool has_x11 = linux_screen_ready();
+        const std::string stype = is_wayland ? "wayland" : (has_x11 ? "x11" : "headless");
+        const bool can_live = enabled && has_x11;
+        const bool secure_desk = false;
+#endif
+        send({{"t", "screen_caps"},
+              {"session_type", stype},
+              {"snapshot", can_live},
+              {"live", can_live},
+              {"delta_tiles", can_live},
+              {"monitors", count_monitors()},
+              {"secure_desktop", secure_desk}});
+    };
+
     ScreenStreamer screen_streamer;
     auto check_screen_stream = [&]() {
-        if (screen_streamer.is_running()) return;
         bool ok = false;
         std::string err;
         Config cfg = Config::load(default_config_path(), &ok, &err);
-        if (ok && !cfg.ccc_host.empty() && !cfg.pc_id.empty()) {
+        if (!ok) return;
+        cfg_screen_enabled.store(cfg.screen_enabled);
+        const bool allow_screen = cfg.screen_enabled && linux_screen_ready();
+        if (!allow_screen) {
+            if (screen_streamer.is_running()) screen_streamer.stop();
+            return;
+        }
+        if (screen_streamer.is_running()) return;
+        if (!cfg.ccc_host.empty() && !cfg.pc_id.empty()) {
             uint32_t pc_id = 0;
             try { pc_id = static_cast<uint32_t>(std::stoul(cfg.pc_id)); } catch (...) {}
             if (pc_id > 0) {
                 screen_streamer.start(cfg.ccc_host, pc_id, cfg.screen_port, cfg.screen_path,
-                                      cfg.screen_tls || cfg.screen_port == 443, cfg.screen_token);
+                                      cfg.screen_tls || cfg.screen_port == 443, cfg.screen_token, cfg.ca_file,
+                                      on_viewing_changed);
             }
         }
     };
@@ -363,12 +502,14 @@ int helper_main() {
                       {"caps", {{"window", plat->window && plat->window->available()},
                                 {"clipboard", plat->clipboard && plat->clipboard->available()},
                                 {"keys", plat->input && plat->input->available()}}}});
+                send_screen_caps(cfg_screen_enabled.load());
             } else {
                 plat->ui->pump(2000);
                 continue;
             }
         }
         plat->ui->pump(100);
+        refresh_indicator();
         while (auto line = plat->ipc->receive(0)) {
             auto j = json::parse(*line, nullptr, false);
             if (j.is_discarded()) continue;
@@ -376,6 +517,11 @@ int helper_main() {
             if (t == "config") {
                 const std::string host = j.value("ccc_host", "");
                 const std::string pc_id_str = j.value("pc_id", "");
+                bool s_enabled = kDefaultScreenEnabled;
+                if (j.contains("screen") && j["screen"].is_object()) {
+                    s_enabled = j["screen"].value("enabled", s_enabled);
+                }
+                cfg_screen_enabled.store(s_enabled);
                 if (!host.empty() && !pc_id_str.empty()) {
                     uint32_t pc_id = 0;
                     try { pc_id = static_cast<uint32_t>(std::stoul(pc_id_str)); } catch (...) {}
@@ -384,16 +530,24 @@ int helper_main() {
                         std::string s_path = "/agent";
                         bool s_tls = false;
                         std::string s_tok;
+                        std::string s_ca;
                         if (j.contains("screen") && j["screen"].is_object()) {
                             const auto& sc = j["screen"];
                             s_port = sc.value("port", uint16_t(8082));
                             s_path = sc.value("path", std::string("/agent"));
                             s_tls = sc.value("tls", false);
+                            s_ca = sc.value("ca_file", std::string());
                             s_tok = sc.value("agent_token", std::string());
                         }
-                        screen_streamer.start(host, pc_id, s_port, s_path, s_tls || s_port == 443, s_tok);
+                        if (s_enabled && linux_screen_ready()) {
+                            screen_streamer.start(host, pc_id, s_port, s_path, s_tls || s_port == 443, s_tok, s_ca,
+                                                  on_viewing_changed);
+                        } else if (screen_streamer.is_running()) {
+                            screen_streamer.stop();
+                        }
                     }
                 }
+                send_screen_caps(s_enabled);
                 {
                     std::lock_guard lk(st.mu);
                     const auto c = j.value("collect", json::object());
@@ -403,22 +557,26 @@ int helper_main() {
                     st.mode = j.value("mode", "always_on");
 #ifdef _WIN32
                     set_user_taskmgr_disabled(st.mode == "test");
+#endif
                     if (j.contains("proxy_pac_url") && j["proxy_pac_url"].is_string()) {
                         set_user_proxy_pac(j["proxy_pac_url"].get<std::string>());
                     }
-#endif
                 }
                 apply_config();
             } else if (t == "clear_proxy_pac") {
-#ifdef _WIN32
                 set_user_proxy_pac({});
-#endif
             } else if (t == "indicator") {
-                plat->ui->set_indicator(j.value("text", "Monitored by XephyGuard"), j.value("mode", "always_on"));
+                {
+                    std::lock_guard lk(st.mu);
+                    st.indicator_base = j.value("text", "Monitored by XephyGuard");
+                    st.indicator_mode = j.value("mode", "always_on");
+                }
+                indicator_dirty.store(true);
+                refresh_indicator();
             } else if (t == "notify") {
                 plat->ui->notify(j.value("title", "XephyGuard"), j.value("body", ""), j.value("urgent", false));
             } else if (t == "paste_probe") {
-                handle_paste_chord();
+                handle_paste_chord(false);
             }
         }
         {

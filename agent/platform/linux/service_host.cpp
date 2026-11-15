@@ -83,6 +83,7 @@ public:
             const std::string machine = s.user + "@.host";
             pid_t pid = fork();
             if (pid == 0) {
+                ::unsetenv("NOTIFY_SOCKET");
                 execlp("systemctl", "systemctl", "--user", "-M", machine.c_str(), "start", "xephyguard-helper.service",
                        static_cast<char*>(nullptr));
                 _exit(127);

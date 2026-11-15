@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -22,7 +23,9 @@ public:
                uint16_t gateway_port = 8082,
                const std::string& gateway_path = "/agent",
                bool use_tls = false,
-               const std::string& agent_token = {});
+               const std::string& agent_token = {},
+               const std::string& ca_file = {},
+               std::function<void(bool)> on_viewing_changed = {});
 
     // Stops streaming thread cleanly.
     void stop();

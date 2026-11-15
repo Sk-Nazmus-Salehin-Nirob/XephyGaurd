@@ -16,12 +16,14 @@ class AgentHealthClassifier
      * @param array<string, mixed>|object $pc
      * @param array<int, array<string, mixed>|object> $labSnapshot
      * @param DateTimeInterface|int|null $now
+     * @param int|null $timeoutS Optional explicit heartbeat timeout override in seconds
      * @return string 'OK' | 'AGENT_UNAVAILABLE' | 'SUSPECTED_TAMPERING'
      */
-    public static function classify($pc, array $labSnapshot = [], $now = null): string
+    public static function classify($pc, array $labSnapshot = [], $now = null, ?int $timeoutS = null): string
     {
         $nowTimestamp = self::toTimestamp($now) ?? time();
         $pcData = (array) $pc;
+        $threshold = self::resolveTimeout($pcData, $timeoutS);
 
         $lastHeartbeat = self::toTimestamp($pcData['last_heartbeat_at'] ?? $pcData['last_seen_at'] ?? null);
 
@@ -32,8 +34,8 @@ class AgentHealthClassifier
             $elapsed = max(0, $nowTimestamp - $lastHeartbeat);
         }
 
-        // Heartbeat interval is 10s. Missing 3 heartbeats (> 30s) marks agent unavailable.
-        if ($elapsed <= 30) {
+        // Within 3x heartbeat window (default 45s for 15s heartbeat) keeps PC OK
+        if ($elapsed <= $threshold) {
             return self::STATUS_OK;
         }
 
@@ -60,7 +62,8 @@ class AgentHealthClassifier
                     continue;
                 }
                 $otherHb = self::toTimestamp($other['last_heartbeat_at'] ?? $other['last_seen_at'] ?? null);
-                if ($otherHb !== null && ($nowTimestamp - $otherHb) <= 30) {
+                $otherThreshold = self::resolveTimeout($other, $timeoutS);
+                if ($otherHb !== null && ($nowTimestamp - $otherHb) <= $otherThreshold) {
                     $connectedCount++;
                 }
             }
@@ -84,6 +87,22 @@ class AgentHealthClassifier
         }
 
         return self::STATUS_UNAVAILABLE;
+    }
+
+    private static function resolveTimeout(array $pcData, ?int $override = null): int
+    {
+        if ($override !== null && $override > 0) {
+            return $override;
+        }
+        $customHb = (int) ($pcData['heartbeat_s'] ?? 0);
+        if ($customHb > 0) {
+            return max(10, $customHb * 3);
+        }
+        if (function_exists('app') && app()->bound('config')) {
+            return max(10, (int) config('xephyguard.heartbeat_timeout_s', 45));
+        }
+
+        return 45;
     }
 
     private static function toTimestamp($val): ?int

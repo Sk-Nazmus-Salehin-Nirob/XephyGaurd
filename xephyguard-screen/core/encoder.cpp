@@ -82,7 +82,12 @@ Message FrameEncoder::build(const Frame& f, const std::vector<uint32_t>& tile_in
     tile_bgra.resize(static_cast<size_t>(tile_w * tile_h * 4));
     for (int y = 0; y < tile_h; ++y) {
       const size_t src_off = static_cast<size_t>((start_y + y) * f.stride + start_x * 4);
-      std::memcpy(tile_bgra.data() + y * tile_w * 4, f.bgra.data() + src_off, static_cast<size_t>(tile_w * 4));
+      uint8_t* dst_row = tile_bgra.data() + static_cast<size_t>(y * tile_w * 4);
+      std::memcpy(dst_row, f.bgra.data() + src_off, static_cast<size_t>(tile_w * 4));
+      // Desktop captures (X11 TrueColor, Win32 GDI) often emit 0x00 in byte 3; ensure opaque pixels.
+      for (int x = 0; x < tile_w; ++x) {
+        dst_row[x * 4 + 3] = 0xFF;
+      }
     }
 
     TileRec rec;

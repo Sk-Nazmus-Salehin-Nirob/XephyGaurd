@@ -150,7 +150,10 @@ Policy Policy::from_json(const json& j, std::string* err) {
                 }
         }
         for (const auto& r : j.value("disabled_rules", json::array())) p.disabled_rules.insert(r.get<std::string>());
-        for (const auto& d : j.value("work_dirs", json::array())) p.work_dirs.push_back(d.get<std::string>());
+        if (j.contains("work_dirs") && j["work_dirs"].is_array()) {
+            p.work_dirs.clear();
+            for (const auto& d : j["work_dirs"]) p.work_dirs.push_back(d.get<std::string>());
+        }
         for (const auto& k : j.value("kill_exempt", json::array())) p.kill_exempt.insert(normalize_exe(k.get<std::string>()));
         p.signatures_version = j.value("signatures_version", std::string{});
         if (j.contains("notice_text") && j["notice_text"].is_string()) p.notice_text = j["notice_text"].get<std::string>();

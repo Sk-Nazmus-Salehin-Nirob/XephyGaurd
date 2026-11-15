@@ -5,6 +5,7 @@ use App\Http\Controllers\Web\AlertController;
 use App\Http\Controllers\Web\AuthController;
 use App\Http\Controllers\Web\DashboardController;
 use App\Http\Controllers\Web\EnrollmentController;
+use App\Http\Controllers\Web\EvidenceController;
 use App\Http\Controllers\Web\ProfileController;
 use App\Http\Controllers\Web\PublicController;
 use App\Http\Controllers\Web\ReportController;
@@ -57,6 +58,8 @@ Route::group([], function () {
             Route::post('/pcs/{pc}/isolate', [SessionController::class, 'isolate'])->name('pcs.isolate');
             Route::post('/pcs/{pc}/kill', [SessionController::class, 'kill'])->name('pcs.kill');
             Route::post('/pcs/{pc}/rescan', [SessionController::class, 'rescan'])->name('pcs.rescan');
+            Route::post('/pcs/{pc}/evidence', [EvidenceController::class, 'store'])->name('pcs.evidence');
+            Route::get('/evidence/{capture}', [EvidenceController::class, 'show'])->name('evidence.show');
 
             Route::get('/enroll', [EnrollmentController::class, 'index'])->name('enroll.index');
             Route::get('/enroll.html', [EnrollmentController::class, 'index'])->name('enroll.html');

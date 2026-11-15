@@ -17,16 +17,16 @@ class Bootstrap
             'agent' => ['title_capture' => 'full', 'collect' => ['window' => true, 'clipboard' => true, 'keys' => true]]],
         ['name' => 'Practice: AI allowed, logged', 'mode' => 'practice', 'description' => 'Normal lab class. AI sites reachable; light behavior metrics; tampering and local-LLM alerts.',
             'network' => ['block_categories' => [], 'strict_egress' => false, 'google_udm14' => false],
-            'agent' => ['title_capture' => 'full', 'collect' => ['window' => true, 'clipboard' => true, 'keys' => true]]],
+            'agent' => ['title_capture' => 'full', 'collect' => ['window' => true, 'clipboard' => true, 'keys' => true, 'files' => true, 'artifacts' => true]]],
         ['name' => 'Practice: AI blocked', 'mode' => 'practice', 'description' => 'Normal lab class with AI chat sites blocked (DNS + SNI), other egress open.',
             'network' => ['block_categories' => ['ai'], 'strict_egress' => false, 'google_udm14' => true],
-            'agent' => ['title_capture' => 'full', 'collect' => ['window' => true, 'clipboard' => true, 'keys' => true]]],
+            'agent' => ['title_capture' => 'full', 'collect' => ['window' => true, 'clipboard' => true, 'keys' => true, 'files' => true, 'artifacts' => true]]],
         ['name' => 'Test: AI blocked', 'mode' => 'test', 'description' => 'Lab test. Full AI blocking incl. IDE backends and marketplaces; strict egress; all rules active.',
             'network' => ['block_categories' => ['ai', 'ide', 'marketplace', 'vpn', 'custom'], 'strict_egress' => true, 'google_udm14' => true],
-            'agent' => ['title_capture' => 'full', 'collect' => ['window' => true, 'clipboard' => true, 'keys' => true]]],
+            'agent' => ['title_capture' => 'full', 'collect' => ['window' => true, 'clipboard' => true, 'keys' => true, 'files' => true, 'artifacts' => true]]],
         ['name' => 'Exam: strict', 'mode' => 'test', 'description' => 'Exam. As Test, plus full window titles and killing of local LLM runtimes.',
             'network' => ['block_categories' => ['ai', 'ide', 'marketplace', 'vpn', 'custom'], 'strict_egress' => true, 'google_udm14' => true],
-            'agent' => ['title_capture' => 'full', 'collect' => ['window' => true, 'clipboard' => true, 'keys' => true], 'rule_actions' => [
+            'agent' => ['title_capture' => 'full', 'collect' => ['window' => true, 'clipboard' => true, 'keys' => true, 'files' => true, 'artifacts' => true], 'rule_actions' => [
                 'proc.ollama' => ['log', 'warn', 'kill', 'alert'], 'proc.llamacpp' => ['log', 'warn', 'kill', 'alert'],
                 'proc.lmstudio' => ['log', 'warn', 'kill', 'alert'], 'proc.koboldcpp' => ['log', 'warn', 'kill', 'alert']]]],
     ];
@@ -41,7 +41,22 @@ class Bootstrap
             $out[] = 'enrollment key generated';
         }
         foreach (self::PROFILES as $p) {
-            Profile::query()->firstOrCreate(['name' => $p['name']], $p + ['builtin' => true]);
+            $prof = Profile::query()->firstOrCreate(['name' => $p['name']], $p + ['builtin' => true]);
+            if (! $prof->wasRecentlyCreated && $prof->builtin && $p['mode'] !== 'always_on') {
+                $agent = $prof->agent ?? [];
+                $collect = $agent['collect'] ?? [];
+                $updated = false;
+                foreach (['files', 'artifacts'] as $k) {
+                    if (! array_key_exists($k, $collect)) {
+                        $collect[$k] = true;
+                        $updated = true;
+                    }
+                }
+                if ($updated) {
+                    $agent['collect'] = $collect;
+                    $prof->update(['agent' => $agent]);
+                }
+            }
         }
         $out[] = 'blocklist entries added: '.$this->blocklists->importSeed();
         $out[] = 'rules added: '.$this->signatures->importSeed();
