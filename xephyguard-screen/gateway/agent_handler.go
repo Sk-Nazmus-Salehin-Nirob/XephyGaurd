@@ -61,6 +61,8 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
+	go keepAlive(ctx, c)
+
 	// Writer loop to agent for ACKs and Keyframe requests
 	agentWriterDone := make(chan struct{})
 	go func() {

@@ -96,12 +96,12 @@ Each step quotes before/after numbers from Step 20. Stop and re-plan if two step
 - Step 43 moved to Phase 0 (decided: retire F47, DECISIONS #25).
 
 ## Phase 7: Errors, logging, validation
-- [ ] Step 44: [screen] Gateway `ReadHeaderTimeout`, WebSocket ping/pong every 10 s, "agent offline" status on timeout (fixes I-SCREEN-14; touches F45)
+- [x] Step 44 (vet only): [screen] Gateway `ReadHeaderTimeout`, WebSocket ping/pong every 10 s, "agent offline" status on timeout (fixes I-SCREEN-14; touches F45)
 - [ ] Step 45: [screen] Viewer reports decode and control errors through `onError` and counters (fixes I-SCREEN-28; touches F43)
 - [x] ~~Step 46: [agent] Windows receive loop handles fragmented messages~~ **Dropped** (DECISIONS #24): Step 61 removes that loop; the service's realtime WSS client must already handle fragments with a cap (check in Step 60)
 
 ## Phase 8: Medium/Low bugs
-- [ ] Step 47: [screen] Remove idle streams from the map after 60 s (fixes I-SCREEN-26; touches F45)
+- [x] Step 47: [screen] Remove idle streams from the map after 60 s (fixes I-SCREEN-26; touches F45)
 - [ ] Step 48: Wayland: owner decision between forcing Xorg on lab PCs and a PipeWire portal path (no audit ID; touches F43) [APPROVAL; installers out of scope here]
 
 ## Phase 9: Dependency updates

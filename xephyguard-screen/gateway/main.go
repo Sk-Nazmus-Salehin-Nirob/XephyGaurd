@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -157,9 +158,12 @@ func main() {
 	relay.originPatterns = splitList(*allowedOrigins)
 
 	server := &http.Server{
-		Addr:    *addr,
-		Handler: relay.Routes(),
+		Addr:              *addr,
+		Handler:           relay.Routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
+	go relay.RunJanitor(context.Background())
 
 	fmt.Printf("XephyGuard Screen Gateway listening on %s\n", *addr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

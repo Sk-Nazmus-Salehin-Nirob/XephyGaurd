@@ -66,6 +66,7 @@ type Stream struct {
 	keyReqTimer    *time.Timer // a request held back by kKeyframeReqInterval; nil when none
 	ctx            context.Context
 	cancel         context.CancelFunc
+	idleSince      time.Time // guarded by RelayServer.mu: when a sweep first saw no agent and no viewer (zero = busy)
 }
 
 func newStream(streamID uint32) *Stream {
@@ -108,6 +109,7 @@ func (s *RelayServer) getOrCreateStream(streamID uint32) *Stream {
 		st = newStream(streamID)
 		s.streams[streamID] = st
 	}
+	st.idleSince = time.Time{}
 	return st
 }
 
@@ -121,7 +123,72 @@ func (s *RelayServer) findStreamForViewer(preferredID uint32) *Stream {
 		st = newStream(preferredID)
 		s.streams[preferredID] = st
 	}
+	st.idleSince = time.Time{}
 	return st
+}
+
+// kStreamIdleTTL is how long a stream with no agent and no viewer stays in the map (screen Step 47).
+const kStreamIdleTTL = 60 * time.Second
+
+// sweepIdleStreams removes streams that had neither an agent connection nor a viewer for kStreamIdleTTL.
+// A handler that fetches a stream resets its idle clock under s.mu, so a stream cannot be removed from under it.
+func (s *RelayServer) sweepIdleStreams(now time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	removed := 0
+	for id, st := range s.streams {
+		st.mu.Lock()
+		busy := st.agentConn != nil || len(st.viewers) > 0
+		st.mu.Unlock()
+		switch {
+		case busy:
+			st.idleSince = time.Time{}
+		case st.idleSince.IsZero():
+			st.idleSince = now
+		case now.Sub(st.idleSince) >= kStreamIdleTTL:
+			st.cancel()
+			delete(s.streams, id)
+			removed++
+		}
+	}
+	return removed
+}
+
+// RunJanitor sweeps idle streams every 15 s until ctx ends.
+func (s *RelayServer) RunJanitor(ctx context.Context) {
+	t := time.NewTicker(15 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			s.sweepIdleStreams(now)
+		}
+	}
+}
+
+// keepAlive pings the peer every 10 s (answer within 10 s) and closes the socket when it does not answer, so a
+// half-dead connection ends instead of lingering (screen Step 44). Needs a concurrent reader on c.
+func keepAlive(ctx context.Context, c *websocket.Conn) {
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err := c.Ping(pctx)
+			cancel()
+			if err != nil {
+				if ctx.Err() == nil {
+					c.Close(websocket.StatusGoingAway, "ping timeout")
+				}
+				return
+			}
+		}
+	}
 }
 
 func (s *RelayServer) removeStream(streamID uint32) {

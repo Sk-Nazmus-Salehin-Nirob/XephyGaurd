@@ -89,6 +89,8 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
+	go keepAlive(ctx, c)
+
 	// Writer goroutine to viewer
 	writerDone := make(chan struct{})
 	go func() {
