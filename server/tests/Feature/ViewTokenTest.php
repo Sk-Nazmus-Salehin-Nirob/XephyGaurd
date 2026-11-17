@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Lab;
 use App\Models\LabSession;
 use App\Models\ScreenViewAudit;
 use App\Models\SessionPc;
@@ -113,6 +114,8 @@ class ViewTokenTest extends TestCase
         $this->assertSame((string) $instructor->id, $decoded->sub);
         $this->assertSame($student->id, $decoded->student_id);
         $this->assertSame($session->id, $decoded->lab_session_id);
+        $this->assertSame($pc->id, $decoded->pc_id);
+        $this->assertSame($pc->id, $decoded->stream_id);
         $this->assertSame('live', $decoded->mode);
         $this->assertNotEmpty($decoded->jti);
         $this->assertSame(30, $decoded->exp - $decoded->iat);
@@ -266,5 +269,82 @@ class ViewTokenTest extends TestCase
         $this->assertDatabaseHas('screen_view_audits', [
             'id' => $res->json('audit_id'), 'pc_id' => $pc->id, 'student_id' => $student->id, 'lab_session_id' => $session->id,
         ]);
+    }
+
+    private function activeSessionFor(int $startedBy, Student $student, int $pcId): LabSession
+    {
+        $session = LabSession::create([
+            'lab_id' => Lab::first()->id,
+            'profile_id' => $this->profile('Test: AI blocked')->id,
+            'course' => 'CS101',
+            'title' => 'Lab 1',
+            'mode' => 'exam',
+            'status' => 'active',
+            'starts_at' => now(),
+            'ends_at' => now()->addHours(2),
+            'started_at' => now(),
+            'started_by' => $startedBy,
+        ]);
+        SessionPc::create(['lab_session_id' => $session->id, 'pc_id' => $pcId, 'student_id' => $student->id]);
+
+        return $session;
+    }
+
+    public function test_client_stream_id_is_ignored_for_student_and_pc_tokens(): void
+    {
+        $this->bootLab();
+        $instructor = $this->user('instructor');
+        [$pc] = $this->enrolledPc('192.168.10.41', 'PC-OWN');
+        [$other] = $this->enrolledPc('192.168.10.42', 'PC-OTHER');
+        $student = Student::create(['name' => 'Gina', 'login' => 'gina', 'student_number' => 'S1007']);
+        $this->activeSessionFor($instructor->id, $student, $pc->id);
+        $secret = config('services.screen_gateway.secret');
+
+        $res = $this->actingAs($instructor)->postJson("/api/screen/{$student->id}/token", ['stream_id' => $other->id]);
+        $res->assertOk();
+        $this->assertSame($pc->id, $res->json('stream_id'));
+        $claims = JWT::decode($res->json('token'), new Key($secret, 'HS256'));
+        $this->assertSame($pc->id, $claims->stream_id);
+        $this->assertSame($pc->id, $claims->pc_id);
+
+        $res = $this->actingAs($instructor)->postJson("/api/screen/pc/{$pc->id}/token", ['stream_id' => $other->id]);
+        $res->assertOk();
+        $this->assertSame($pc->id, $res->json('stream_id'));
+        $claims = JWT::decode($res->json('token'), new Key($secret, 'HS256'));
+        $this->assertSame($pc->id, $claims->stream_id);
+        $this->assertSame($pc->id, $claims->pc_id);
+        $this->assertDatabaseHas('screen_view_audits', ['id' => $res->json('audit_id'), 'stream_id' => $pc->id]);
+    }
+
+    public function test_renewed_token_keeps_pc_id(): void
+    {
+        $this->bootLab();
+        $instructor = $this->user('instructor');
+        [$pc] = $this->enrolledPc('192.168.10.43', 'PC-RENEW');
+        $student = Student::create(['name' => 'Hal', 'login' => 'hal', 'student_number' => 'S1008']);
+        $this->activeSessionFor($instructor->id, $student, $pc->id);
+
+        $auditId = $this->actingAs($instructor)->postJson("/api/screen/{$student->id}/token")->json('audit_id');
+        $this->assertDatabaseHas('screen_view_audits', ['id' => $auditId, 'pc_id' => $pc->id, 'stream_id' => $pc->id]);
+
+        $renew = $this->actingAs($instructor)->postJson("/api/screen/{$auditId}/renew");
+        $renew->assertOk();
+        $claims = JWT::decode($renew->json('token'), new Key(config('services.screen_gateway.secret'), 'HS256'));
+        $this->assertSame($pc->id, $claims->pc_id);
+        $this->assertSame($pc->id, $claims->stream_id);
+    }
+
+    public function test_audit_without_pc_cannot_be_renewed(): void
+    {
+        $this->bootLab();
+        $instructor = $this->user('instructor');
+        $audit = ScreenViewAudit::create([
+            'instructor_id' => $instructor->id,
+            'stream_id' => 5001,
+            'mode' => 'live',
+            'started_at' => now(),
+        ]);
+
+        $this->actingAs($instructor)->postJson("/api/screen/{$audit->id}/renew")->assertStatus(422);
     }
 }

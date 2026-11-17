@@ -124,6 +124,12 @@ active session streams over IPC (`screen_caps.ipc_stream`), relays helper frames
 8 MiB, excess dropped) and gateway messages down as `screen_rx`; reconnect backoff 1 s doubling to 30 s.
 Messages from the gateway are capped at 64 KiB per WebSocket message (fragments included) and 1 KiB per relayed message.
 
+## Screen view lease (dashboard → gateway)
+`POST /api/screen/pc/{pc}/token`, `POST /api/screen/{student}/token` and `POST /api/screen/{audit}/renew` return an
+HS256 JWT (30 s) with `iss`, `aud`, `sub` (user id), `pc_id`, `stream_id`, `student_id`, `lab_session_id`, `mode`,
+`iat`, `nbf`, `exp`, `jti`. `stream_id` is always the PC's id (the stream the agent opens) and is set by the server;
+a client-sent `stream_id` is ignored. A renewed token keeps the audit's `pc_id`; an audit without one is not renewed.
+
 ## Helper ↔ service IPC
 JSON lines over `/run/xephyguard/helper.sock` (Linux, peer checked with `SO_PEERCRED` + `/proc/<pid>/exe`)
 or `\\.\pipe\XephyGuardHelper` (Windows, client image path + session id checked). See
