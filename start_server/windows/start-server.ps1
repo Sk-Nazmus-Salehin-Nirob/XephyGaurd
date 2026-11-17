@@ -57,6 +57,12 @@ if (-not $envMap["XG_INTERNAL_TOKEN"]) {
     $envRaw = Set-DotEnvKey -Content $envRaw -Key "XG_INTERNAL_TOKEN" -Value (New-RandomHex 24)
     $envChanged = $true
 }
+# Laravel calls the gateway's loopback revoke on this port.
+$gwInternalUrl = "http://127.0.0.1:$GatewayPort"
+if ($envMap["SCREEN_GATEWAY_INTERNAL_URL"] -ne $gwInternalUrl) {
+    $envRaw = Set-DotEnvKey -Content $envRaw -Key "SCREEN_GATEWAY_INTERNAL_URL" -Value $gwInternalUrl
+    $envChanged = $true
+}
 if ($envChanged) {
     Set-Content -Path $EnvFile -Value $envRaw -NoNewline
     $envMap = Read-DotEnvMap -Path $EnvFile
@@ -125,6 +131,7 @@ if (-not $pGateway) {
     $env:SCREEN_GATEWAY_SECRET       = $gwSecret
     $env:SCREEN_GATEWAY_INTERNAL_TOKEN = $envMap["XG_INTERNAL_TOKEN"]
     $env:SCREEN_GATEWAY_SERVER_URL   = "http://127.0.0.1:$AppPort"
+    $env:SCREEN_GATEWAY_ALLOWED_ORIGINS = "*:$AppPort"   # dashboard served by Laravel on its own port
     $env:SCREEN_GATEWAY_ISSUER       = $gwIssuer
     $env:SCREEN_GATEWAY_AUDIENCE     = $gwAudience
 
