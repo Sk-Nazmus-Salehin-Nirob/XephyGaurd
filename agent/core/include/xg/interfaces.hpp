@@ -55,6 +55,14 @@ public:
     virtual bool restore() = 0;
     /// True while the block rules are present and enabled (the agent re-checks this periodically).
     virtual bool active() = 0;
+    /// Session egress lock, independent of isolate()/restore() (own table / firewall rule). `off` removes it.
+    /// Idempotent. Returns false if the rules could not be installed (or the adapter has no lock).
+    virtual bool set_network_lock(NetworkLock level, const std::vector<std::string>& exempt_hosts) {
+        (void)exempt_hosts;
+        return level == NetworkLock::off;
+    }
+    /// The lock that is installed right now (the agent re-checks this for tamper).
+    virtual NetworkLock network_lock() { return NetworkLock::off; }
 };
 
 class IWindowMonitor {

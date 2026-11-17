@@ -43,6 +43,18 @@ public:
     bool isolate(const std::vector<std::string>& e) override { on = true; ++isolate_calls; exempt = e; return true; }
     bool restore() override { on = false; ++restore_calls; return true; }
     bool active() override { return on; }
+    NetworkLock lock = NetworkLock::off;
+    int lock_calls = 0;
+    bool lock_fails = false;
+    std::vector<std::string> lock_exempt;
+    bool set_network_lock(NetworkLock l, const std::vector<std::string>& e) override {
+        ++lock_calls;
+        if (lock_fails) return false;
+        lock = l;
+        lock_exempt = e;
+        return true;
+    }
+    NetworkLock network_lock() override { return lock; }
 };
 
 class FakeExtensions : public IExtensionScanner {

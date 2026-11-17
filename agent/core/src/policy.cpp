@@ -35,6 +35,20 @@ const char* to_string(TitleCapture t) {
     }
     return "app_only";
 }
+NetworkLock parse_network_lock(const std::string& s) {
+    const auto l = to_lower(s);
+    if (l == "observe") return NetworkLock::observe;
+    if (l == "strict") return NetworkLock::strict;
+    return NetworkLock::off;
+}
+const char* to_string(NetworkLock l) {
+    switch (l) {
+        case NetworkLock::off: return "off";
+        case NetworkLock::observe: return "observe";
+        case NetworkLock::strict: return "strict";
+    }
+    return "off";
+}
 Action parse_action(const std::string& s) {
     auto l = to_lower(s);
     if (l == "warn") return Action::warn;
@@ -173,6 +187,8 @@ Policy Policy::from_json(const json& j, std::string* err) {
         if (j.contains("proxy_pac_url") && j["proxy_pac_url"].is_string()) {
             p.proxy_pac_url = j["proxy_pac_url"].get<std::string>();
         }
+        if (j.contains("network_lock") && j["network_lock"].is_string())
+            p.network_lock = parse_network_lock(j["network_lock"].get<std::string>());
     } catch (const std::exception& e) {
         if (err) *err = e.what();
     }
@@ -217,6 +233,7 @@ json Policy::to_json() const {
         {"google_search_url", google_search_url},
         {"proxy_mode", proxy_mode},
         {"proxy_pac_url", proxy_pac_url},
+        {"network_lock", to_string(network_lock)},
     };
 }
 

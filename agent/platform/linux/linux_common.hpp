@@ -16,6 +16,8 @@ namespace xg::lnx {
 /// on stdin; stdout/stderr go to /dev/null. Returns the exit status, 127 if it could not be executed, or -1.
 /// nftables ruleset for isolation: public IPv4/IPv6 dropped, `exempt_ips` (v4 and v6, e.g. the CCC) kept.
 std::string nft_isolation_rules(const std::vector<std::string>& exempt_ips);
+/// nft script for the session network lock (empty for NetworkLock::off).
+std::string nft_lock_rules(NetworkLock level, const std::vector<std::string>& exempt_ips);
 
 int run_program(const std::vector<std::string>& argv, const std::string& stdin_text = {});
 

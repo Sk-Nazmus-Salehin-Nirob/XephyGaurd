@@ -18,6 +18,8 @@ Mode parse_mode(const std::string& s);
 const char* to_string(Mode m);
 TitleCapture parse_title_capture(const std::string& s);
 const char* to_string(TitleCapture t);
+NetworkLock parse_network_lock(const std::string& s);
+const char* to_string(NetworkLock l);
 Action parse_action(const std::string& s);
 const char* to_string(Action a);
 
@@ -50,7 +52,8 @@ struct Policy {
     bool suppress_ai_overview = false;        // suppress Google Search AI overview locally via browser policies
     std::string google_search_url;            // optional parameterized udm=14 URL template from server policy
     std::string proxy_mode;                   // gateway | proxy_only
-    std::string proxy_pac_url;                // dynamic http://<ccc>/proxy.pac when proxy_mode == proxy_only
+    std::string proxy_pac_url;                // https://<ccc>/proxy.pac when proxy_mode == proxy_only
+    NetworkLock network_lock = NetworkLock::off;  // per session; applied only in proxy_only and not Always-on
 
     static Policy default_for(Mode m);
     static Policy from_json(const json& j, std::string* err = nullptr);

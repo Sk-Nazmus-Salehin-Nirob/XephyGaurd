@@ -264,6 +264,50 @@ TEST_CASE("common dev ports need a positive LLM-API probe") {
     CHECK(h.agent->rules().match_port(8000, true)->rule_id == "port.vllm");
 }
 
+TEST_CASE("network lock follows the session in proxy_only mode only") {
+    Harness h("ccc.lab");
+    auto pol = [](Mode m, const char* proxy_mode, const char* lock) {
+        auto p = Policy::default_for(m);
+        p.proxy_mode = proxy_mode;
+        p.network_lock = parse_network_lock(lock);
+        return p;
+    };
+    h.agent->apply_policy(pol(Mode::test, "proxy_only", "observe"));
+    CHECK(h.iso->lock == NetworkLock::observe);
+    CHECK(h.iso->lock_exempt == std::vector<std::string>{"ccc.lab"});
+    CHECK(h.agent->build_heartbeat()["network_lock"] == "observe");
+    CHECK_FALSE(h.iso->on);  // the lock is not isolation
+
+    h.agent->apply_policy(pol(Mode::test, "proxy_only", "strict"));
+    CHECK(h.iso->lock == NetworkLock::strict);
+    const int calls = h.iso->lock_calls;
+    h.agent->apply_policy(pol(Mode::test, "proxy_only", "strict"));
+    CHECK(h.iso->lock_calls == calls);  // unchanged policy: no rule churn
+
+    // Gateway mode (the gateway enforces) and Always-on never lock the PC.
+    h.agent->apply_policy(pol(Mode::test, "gateway", "strict"));
+    CHECK(h.iso->lock == NetworkLock::off);
+    h.agent->apply_policy(pol(Mode::always_on, "proxy_only", "strict"));
+    CHECK(h.iso->lock == NetworkLock::off);
+
+    // A failed install is reported truthfully in the heartbeat.
+    h.iso->lock_fails = true;
+    h.agent->apply_policy(pol(Mode::practice, "proxy_only", "observe"));
+    CHECK(h.agent->network_lock() == NetworkLock::off);
+    CHECK(h.agent->build_heartbeat()["network_lock"] == "off");
+}
+
+TEST_CASE("policy network_lock parses known values and falls back to off") {
+    CHECK(Policy::from_json(json{{"network_lock", "strict"}}).network_lock == NetworkLock::strict);
+    CHECK(Policy::from_json(json{{"network_lock", "OBSERVE"}}).network_lock == NetworkLock::observe);
+    CHECK(Policy::from_json(json{{"network_lock", "bogus"}}).network_lock == NetworkLock::off);
+    CHECK(Policy::from_json(json{{"network_lock", 3}}).network_lock == NetworkLock::off);
+    CHECK(Policy::from_json(json::object()).network_lock == NetworkLock::off);
+    auto p = Policy::default_for(Mode::test);
+    p.network_lock = NetworkLock::observe;
+    CHECK(Policy::from_json(p.to_json()).network_lock == NetworkLock::observe);
+}
+
 TEST_CASE("isolate cuts the Internet (LAN + CCC kept) and closes AI apps even outside tests") {
     Harness h;
     h.agent->apply_policy(Policy::default_for(Mode::practice));  // practice: detect + alert only

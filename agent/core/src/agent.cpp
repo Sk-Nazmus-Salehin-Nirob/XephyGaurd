@@ -106,6 +106,7 @@ void Agent::apply_policy(const Policy& p) {
             (p.proxy_mode == "gateway" && p.mode != Mode::always_on) ? cfg_.ccc_host : std::string{};
         plat_.system->set_lab_dns(dns_target);
     }
+    apply_network_lock();
     push_helper_config();
     if (running_) restart_watchers();
 }
@@ -936,6 +937,24 @@ void Agent::apply_isolation(bool on) {
     push_helper_config();
 }
 
+NetworkLock Agent::wanted_network_lock() const {
+    if (policy_.proxy_mode != "proxy_only" || policy_.mode == Mode::always_on) return NetworkLock::off;
+    return policy_.network_lock;
+}
+
+void Agent::apply_network_lock(bool force) {
+    if (!plat_.isolator) return;
+    const NetworkLock want = wanted_network_lock();
+    if (!force && want == network_lock_) return;
+    if (plat_.isolator->set_network_lock(want, {cfg_.ccc_host})) {
+        if (want != network_lock_) log::info("network lock: {} -> {}", to_string(network_lock_), to_string(want));
+        network_lock_ = want;
+    } else {
+        // Retried by run_periodic; the heartbeat keeps reporting the lock that is really installed.
+        log::error("network lock: could not apply '{}'", to_string(want));
+    }
+}
+
 // ------------------------------------------------------------------------------- watchers, misc
 void Agent::restart_watchers() {
     const Policy& p = policy_;
@@ -1142,6 +1161,7 @@ json Agent::build_heartbeat() {
                 {"realtime", status_.realtime_connected.load()},
                 {"suppressed_hits", suppressed_hits_},
                 {"core_dropped", mailbox_.dropped()},
+                {"network_lock", to_string(network_lock_)},
                 {"capabilities", caps},
                 {"usage", usage}};
 }
@@ -1367,6 +1387,15 @@ void Agent::run_periodic(int64_t now) {
                                  {"detail", "the network isolation rule was removed locally and has been re-applied"}});
         plat_.isolator->isolate({cfg_.ccc_host});
     }
+    if (network_lock_ != NetworkLock::off && plat_.isolator && due("netlock", 20) &&
+        plat_.isolator->network_lock() != network_lock_) {
+        log::warn("network lock: rules missing, re-applying");
+        sink_->emit(ev::tamper, {{"kind", "network_lock_removed"}, {"user", active_user()},
+                                 {"detail", "the session network lock was removed locally and has been re-applied"}});
+        apply_network_lock(true);
+    } else if (plat_.isolator && wanted_network_lock() != network_lock_ && due("netlock_retry", 30)) {
+        apply_network_lock();
+    }
 }
 
 namespace {
@@ -1459,6 +1488,7 @@ int Agent::run(std::atomic<bool>& stop) {
         log::warn("isolation: PC was isolated before the agent (re)started; re-applying the network block");
         apply_isolation(true);  // the CCC lifts it with its next ack if the instructor already restored this PC
     }
+    apply_network_lock(true);  // also removes a lock left behind by a crash when the policy no longer wants one
 
     publish_view();
     next_artifact_scan_ = steady_ms() + 5000;  // keep service startup fast

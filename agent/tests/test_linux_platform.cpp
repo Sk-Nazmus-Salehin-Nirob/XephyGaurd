@@ -460,6 +460,23 @@ TEST_CASE("isolation ruleset keeps IPv4 and IPv6 CCC addresses reachable (I-AGEN
     CHECK(xg::lnx::nft_isolation_rules({"203.0.113.5"}).find("accept\n") == std::string::npos);
 }
 
+TEST_CASE("network lock rulesets: observe drops only QUIC, strict drops every public destination", "[linux]") {
+    using xg::NetworkLock;
+    CHECK(xg::lnx::nft_lock_rules(NetworkLock::off, {"203.0.113.5"}).empty());
+    const auto obs = xg::lnx::nft_lock_rules(NetworkLock::observe, {"203.0.113.5", "2001:db8::5"});
+    CHECK(obs.find("table inet xephyguard_lock") != std::string::npos);
+    CHECK(obs.find("xephyguard_isolate") == std::string::npos);  // never touches the isolation table
+    CHECK(obs.find("} udp dport 443 drop") != std::string::npos);
+    CHECK(obs.find("2000::/3 udp dport 443 drop") != std::string::npos);
+    CHECK(obs.find("203.0.113.4") != std::string::npos);  // the CCC stays reachable
+    CHECK(obs.find("ip6 daddr { 2001:db8::5 } accept") != std::string::npos);
+    const auto strict = xg::lnx::nft_lock_rules(NetworkLock::strict, {"203.0.113.5"});
+    CHECK(strict.find("udp dport") == std::string::npos);
+    CHECK(strict.find("} drop") != std::string::npos);
+    CHECK(strict.find("2000::/3 drop") != std::string::npos);
+    CHECK(strict.find("203.0.113.4") != std::string::npos);
+}
+
 TEST_CASE("Linux kill refuses a pid whose start time changed (F35)", "[linux]") {
     auto pm = xg::lnx::make_process_monitor();
     const pid_t child = ::fork();

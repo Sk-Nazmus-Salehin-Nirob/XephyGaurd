@@ -49,6 +49,7 @@ public:
     bool apply_signatures(const json& envelope, bool require_signature = true);
     void handle_command(const protocol::Command& cmd);
     bool isolated() const { return isolated_; }
+    NetworkLock network_lock() const { return network_lock_; }
     void handle_rule_hit(const RuleHit& hit, const std::string& subject, json context, int64_t pid = 0);
     void scan_processes();
     void process_snapshot();
@@ -95,6 +96,10 @@ private:
     void check_integrity(bool initial);
     /// Turns network isolation on/off (Internet cut, LAN + CCC kept), persists it and re-evaluates running apps.
     void apply_isolation(bool on);
+    /// The lock the policy asks for: the session's network_lock in proxy_only mode, off otherwise.
+    NetworkLock wanted_network_lock() const;
+    /// Installs / removes the egress lock when it differs from what is installed (`force`: always).
+    void apply_network_lock(bool force = false);
     void sample_gpu();
     void flush_keystats(int64_t now, bool force);
     void flush_file_activity();
@@ -129,6 +134,7 @@ private:
     Policy policy_;
     json realtime_cfg_;
     bool isolated_ = false;
+    NetworkLock network_lock_ = NetworkLock::off;  // what set_network_lock() last installed successfully
     int64_t clock_offset_ms_ = 0;
     int64_t last_ack_seq_ = 0;
     HitDeduper dedup_;

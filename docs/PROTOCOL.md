@@ -40,6 +40,11 @@ one issued with that token (`AuthenticateAgent`). Per-agent rate limit: 120 requ
 `policy.version` is a deterministic CRC of the policy. Agents refuse signature bundles whose signature
 does not verify against the lab CA and report a `tamper/signature_invalid` event.
 
+`policy.network_lock` (`off` | `observe` | `strict`, default `off`, DECISIONS #23) is applied only when
+`proxy_mode` is `proxy_only` and the mode is not `always_on`. `observe` drops QUIC (UDP 443) to public
+addresses; `strict` drops every public destination except the CCC. If the local rules disappear the agent
+re-applies them and reports `tamper/network_lock_removed`.
+
 ### `POST /api/agent/v1/events`
 ```json
 { "v": 1, "pc_id": "12",
@@ -59,6 +64,8 @@ Response: `{ack_seq, server_time_ms, policy_version, signatures_version, isolate
 * A changed `policy_version`/`signatures_version` in the ack makes the agent re-fetch the policy.
 * `heartbeat.core_dropped` (diagnostic counter, no personal data): internal messages the agent core dropped
   because its bounded mailbox was full (DECISIONS #22). Non-zero means some local observations may be missing.
+* `heartbeat.network_lock`: the session network lock that is really installed on the PC (`off` / `observe` /
+  `strict`). It differs from the session setting while the rules cannot be applied.
 
 ### Event types
 | type | data (numbers and names only — never typed text, clipboard text or screen content) |
