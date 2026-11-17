@@ -116,6 +116,7 @@ private:
   // Live mode pipeline: capture_loop() stages at most one captured frame (its tiles are already in tracker_); the
   // encode thread takes it, builds and sends it while the capture thread captures the next one. Guarded by mutex_.
   std::optional<Frame> staged_;
+  std::vector<uint32_t> refine_;  // tiles last sent below full quality; re-sent sharp when the screen is static and the governor has budget (Step 30)
   std::condition_variable_any slot_cv_;  // staged_ filled or taken, or stop
   std::atomic<uint64_t> enc_cpu_us_{0};  // the encode thread's own CPU time, for the governor
 

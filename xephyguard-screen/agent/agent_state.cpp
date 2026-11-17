@@ -2,6 +2,7 @@
 #include "thread_priority.h"
 #include <algorithm>
 #include <chrono>
+#include <iterator>
 
 namespace xg {
 
@@ -407,6 +408,11 @@ void AgentStateMachine::capture_loop() {
           need_picture = !wall_sent_;
           if (wall_sent_) unchanged = wall_unchanged_locked();
         } else {
+          // Progressive refinement (Step 30): tiles sent at reduced quality go out again at full quality, only while
+          // nothing else is pending, the stream is not throttled and the window has room.
+          if (mode_ == "live" && tracker_ && flow_ && !refine_.empty() && tracker_->pending().empty() &&
+              governor_.level() == 0 && flow_->quality_scale() >= 0.999 && flow_->can_send(get_now_ms()))
+            tracker_->add_pending(refine_);
           need_picture = !tracker_ || (flow_ && flow_->needs_keyframe()) || !tracker_->pending().empty();
         }
       }
@@ -554,6 +560,17 @@ void AgentStateMachine::encode_loop() {
       last_sent_seq_ = seq;
       if (keyframe) flow_->note_keyframe_sent();
       scale = std::min(flow_->quality_scale(), governor_.quality_scale());
+      if (keyframe) refine_.clear();
+      if (scale < 0.999) {  // sent blurry: remember for refinement
+        refine_.insert(refine_.end(), pending.begin(), pending.end());
+        std::sort(refine_.begin(), refine_.end());
+        refine_.erase(std::unique(refine_.begin(), refine_.end()), refine_.end());
+      } else if (!refine_.empty()) {  // sent at full quality: no longer blurry
+        std::vector<uint32_t> sorted = pending, rest;
+        std::sort(sorted.begin(), sorted.end());
+        std::set_difference(refine_.begin(), refine_.end(), sorted.begin(), sorted.end(), std::back_inserter(rest));
+        refine_.swap(rest);
+      }
       workers = governor_.workers();
       last_frame_ms_ = get_now_ms();
       ++gov_frames_;
