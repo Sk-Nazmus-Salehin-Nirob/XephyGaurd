@@ -30,6 +30,8 @@ public:
     virtual std::optional<std::string> receive(int timeout_ms) = 0;
     virtual bool open() const = 0;
     virtual void close() = 0;
+    /// Thread-safe: makes a receive() blocked on another thread return now (the link is then closed by its owner).
+    virtual void interrupt() {}
 };
 using ScreenLinkFactory = std::function<std::unique_ptr<IScreenLink>(const UplinkView&, std::string* err)>;
 
@@ -59,11 +61,14 @@ public:
     /// Relay thread body: connect, relay, reconnect with backoff, until `stop`.
     void run(const std::atomic<bool>& stop);
     void wake();
+    /// Shutdown: sets nothing itself (the caller set `stop` first) but wakes every wait and ends a blocked receive.
+    void request_stop();
     uint64_t dropped() const { return dropped_.load(); }
     /// 0 -> 1 s, then doubling up to 30 s.
     static int next_backoff_ms(int current_ms);
 
 private:
+    void interrupt_link();
     void wait_ms(int ms, const std::atomic<bool>& stop);
     void send_loop(IScreenLink& link, const std::atomic<bool>& stop);
     void forward_down(uint64_t src, const std::string& msg);
@@ -80,6 +85,8 @@ private:
     std::mutex hold_mu_;
     std::string held_status_, held_key_;      // newest gateway Status(viewers>0) / KeyframeReq seen without a lease
     int64_t held_at_ms_ = 0;
+    std::mutex link_mu_;
+    IScreenLink* cur_link_ = nullptr;         // the link run() is receiving on; guarded by link_mu_
     std::mutex mu_;
     std::condition_variable cv_;
     std::deque<std::string> queue_;

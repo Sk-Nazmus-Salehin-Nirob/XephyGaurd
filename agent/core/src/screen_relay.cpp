@@ -23,7 +23,8 @@ public:
                            err, {}, true);
     }
     bool send(const std::string& msg) override { return ws_.send_binary(msg); }
-    std::optional<std::string> receive(int timeout_ms) override { return ws_.receive(timeout_ms); }
+    std::optional<std::string> receive(int timeout_ms) override { return ws_.receive(timeout_ms, true); }
+    void interrupt() override { ws_.interrupt(); }
     bool open() const override { return ws_.open(); }
     void close() override { ws_.close(); }
 
@@ -54,6 +55,7 @@ int ScreenRelay::next_backoff_ms(int current_ms) { return current_ms <= 0 ? 1000
 void ScreenRelay::set_source(uint64_t conn_id) {
     if (source_.exchange(conn_id) == conn_id) return;
     wake();
+    interrupt_link();  // the link of the old source ends now, not at the next receive timeout
     if (conn_id != 0 && lease_active()) send_lease(conn_id, lease_until_ms_.load() - steady_ms());
 }
 
@@ -107,13 +109,19 @@ void ScreenRelay::push(uint64_t conn_id, std::string&& frame) {
     cv_.notify_all();
 }
 
+void ScreenRelay::interrupt_link() {
+    std::lock_guard lk(link_mu_);
+    if (cur_link_) cur_link_->interrupt();
+}
+
+void ScreenRelay::request_stop() {
+    wake();           // `stop` was set before this call; wake() takes mu_, so a waiter either sees it or is notified
+    interrupt_link();
+}
+
 void ScreenRelay::wait_ms(int ms, const std::atomic<bool>& stop) {
-    using clock = std::chrono::steady_clock;
-    const auto until = clock::now() + std::chrono::milliseconds(ms);
     std::unique_lock lk(mu_);
-    // 200 ms slices so a stop request is seen promptly (the stop flag has no condition variable).
-    while (!stop && !woken_ && clock::now() < until)
-        cv_.wait_until(lk, std::min(until, clock::now() + std::chrono::milliseconds(200)));
+    cv_.wait_for(lk, std::chrono::milliseconds(ms), [&] { return stop.load() || woken_; });
     woken_ = false;
 }
 
@@ -122,7 +130,7 @@ void ScreenRelay::send_loop(IScreenLink& link, const std::atomic<bool>& stop) {
         std::string frame;
         {
             std::unique_lock lk(mu_);
-            cv_.wait_for(lk, std::chrono::milliseconds(200), [&] { return !queue_.empty() || !linked_.load(); });
+            cv_.wait(lk, [&] { return !queue_.empty() || !linked_.load() || stop.load(); });
             if (queue_.empty()) continue;
             frame = std::move(queue_.front());
             queue_.pop_front();
@@ -179,8 +187,18 @@ void ScreenRelay::run(const std::atomic<bool>& stop) {
         log::info("screen: relay connected to the gateway");
         linked_ = true;
         std::thread sender([&] { send_loop(*link, stop); });
+        {
+            std::lock_guard lk(link_mu_);
+            cur_link_ = link.get();
+        }
+        // One blocking receive per 10 s: set_source() and request_stop() interrupt it, so an idle link costs no polling.
+        // A shut-down socket stays readable, so an interrupt that lands before the poll starts is not lost.
         while (!stop && link->open() && source_.load() == src)
-            if (auto m = link->receive(250)) forward_down(src, *m);
+            if (auto m = link->receive(10000)) forward_down(src, *m);
+        {
+            std::lock_guard lk(link_mu_);
+            cur_link_ = nullptr;
+        }
         linked_ = false;
         link->close();
         cv_.notify_all();

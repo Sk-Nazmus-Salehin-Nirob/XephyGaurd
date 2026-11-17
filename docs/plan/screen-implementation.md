@@ -81,7 +81,7 @@ Done as part of M0-4, docs only:
 
 ## M4: Phase 3a low power (each step records before/after from the bench)
 - [x] M4-1a Step 50 [agent]: `WebSocketClient::receive(timeout, interruptible)` blocks in one poll instead of 50 ms slices (measured 10 wake-ups per 0.5 s idle before, <= 3 after) and `interrupt()` ends it from another thread
-- [ ] M4-1b Step 50 [agent]: `ScreenRelay` uses it (receive loop, `wait_ms`, `send_loop` wait on the condition variable, `set_source`/shutdown interrupt the link) so a connected idle relay costs no polling
+- [x] M4-1b Step 50 [agent]: `ScreenRelay` uses it (receive loop, `wait_ms`, `send_loop` wait on the condition variable, `set_source`/shutdown interrupt the link) so a connected idle relay costs no polling
 - [ ] M4-2 Step 51 + Step 31: event-driven capture on X11 Damage; skip capture without damage; drop the alpha loop
 - [ ] M4-3 Step 55: static screen nearly free; wall thumbnail only when changed; pause when locked/blanked
 - [ ] M4-4 Step 53 [agent]: idle priority for capture/encode threads

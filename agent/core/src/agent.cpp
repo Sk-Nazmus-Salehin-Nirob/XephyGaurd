@@ -1572,7 +1572,7 @@ int Agent::run(std::atomic<bool>& stop) {
     if (plat_.files) plat_.files->stop();
     if (plat_.input) plat_.input->stop();
     wake_uplink();
-    screen_relay_->wake();
+    screen_relay_->request_stop();
     worker_.stop();
     probe_worker_.stop();
     for (auto& t : threads_) t.join();

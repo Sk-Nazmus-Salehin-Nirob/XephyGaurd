@@ -16,15 +16,25 @@ struct FakeLink : IScreenLink {
     std::vector<std::string> sent;
     std::deque<std::string> inbox;
     std::atomic<bool> is_open{true};
+    std::atomic<bool> block{false};  // true: receive() waits its whole timeout like the real link, until interrupt()
+    std::condition_variable cv;
+    bool interrupted = false;
     bool send(const std::string& m) override { std::lock_guard lk(mu); sent.push_back(m); return is_open.load(); }
     std::optional<std::string> receive(int ms) override {
         {
             std::lock_guard lk(mu);
             if (!inbox.empty()) { auto m = inbox.front(); inbox.pop_front(); return m; }
         }
+        if (block) {
+            std::unique_lock lk(mu);
+            cv.wait_for(lk, std::chrono::milliseconds(ms), [&] { return interrupted || !inbox.empty(); });
+            if (interrupted) is_open = false;
+            return std::nullopt;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(std::min(ms, 20)));
         return std::nullopt;
     }
+    void interrupt() override { { std::lock_guard lk(mu); interrupted = true; } cv.notify_all(); }
     bool open() const override { return is_open.load(); }
     void close() override { is_open = false; }
 };
@@ -35,6 +45,7 @@ struct LinkHandle : IScreenLink {
     std::optional<std::string> receive(int ms) override { return l->receive(ms); }
     bool open() const override { return l->open(); }
     void close() override { l->close(); }
+    void interrupt() override { l->interrupt(); }
 };
 
 struct Rig {
@@ -45,6 +56,7 @@ struct Rig {
     std::vector<std::shared_ptr<FakeLink>> links;
     std::unique_ptr<ScreenRelay> relay;
     std::atomic<bool> stop{false};
+    std::atomic<bool> block_links{false};
     std::thread th;
     UplinkView seen;
     std::mutex mu;
@@ -59,6 +71,7 @@ struct Rig {
             ++connects;
             auto h = std::make_unique<LinkHandle>();
             h->l = std::make_shared<FakeLink>();
+            h->l->block = block_links.load();
             {
                 std::lock_guard lk(mu);
                 seen = uv;
@@ -69,7 +82,7 @@ struct Rig {
         });
         th = std::thread([this] { relay->run(stop); });
     }
-    ~Rig() { stop = true; relay->wake(); th.join(); }
+    ~Rig() { stop = true; relay->request_stop(); th.join(); }
     template <class F> static bool eventually(F f) {
         for (int i = 0; i < 200; ++i) {
             if (f()) return true;
@@ -191,4 +204,31 @@ TEST_CASE("screen relay passes nothing without a CCC lease, tells the helper the
     r.relay->grant_lease(10);  // a renewal: told again, nothing replayed twice
     REQUIRE(Rig::eventually([&] { return r.ipc.count_containing("\"screen_lease\"") == 2; }));
     CHECK(r.ipc.count_containing("\"screen_rx\"") == 1);
+}
+
+TEST_CASE("an idle connected relay blocks in receive, and a source change or shutdown ends the link at once", "[screen][idle]") {
+    using namespace std::chrono;
+    auto t_end = [](auto t0) { return duration_cast<milliseconds>(steady_clock::now() - t0).count(); };
+    {
+        Rig r;
+        r.block_links = true;  // the relay's receive(10000) would otherwise sit for 10 s
+        r.relay->set_source(7);
+        REQUIRE(Rig::eventually([&] { return r.link.load() != nullptr; }));
+        std::this_thread::sleep_for(milliseconds(100));  // now blocked inside receive
+        const auto t0 = steady_clock::now();
+        r.relay->set_source(0);
+        REQUIRE(Rig::eventually([&] { return !r.link.load()->open(); }));
+        CHECK(t_end(t0) < 1000);
+    }
+    Rig r;  // shutdown while blocked: ~Rig joins the relay thread
+    r.block_links = true;
+    r.relay->set_source(7);
+    REQUIRE(Rig::eventually([&] { return r.link.load() != nullptr; }));
+    std::this_thread::sleep_for(milliseconds(100));
+    const auto t0 = steady_clock::now();
+    r.stop = true;
+    r.relay->request_stop();
+    r.th.join();
+    CHECK(t_end(t0) < 1000);
+    r.th = std::thread([] {});  // ~Rig joins again
 }
