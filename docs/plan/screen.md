@@ -87,7 +87,7 @@ Each step quotes before/after numbers from Step 20. Stop and re-plan if two step
 ## Phase 4: Config and secrets
 - [x] Step 39 (vet only): [screen] Gateway listens on `127.0.0.1:8082` by default; `-dev-insecure` refuses non-loopback binds (fixes none, supports I-CCC-1; touches F45) [CROSS: ccc-deploy Step 1-2]
 - [ ] Step 40: [screen] Viewer token sent as the first WebSocket message instead of the URL query (fixes I-SCREEN-29; touches F43, F45) [CROSS: server page code]
-- [ ] Step 41: [screen] Pin libwebp / libjpeg-turbo by commit hash and document the CMake patch (fixes I-SCREEN-33; touches F47)
+- [x] Step 41 (configure checked): [screen] Pin libwebp / libjpeg-turbo by commit hash and document the CMake patch (fixes I-SCREEN-33; touches F47)
 
 ## Phase 5: Structure (moves only)
 - [x] Step 42: [screen] Split `gateway/relay.go` into `stream.go`, `agent_handler.go`, `viewer_handler.go` (move only) before Phase 3 gateway changes if the diff gets large (fixes none; touches F45)

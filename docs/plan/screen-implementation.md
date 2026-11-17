@@ -114,7 +114,7 @@ Done as part of M0-4, docs only:
 ## M6: remaining fixes
 - [x] M6-1 Step 39 + ccc-2 (default `127.0.0.1:8082`, `-dev-insecure` fatal on non-loopback `-addr` via `isLoopbackAddr`, install.sh env `SCREEN_GATEWAY_ADDR=127.0.0.1:8082`, no :8082 firewall rule existed; vet only, test written not run): gateway loopback default, `-dev-insecure` loopback only; install.sh stops opening :8082
 - [ ] M6-2 Step 40: viewer token in the first WebSocket message (server page code cross)
-- [ ] M6-3 Step 41: pin libwebp / libjpeg-turbo by commit
+- [x] M6-3 Step 41 (libjpeg-turbo 3.0.3 = 7fa4b5b7, libwebp v1.4.0 = 845d5476 by commit, GIT_SHALLOW dropped because it does not combine with a hash; CMake configure checked, no patch exists to document): pin libwebp / libjpeg-turbo by commit
 - [x] M6-4 Step 44 (`ReadHeaderTimeout` 10 s, `IdleTimeout` 120 s, `keepAlive` ping/pong 10 s on agent and viewer sockets; a dead agent ends the connection and viewers get the existing offline status; vet only): timeouts, ping/pong 10 s, "agent offline" status
 - [ ] M6-5 Step 45: viewer error reporting and counters
 - [x] M6-6 Step 47 (`sweepIdleStreams` every 15 s, 60 s idle TTL, unit test passes): remove idle streams after 60 s

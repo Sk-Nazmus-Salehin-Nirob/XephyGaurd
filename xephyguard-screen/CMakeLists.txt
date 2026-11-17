@@ -48,8 +48,8 @@ if(NOT TurboJPEG_FOUND)
   set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(libjpeg_turbo
     GIT_REPOSITORY https://github.com/libjpeg-turbo/libjpeg-turbo.git
-    GIT_TAG 3.0.3
-    GIT_SHALLOW TRUE)
+    # Pinned by commit (tag 3.0.3, checked 2026-11-18): a moved tag cannot change what we build. Update with approval only.
+    GIT_TAG 7fa4b5b762c9a99b46b0b7838f5fd55071b92ea5)
   FetchContent_GetProperties(libjpeg_turbo)
   if(NOT libjpeg_turbo_POPULATED)
     FetchContent_Populate(libjpeg_turbo)
@@ -84,8 +84,8 @@ if(NOT WebP_FOUND)
   set(WEBP_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(libwebp
     GIT_REPOSITORY https://github.com/webmproject/libwebp.git
-    GIT_TAG v1.4.0
-    GIT_SHALLOW TRUE)
+    # Pinned by commit (tag v1.4.0, checked 2026-11-18). Update with approval only.
+    GIT_TAG 845d5476a866141ba35ac133f856fa62f0b7445f)
   FetchContent_MakeAvailable(libwebp)
 endif()
 
