@@ -88,7 +88,6 @@ void ensure_browser_os_dns() {
 }
 
 // Returns true for passive telemetry domains that must not raise AI alerts.
-bool is_ignored_ai_telemetry_domain(const std::string& d) { return is_ai_telemetry_domain(d); }
 
 class NetworkMonitor final : public INetworkMonitor {
 public:
@@ -116,9 +115,14 @@ public:
         }
     }
 
-    bool is_ai_prompt_domain(const std::string& d) const {
-        if (is_ignored_ai_telemetry_domain(d)) return false;
+    void set_web_hints(const WebHints& hints) override {
         std::lock_guard lk(domains_mu_);
+        hints_ = hints;
+    }
+
+    bool is_ai_prompt_domain(const std::string& d) const {
+        std::lock_guard lk(domains_mu_);
+        if (is_ai_telemetry_domain(d, hints_.telemetry_domains)) return false;
         for (const auto& pat : ai_domains_) {
             if (d == pat || iends_with(d, "." + pat)) return true;
         }
@@ -400,11 +404,9 @@ public:
             }
             // Fallback for dedicated AI binaries whose keep-alive socket opened before agent start
             if (matched_domain.empty()) {
-                if (proc == "copilot-runtime" || proc == "copilot-language-server" || proc == "copilot") {
-                    matched_domain = "api.githubcopilot.com";
-                } else if (proc == "claude") {
-                    matched_domain = "api.anthropic.com";
-                }
+                std::lock_guard lk(domains_mu_);
+                if (auto it = hints_.process_domains.find(normalize_exe(proc)); it != hints_.process_domains.end())
+                    matched_domain = it->second;
             }
             if (matched_domain.empty()) continue;
 
@@ -621,6 +623,7 @@ private:
     DnsGetCacheDataTableFn dns_cache_fn_ = nullptr;
     mutable std::mutex domains_mu_;
     std::vector<std::string> ai_domains_;
+    WebHints hints_;  // guarded by domains_mu_
     std::mutex dns_mu_;
     std::map<std::string, std::set<std::string>> ip_to_domains_;
     std::map<std::string, int64_t> last_dns_query_;

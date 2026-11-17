@@ -11,6 +11,7 @@
 
 #include "xg/config.hpp"
 #include "xg/event.hpp"
+#include "xg/signatures.hpp"
 #include "xg/types.hpp"
 
 namespace xg {
@@ -35,6 +36,8 @@ public:
     virtual std::vector<OutboundAiFlow> active_ai_flows() { return {}; }
     /// Updates the set of monitored AI / IDE host suffixes from synced signatures/blocklists.
     virtual void set_ai_domains(std::vector<std::string> /*domains*/) {}
+    /// Telemetry hosts and per-process fallback domains from the bundle's web section.
+    virtual void set_web_hints(const WebHints& /*hints*/) {}
     /// Calls `on_change` (debounced by the caller) when links, addresses or routes change.
     virtual bool watch(std::function<void()> on_change) = 0;
     virtual void stop() = 0;

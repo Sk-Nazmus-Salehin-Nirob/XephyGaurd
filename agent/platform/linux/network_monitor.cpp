@@ -61,8 +61,9 @@ std::string diag_dst_ip(uint8_t family, const uint32_t dst[4]) {
     return {};
 }
 
-bool matches_ai_domain_list(const std::string& sni, const std::vector<std::string>& domains) {
-    if (sni.empty() || is_ai_telemetry_domain(sni)) return false;
+bool matches_ai_domain_list(const std::string& sni, const std::vector<std::string>& domains,
+                            const std::vector<std::string>& telemetry) {
+    if (sni.empty() || is_ai_telemetry_domain(sni, telemetry)) return false;
     for (const auto& pat : domains) {
         if (pat.empty()) continue;
         if (sni == pat || iends_with(sni, "." + pat)) return true;
@@ -70,13 +71,9 @@ bool matches_ai_domain_list(const std::string& sni, const std::vector<std::strin
     return false;
 }
 
-std::string fallback_ai_domain_for_proc(const std::string& proc) {
-    if (proc == "copilot-runtime" || proc == "copilot-language-server" || proc == "copilot") {
-        return "api.githubcopilot.com";
-    }
-    if (proc == "claude") return "api.anthropic.com";
-    if (proc == "ollama") return "ollama.com";
-    return {};
+std::string fallback_ai_domain_for_proc(const std::string& proc, const WebHints& hints) {
+    auto it = hints.process_domains.find(normalize_exe(proc));
+    return it == hints.process_domains.end() ? std::string{} : it->second;
 }
 
 std::mutex g_owners_mu;
@@ -245,6 +242,11 @@ public:
             d = to_lower(trim(d));
             if (!d.empty()) ai_domains_.push_back(std::move(d));
         }
+    }
+
+    void set_web_hints(const WebHints& hints) override {
+        std::lock_guard lk(tracker_mu_);
+        tracker_.hints = hints;
     }
 
     std::vector<OutboundAiFlow> active_ai_flows() override {
@@ -537,13 +539,13 @@ std::vector<OutboundAiFlow> SocketDeltaTracker::evaluate(
 
         // Exact 4-tuple SNI match first: if SNI is known non-AI (e.g. Cloudflare CDN blog), do NOT guess by IP.
         if (auto sit = tuple_sni.find(key); sit != tuple_sni.end()) {
-            if (matches_ai_domain_list(sit->second, ai_domains)) {
+            if (matches_ai_domain_list(sit->second, ai_domains, hints.telemetry_domains)) {
                 matched_domain = sit->second;
             } else {
                 continue;
             }
         } else {
-            matched_domain = fallback_ai_domain_for_proc(s.process);
+            matched_domain = fallback_ai_domain_for_proc(s.process, hints);
         }
 
         if (matched_domain.empty()) continue;

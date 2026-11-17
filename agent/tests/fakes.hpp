@@ -77,7 +77,7 @@ public:
 };
 
 inline json sample_signatures() {
-    return json::parse(R"({
+    return json::parse(R"sig({
       "version": "test-1",
       "processes": [
         {"id":"proc.ollama","category":"local_llm","severity":"high","description":"Ollama","match":{"exe":["ollama","ollama_llama_server"]}},
@@ -88,9 +88,10 @@ inline json sample_signatures() {
         {"id":"vm.container","category":"virtualization","severity":"low","description":"Docker","match":{"exe":["dockerd"]}}
       ],
       "extensions": [
-        {"id":"ext.copilot","severity":"high","ide":"vscode","ext_ids":["github.copilot","github.copilot-chat"],"description":"Copilot"},
-        {"id":"ext.codeium","severity":"high","ide":"vscode","ext_ids":["codeium.codeium"],"description":"Codeium"},
-        {"id":"ext.jb.ai","severity":"high","ide":"jetbrains","ext_ids":["ml-llm"],"description":"JB AI"}
+        {"id":"ext.copilot","severity":"high","ide":"vscode","ext_ids":["github.copilot","github.copilot-chat"],"description":"Copilot",
+         "domains":["githubcopilot.com","copilot-proxy.githubusercontent.com","copilot-telemetry.githubusercontent.com","copilot.microsoft.com"]},
+        {"id":"ext.codeium","severity":"high","ide":"vscode","ext_ids":["codeium.codeium"],"description":"Codeium","domains":["codeium.com","windsurf.com"]},
+        {"id":"ext.jb.ai","severity":"high","ide":"jetbrains","ext_ids":["ml-llm"],"description":"JB AI","domains":["jetbrains.ai","grazie.ai"]}
       ],
       "ports": {"rules":[{"id":"port.ollama","severity":"high","port":11434,"description":"Ollama API"},
                          {"id":"port.vllm","severity":"medium","port":8000,"requires_probe":true,"description":"vLLM"}],
@@ -107,11 +108,28 @@ inline json sample_signatures() {
         {"id":"dev.usb_storage","severity":"low","classes":["usb_storage"]},
         {"id":"dev.phone","severity":"medium","vendors":["18d1","05ac"]}
       ],
+      "web": {
+        "browsers": ["chrome", "google-chrome", "chromium", "msedge", "brave", "firefox", "opera", "vivaldi", "arc"],
+        "browser_title_suffixes": [" - google chrome", " - mozilla firefox", " - microsoft edge", " - brave"],
+        "ai_sites": [
+          {"site": "ChatGPT", "contains": ["chatgpt"]},
+          {"site": "Claude AI", "equals": ["claude"], "suffix": [" - claude", " | claude"], "contains": ["claude.ai"]},
+          {"site": "Google Gemini", "equals": ["gemini", "google gemini"], "suffix": [" - gemini"], "contains": ["gemini.google"]},
+          {"site": "DeepSeek", "contains": ["deepseek"]},
+          {"site": "Perplexity AI", "equals": ["perplexity"], "suffix": [" - perplexity"], "contains": ["perplexity.ai"]},
+          {"site": "Grok (xAI)", "equals": ["grok"], "suffix": [" - grok"], "contains": ["grok.com"]},
+          {"site": "Poe AI", "equals": ["poe"], "prefix": ["poe - "], "contains": ["poe.com"]},
+          {"site": "NotebookLM", "contains": ["notebooklm"]}
+        ],
+        "telemetry_domains": ["telemetry", "exp.individual.", "exp-tas.com"],
+        "process_domains": {"copilot-runtime": "api.githubcopilot.com", "copilot-language-server": "api.githubcopilot.com",
+                            "copilot": "api.githubcopilot.com", "claude": "api.anthropic.com", "ollama": "ollama.com"}
+      },
       "domains": {
         "ai": ["chatgpt.com", "claude.ai", "gemini.google.com", "perplexity.ai", "deepseek.com"],
         "ide": ["api.individual.githubcopilot.com", "githubcopilot.com", "copilot-proxy.githubusercontent.com", "api2.cursor.sh"]
       }
-    })");
+    })sig");
 }
 
 }  // namespace xg::test

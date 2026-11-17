@@ -198,6 +198,8 @@ TEST_CASE("Linux systemd-resolved drop-in writes routable CCC IP and ignores loo
 
 TEST_CASE("Linux SOCK_DIAG delta tracker suppresses idle keep-alives and shared CDN false positives", "[linux][net]") {
     xg::lnx::SocketDeltaTracker tracker;
+    tracker.hints.process_domains["copilot-runtime"] = "api.githubcopilot.com";  // from the bundle's web section
+    tracker.hints.telemetry_domains = {"telemetry"};
     const std::vector<std::string> domains = {"chatgpt.com", "githubcopilot.com"};
 
     // Two connections to the SAME Cloudflare CDN IP: socket 101 is ChatGPT, socket 102 is non-AI Cloudflare docs

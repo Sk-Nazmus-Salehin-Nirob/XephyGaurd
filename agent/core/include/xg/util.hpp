@@ -48,7 +48,8 @@ bool protect_secret_file(const std::string& path);
 std::string make_private_temp_dir(const std::string& prefix);
 /// Extracts the lowercase TLS ClientHello SNI hostname (extension 0x0000), or empty if absent.
 std::string parse_tls_sni(const uint8_t* data, size_t len);
-/// True for passive telemetry/experiment subdomains that must not raise AI alerts.
-bool is_ai_telemetry_domain(std::string_view domain);
+/// True for passive telemetry/experiment hosts that must not raise AI alerts: `domain` contains one of
+/// `patterns` (bundle web.telemetry_domains). An empty domain counts as telemetry.
+bool is_ai_telemetry_domain(std::string_view domain, const std::vector<std::string>& patterns);
 
 }  // namespace xg

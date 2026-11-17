@@ -56,6 +56,7 @@ struct SocketDeltaTracker {
     };
     std::map<uint64_t, Counters> conn_bytes;       // socket inode -> last byte counters
     std::map<std::string, std::string> tuple_sni;  // "local_port->remote_ip:remote_port" -> observed TLS SNI
+    WebHints hints;                                // telemetry hosts, process -> domain fallbacks (bundle)
 
     std::vector<OutboundAiFlow> evaluate(
         std::vector<TcpSocketStat>& sockets,

@@ -283,10 +283,10 @@ std::string parse_tls_sni(const uint8_t* buf, size_t len) {
     return {};
 }
 
-bool is_ai_telemetry_domain(std::string_view d) {
+bool is_ai_telemetry_domain(std::string_view d, const std::vector<std::string>& patterns) {
     if (d.empty()) return true;
-    return icontains(d, "telemetry") || icontains(d, "exp.individual.") || icontains(d, "exp-tas.com") ||
-           icontains(d, "events.data.microsoft.com") || icontains(d, "applicationinsights");
+    return std::any_of(patterns.begin(), patterns.end(),
+                       [&](const std::string& p) { return !p.empty() && icontains(d, p); });
 }
 
 }  // namespace xg
