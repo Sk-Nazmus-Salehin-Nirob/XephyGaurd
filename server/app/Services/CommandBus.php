@@ -10,7 +10,7 @@ use App\Models\User;
 /** Commands to agents travel over the agent's private Reverb channel (private-pc.{id}). */
 class CommandBus
 {
-    public const TYPES = ['policy_updated', 'message', 'kill', 'isolate_notice', 'rescan', 'ping', 'flush'];
+    public const TYPES = ['policy_updated', 'message', 'kill', 'isolate_notice', 'rescan', 'ping', 'flush', 'screen_lease'];
 
     public function send(Pc $pc, string $type, array $args = [], ?User $by = null): Command
     {

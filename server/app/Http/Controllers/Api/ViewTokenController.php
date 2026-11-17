@@ -7,6 +7,7 @@ use App\Models\Pc;
 use App\Models\ScreenViewAudit;
 use App\Models\SessionPc;
 use App\Models\Student;
+use App\Services\CommandBus;
 use App\Services\ScreenGatewayRevoker;
 use Firebase\JWT\JWT;
 use Illuminate\Http\JsonResponse;
@@ -222,6 +223,12 @@ class ViewTokenController extends Controller
         $cfg = config('services.screen_gateway');
         $now = time();
         $exp = $now + max(5, (int) ($cfg['ttl'] ?? 30));
+
+        // The agent captures the screen only while the CCC has granted a lease (docs/PROTOCOL.md "screen_lease");
+        // every token and every renewal extends it by the same time as the viewer's own lease.
+        if ($pc = Pc::find($audit->pc_id)) {
+            app(CommandBus::class)->send($pc, 'screen_lease', ['ttl_s' => $exp - $now]);
+        }
 
         $token = $this->encodeJwt([
             'iss' => $cfg['issuer'],

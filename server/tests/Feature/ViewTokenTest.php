@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Command;
 use App\Models\Lab;
 use App\Models\LabSession;
 use App\Models\ScreenViewAudit;
@@ -399,5 +400,25 @@ class ViewTokenTest extends TestCase
 
         $this->actingAs($instructor)->postJson("/api/screen/pc/{$pc->id}/token")->assertForbidden();
         $this->actingAs($instructor)->postJson("/api/screen/{$auditId}/renew")->assertForbidden();
+    }
+
+    public function test_every_token_and_renewal_sends_the_pc_a_screen_lease(): void
+    {
+        $this->bootLab();
+        $instructor = $this->user('instructor');
+        [$pc] = $this->enrolledPc('192.168.10.44', 'PC-LEASE');
+        [$other] = $this->enrolledPc('192.168.10.45', 'PC-OTHER');
+
+        $res = $this->actingAs($instructor)->postJson("/api/screen/pc/{$pc->id}/token", ['mode' => 'live']);
+        $res->assertOk();
+        $this->actingAs($instructor)->postJson('/api/screen/'.$res->json('audit_id').'/renew')->assertOk();
+
+        $leases = Command::where('type', 'screen_lease')->get();
+        $this->assertCount(2, $leases);
+        foreach ($leases as $c) {
+            $this->assertSame($pc->id, $c->pc_id);
+            $this->assertSame(['ttl_s' => (int) config('services.screen_gateway.ttl', 30)], $c->args);
+        }
+        $this->assertSame(0, Command::where('type', 'screen_lease')->where('pc_id', $other->id)->count());
     }
 }

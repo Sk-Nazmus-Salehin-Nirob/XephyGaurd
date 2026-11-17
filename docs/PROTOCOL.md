@@ -117,6 +117,7 @@ signs the agent's own channel. Event name `command`, data `{id, type, args}`:
 | `isolate_notice` | `isolated` | tell the student network access was paused/restored |
 | `rescan` | `what` ∈ extensions, artifacts, processes, all | immediate scan |
 | `ping`, `flush` | – | flush the queue now |
+| `screen_lease` | `ttl_s` (1..120) | the CCC has a live-view lease on this PC for `ttl_s` more seconds; sent with every screen token and every renewal. The agent captures the screen only while a lease is active (screen Step 15) |
 
 Every command is acknowledged with a `command_result` event.
 
