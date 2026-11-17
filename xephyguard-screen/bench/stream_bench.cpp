@@ -161,7 +161,7 @@ pid_t start_painter(const std::string& workload) {
 }
 #endif
 
-xg::EncoderConfig g_enc;  // --codec, --quality, --webp-method
+xg::EncoderConfig g_enc;  // --codec, --quality, --webp-method, --rects, --workers
 
 double pct(std::vector<double>& v, double p) {
   if (v.empty()) return 0;
@@ -304,6 +304,7 @@ int main(int argc, char** argv) {
     }
     else if (a == "--quality" && i + 1 < argc) g_enc.quality_text = std::clamp(std::atoi(argv[++i]), 1, 100);
     else if (a == "--rects") g_enc.rectangles = true;
+    else if (a == "--workers" && i + 1 < argc) g_enc.workers = std::clamp(std::atoi(argv[++i]), 1, 4);
     else if (a == "--webp-method" && i + 1 < argc) g_enc.webp_method = std::clamp(std::atoi(argv[++i]), 0, 6);
     else if (a == "--stdio") use_stdio = true;
     else if (a == "--capture" && i + 1 < argc) {
@@ -311,7 +312,7 @@ int main(int argc, char** argv) {
       if (c == "x11") use_x11 = true;
       else if (c != "synthetic") { std::cerr << "--capture synthetic|x11\n"; return 2; }
     }
-    else { std::cerr << "usage: xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json] [--stdio] [--capture synthetic|x11] [--codec webp|jpeg] [--quality N] [--webp-method 0-6] [--rects]\n"; return 2; }
+    else { std::cerr << "usage: xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json] [--stdio] [--capture synthetic|x11] [--codec webp|jpeg] [--quality N] [--webp-method 0-6] [--rects] [--workers 1-4]\n"; return 2; }
   }
   if (use_stdio && phases.size() != 1) { std::cerr << "--stdio needs exactly one --workload\n"; return 2; }
   if (phases.empty()) phases = {"idle", "static", "typing", "scrolling", "drag", "video"};

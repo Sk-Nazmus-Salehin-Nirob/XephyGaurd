@@ -128,3 +128,13 @@ Same setup as M4-9 (Xvfb, `taskset -c 0`, JPEG q85, 10 s). Window: 8 frames / 2 
 | drag (Xvfb) | 0.5 -> 1.3 | 22.6 -> 22.5 | cost is 49 captures/s of the painter's full-screen puts, not the pacing (bench limit, see baseline) |
 
 Moving content is unchanged (scrolling, video-like stay near 44 %): its cost is the encoder, not the capture (M4-5, M5-3, M5-4).
+
+#### M5-4a encoder worker pool and reused codec state (Step 29)
+`FrameEncoder` keeps a codec context per thread (TurboJPEG handle, output buffer, pixel buffer, WebP config) and can encode one frame's rectangles on `EncoderConfig.workers` threads (default 1; output byte-identical for any count, tested). Helper threads run at idle priority; their CPU is `worker_cpu_seconds()` (the governor does not add it yet: M5-4b). Synthetic 1080p scrolling, JPEG q85, `--rects`, 5 s, Release, `taskset -c 0-3`:
+
+| workers | fps | build p50 | CPU (all threads) |
+|---|---|---|---|
+| 1 | 4.2 | 45.0 ms | 46.0 ms/frame |
+| 2 | 5.0 | 27.2 ms | 50.8 ms/frame |
+
+Pinned to 2 cores that also run the bench workload (`taskset -c 0,1`) 2 workers gave no gain (build p50 41.7 -> 42.1 ms) and 1.8x CPU: idle-priority helpers only help when a core is really free, so the agent must switch to 2 only while the governor has headroom (M5-4b). Per-frame allocation savings of the reused state are within noise (encode time dominates).

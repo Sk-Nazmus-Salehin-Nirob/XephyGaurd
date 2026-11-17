@@ -281,3 +281,71 @@ TEST_CASE("FrameEncoder: default stays v1 with 64 px tile indices") {
   CHECK(msg.tiles[1].x == 0); CHECK(msg.tiles[1].y == 1);
   CHECK(msg.tiles[0].w == 0);
 }
+
+namespace {
+xg::Frame noisy_frame(int w, int h, uint32_t seed) {
+  xg::Frame f;
+  f.width = w; f.height = h; f.stride = w * 4;
+  f.bgra.resize(static_cast<size_t>(f.stride) * h);
+  uint32_t s = seed;
+  for (size_t i = 0; i < f.bgra.size(); ++i) {
+    s = s * 1664525u + 1013904223u;
+    f.bgra[i] = static_cast<uint8_t>(((i / 4) % 97) * 2 + ((s >> 24) & 7));
+  }
+  return f;
+}
+std::vector<uint32_t> every_other_tile(int w, int h) {
+  const int n = ((w + 63) / 64) * ((h + 63) / 64);
+  std::vector<uint32_t> v;
+  for (int i = 0; i < n; i += 2) v.push_back(static_cast<uint32_t>(i));
+  return v;
+}
+}  // namespace
+
+TEST_CASE("FrameEncoder: worker pool output is byte-identical to one thread, all codecs and both layouts") {
+  const xg::Frame f = noisy_frame(700, 450, 7);
+  const auto tiles = every_other_tile(f.width, f.height);
+  for (xg::Codec codec : {xg::Codec::Jpeg, xg::Codec::Webp, xg::Codec::Raw}) {
+    for (bool rects : {false, true}) {
+      xg::EncoderConfig cfg;
+      cfg.codec = codec;
+      cfg.rectangles = rects;
+      cfg.webp_method = 1;
+      cfg.full_frame_threshold = 2.0;
+      xg::FrameEncoder one(cfg);
+      const auto want = xg::encode(one.build(f, tiles, 1, 5, 4, false));
+      CHECK(one.workers() == 1);
+      for (int n : {2, 4}) {
+        cfg.workers = n;
+        xg::FrameEncoder many(cfg);
+        CHECK(many.workers() == n);
+        CHECK(xg::encode(many.build(f, tiles, 1, 5, 4, false)) == want);
+      }
+    }
+  }
+}
+
+TEST_CASE("FrameEncoder: reused state over many frames, set_workers toggles, worker CPU is counted") {
+  xg::EncoderConfig cfg;
+  cfg.codec = xg::Codec::Jpeg;
+  cfg.rectangles = true;
+  xg::FrameEncoder enc(cfg);
+  xg::EncoderConfig ref_cfg = cfg;
+  const int plan[] = {1, 2, 2, 1, 3, 2};
+  for (int i = 0; i < 6; ++i) {
+    // sizes change between frames so the reused buffers must grow and shrink correctly
+    const xg::Frame f = noisy_frame(256 + 100 * i, 200 + 50 * (i % 3), 20 + i);
+    const std::vector<uint32_t> tiles = every_other_tile(f.width, f.height);
+    enc.set_workers(plan[i]);
+    CHECK(enc.workers() == plan[i]);
+    xg::FrameEncoder fresh(ref_cfg);  // a new encoder per frame: nothing reused
+    CHECK(xg::encode(enc.build(f, tiles, 2, i + 1, 0, i == 0)) == xg::encode(fresh.build(f, tiles, 2, i + 1, 0, i == 0)));
+  }
+  enc.set_workers(99);
+  CHECK(enc.workers() == 4);
+  CHECK(enc.worker_cpu_seconds() >= 0.0);
+  enc.set_workers(0);
+  CHECK(enc.workers() == 1);
+  xg::Frame empty;
+  CHECK(enc.build(empty, {}, 1, 1, 0, false).tiles.empty());
+}
