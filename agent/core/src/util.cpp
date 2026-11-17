@@ -231,6 +231,32 @@ bool write_file_atomic(const std::string& path, const std::string& content, File
 #endif
 }
 
+bool trusted_pac_url(const std::string& url, const std::string& ccc_host) {
+    constexpr std::string_view kScheme = "https://";
+    if (ccc_host.empty() || url.size() > 2048 || !istarts_with(url, kScheme)) return false;
+    for (unsigned char c : url)
+        if (c <= 0x20 || c >= 0x7f || c == '"' || c == '\\' || c == '@') return false;  // no userinfo/odd bytes
+    const std::string rest = url.substr(kScheme.size());
+    const size_t slash = rest.find('/');
+    if (slash == std::string::npos) return false;
+    std::string authority = rest.substr(0, slash);
+    std::string host = authority;
+    if (!authority.empty() && authority.front() == '[') {  // [v6]:port
+        const size_t close = authority.find(']');
+        if (close == std::string::npos) return false;
+        host = authority.substr(1, close - 1);
+        const std::string tail = authority.substr(close + 1);
+        if (!tail.empty() && (tail[0] != ':' || tail.size() == 1)) return false;
+    } else if (const size_t colon = authority.rfind(':'); colon != std::string::npos) {
+        host = authority.substr(0, colon);
+        const std::string port = authority.substr(colon + 1);
+        if (port.empty() || port.size() > 5 || port.find_first_not_of("0123456789") != std::string::npos) return false;
+    }
+    std::string want = ccc_host;
+    if (want.size() > 2 && want.front() == '[' && want.back() == ']') want = want.substr(1, want.size() - 2);
+    return to_lower(host) == to_lower(want);
+}
+
 std::string make_private_temp_dir(const std::string& prefix) {
     namespace fs = std::filesystem;
     std::error_code ec;

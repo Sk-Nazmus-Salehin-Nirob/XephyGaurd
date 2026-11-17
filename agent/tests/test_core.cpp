@@ -468,3 +468,16 @@ TEST_CASE("signature bundle web hints: AI sites only in browsers, extension doma
     ExtensionInfo cod{"jetbrains", "codeium", "1", "alice", "", false, ""};
     CHECK(re.extension_domains(cod, "ext.jb.misc").empty());
 }
+
+TEST_CASE("PAC URLs are only trusted as https on the CCC host (F97)") {
+    CHECK(trusted_pac_url("https://192.168.10.2/proxy.pac", "192.168.10.2"));
+    CHECK(trusted_pac_url("https://CCC.lab:443/proxy.pac", "ccc.lab"));
+    CHECK(trusted_pac_url("https://[fd00::2]/proxy.pac", "fd00::2"));
+    CHECK_FALSE(trusted_pac_url("http://192.168.10.2/proxy.pac", "192.168.10.2"));     // plain HTTP
+    CHECK_FALSE(trusted_pac_url("https://evil.example/proxy.pac", "192.168.10.2"));    // other host
+    CHECK_FALSE(trusted_pac_url("https://192.168.10.2@evil/p.pac", "192.168.10.2"));   // userinfo trick
+    CHECK_FALSE(trusted_pac_url("https://192.168.10.2.evil/p.pac", "192.168.10.2"));
+    CHECK_FALSE(trusted_pac_url("https://192.168.10.2:80x/p.pac", "192.168.10.2"));
+    CHECK_FALSE(trusted_pac_url("https://192.168.10.2/p\".pac", "192.168.10.2"));
+    CHECK_FALSE(trusted_pac_url("https://192.168.10.2/proxy.pac", ""));
+}

@@ -43,6 +43,9 @@ bool write_file_atomic(const std::string& path, const std::string& content, File
 /// Re-applies owner-only access to an existing secret (0600 / SYSTEM+Administrators protected DACL), e.g. for
 /// files written by older versions. Returns false if it could not.
 bool protect_secret_file(const std::string& path);
+/// True if `url` is https://<ccc_host>[:port]/... (case-insensitive host, no userinfo, no other characters).
+bool trusted_pac_url(const std::string& url, const std::string& ccc_host);
+
 /// Creates a new, empty directory only the caller can use (mkdtemp 0700 on POSIX) under the system temp dir.
 /// Returns an empty string on failure. Never reuses an existing directory.
 std::string make_private_temp_dir(const std::string& prefix);

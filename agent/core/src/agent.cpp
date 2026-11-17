@@ -100,7 +100,7 @@ void Agent::apply_policy(const Policy& p) {
     if (plat_.system) {
         plat_.system->set_exam_mode(p.mode == Mode::test);
         plat_.system->set_browser_ai_overview_suppressed(p.suppress_ai_overview, p.google_search_url);
-        plat_.system->set_browser_proxy_pac(p.proxy_mode == "proxy_only" ? p.proxy_pac_url : std::string{});
+        plat_.system->set_browser_proxy_pac(effective_pac_url());
         const std::string dns_target =
             (p.proxy_mode == "gateway" && p.mode != Mode::always_on) ? cfg_.ccc_host : std::string{};
         plat_.system->set_lab_dns(dns_target);
@@ -822,7 +822,7 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
 void Agent::push_helper_config() {
     if (!plat_.ipc) return;
     const Policy& p = policy_;
-    const std::string pac_url = (p.proxy_mode == "proxy_only") ? p.proxy_pac_url : std::string{};
+    const std::string pac_url = effective_pac_url();
     plat_.ipc->broadcast(ipc::line({{"t", "config"},
                                     {"mode", to_string(p.mode)},
                                     {"title_capture", to_string(p.title_capture)},
@@ -843,6 +843,18 @@ void Agent::push_helper_config() {
                                     {"text", std::string("Monitored by XephyGuard · mode: ") + mode_label(p.mode) +
                                                  (isolated_ ? " · network isolated" : "")},
                                     {"notice", p.notice_text}}));
+}
+
+std::string Agent::effective_pac_url() const {
+    if (policy_.proxy_mode != "proxy_only" || policy_.proxy_pac_url.empty()) return {};
+    // Written into browser policies and HKCU for every user: only an HTTPS PAC on the CCC itself, so neither a
+    // bad policy value nor a LAN host serving a forged PAC over plain HTTP can redirect the lab's traffic (F97).
+    if (!trusted_pac_url(policy_.proxy_pac_url, cfg_.ccc_host)) {
+        log::warn("policy: ignoring proxy_pac_url {} (must be https on {})", limit(policy_.proxy_pac_url, 200),
+                  cfg_.ccc_host);
+        return {};
+    }
+    return policy_.proxy_pac_url;
 }
 
 void Agent::notify_student(const std::string& title, const std::string& body, bool urgent) {

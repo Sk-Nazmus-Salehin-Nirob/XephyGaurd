@@ -20,7 +20,7 @@ struct Harness {
     VectorSink sink;
     std::unique_ptr<Agent> agent;
 
-    Harness() {
+    explicit Harness(const std::string& ccc_host = {}) {
         fs::create_directories(dir);
         auto iso_p = std::make_unique<test::FakeIsolator>();
         iso = iso_p.get();
@@ -40,6 +40,7 @@ struct Harness {
         plat.system = std::make_unique<test::FakeSystem>();
         Config cfg = Config::defaults();
         cfg.data_dir = dir.string();
+        cfg.ccc_host = ccc_host;
         agent = std::make_unique<Agent>(cfg, (dir / "agent.toml").string(), plat);
         agent->set_sink_for_tests(&sink);
         json env{{"version", "test-1"}, {"bundle", test::sample_signatures().dump()}};
@@ -351,12 +352,19 @@ TEST_CASE("agent emits fallback hit for unclaimed IDE extension-host AI flows an
 }
 
 TEST_CASE("agent pushes proxy_pac_url to helper in proxy_only mode") {
-    Harness h;
+    Harness h("192.168.0.100");
     auto p = Policy::default_for(Mode::practice);
     p.proxy_mode = "proxy_only";
+    // F97: only an HTTPS PAC on the CCC host is passed on; plain HTTP or another host is dropped.
     p.proxy_pac_url = "http://192.168.0.100/proxy.pac";
     h.agent->apply_policy(p);
-    CHECK(h.ipc->count_containing("http://192.168.0.100/proxy.pac") >= 1);
+    CHECK(h.ipc->count_containing("http://192.168.0.100/proxy.pac") == 0);
+    p.proxy_pac_url = "https://evil.example/proxy.pac";
+    h.agent->apply_policy(p);
+    CHECK(h.ipc->count_containing("evil.example") == 0);
+    p.proxy_pac_url = "https://192.168.0.100/proxy.pac";
+    h.agent->apply_policy(p);
+    CHECK(h.ipc->count_containing("https://192.168.0.100/proxy.pac") >= 1);
 
     p.proxy_mode = "gateway";
     h.agent->apply_policy(p);
