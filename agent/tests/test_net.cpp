@@ -54,6 +54,43 @@ TEST_CASE("http response parsing") {
     CHECK_FALSE(net::parse_http_response("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc", r, &used));
 }
 
+TEST_CASE("http parsing rejects hostile responses without throwing or looping") {
+    net::HttpResponse r;
+    size_t used = 0;
+    auto bad = [&](const std::string& raw) {
+        bool malformed = false;
+        bool ok = true;
+        REQUIRE_NOTHROW(ok = net::parse_http_response(raw, r, &used, &malformed));
+        CHECK_FALSE(ok);
+        CHECK(malformed);
+    };
+    // Huge hex chunk size that would wrap pos + len + 2 (I-AGENT-4).
+    bad("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nffffffffffffffff\r\nabc\r\n0\r\n\r\n");
+    bad("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nfffffffffffffffffff\r\nabc\r\n");
+    // Non-numeric lengths (I-AGENT-11: std::stoul used to throw).
+    bad("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\nabc\r\n");
+    bad("HTTP/1.1 200 OK\r\nContent-Length: abc\r\n\r\n{}");
+    bad("HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\n{}");
+    bad("HTTP/1.1 200 OK\r\nContent-Length: 99999999999999999999999\r\n\r\n{}");
+    bad("HTTP/1.1 200 OK\r\nContent-Length: 999999999999\r\n\r\n{}");
+    // Chunk data not followed by CRLF.
+    bad("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nabcd\r\n0\r\n\r\n");
+    // Bad status lines.
+    bad("HTTP/1.1 abc OK\r\nContent-Length: 0\r\n\r\n");
+    bad("garbage line\r\nContent-Length: 0\r\n\r\n");
+    // Header block that never ends.
+    bad("HTTP/1.1 200 OK\r\nX: " + std::string(net::kMaxHeaderBytes + 10, 'a'));
+
+    // Chunk extensions are accepted; an incomplete chunk asks for more data, not an error.
+    bool malformed = true;
+    REQUIRE(net::parse_http_response("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3;x=1\r\nabc\r\n0\r\n\r\n", r,
+                                     &used, &malformed));
+    CHECK(r.body == "abc");
+    CHECK_FALSE(net::parse_http_response("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n10\r\nabc", r, &used,
+                                         &malformed));
+    CHECK_FALSE(malformed);
+}
+
 TEST_CASE("crypto helpers") {
     CHECK(crypto::sha256_hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     CHECK(crypto::base64_decode(crypto::base64_encode("hello world!")).value() == "hello world!");

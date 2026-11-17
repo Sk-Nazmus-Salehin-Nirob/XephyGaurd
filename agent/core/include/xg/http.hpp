@@ -35,8 +35,13 @@ private:
     std::unique_ptr<TlsConnection> conn_;
 };
 
-/// Parses a raw HTTP response held in `raw`. Exposed for tests. Returns false if incomplete.
-bool parse_http_response(const std::string& raw, HttpResponse& out, size_t* consumed);
+inline constexpr size_t kMaxHeaderBytes = 64 * 1024;
+inline constexpr size_t kMaxBodyBytes = 32 * 1024 * 1024;
+
+/// Parses a raw HTTP response held in `raw`. Exposed for tests. Returns false if incomplete or malformed;
+/// `malformed` (optional) is set when more bytes cannot help (bad status, non-numeric or oversized lengths).
+/// Never throws: the input may come from any local process (LLM port probes).
+bool parse_http_response(const std::string& raw, HttpResponse& out, size_t* consumed, bool* malformed = nullptr);
 /// Plain-HTTP GET (used once, to fetch the CA certificate before it is trusted; result is pinned).
 HttpResponse http_get_plain(const std::string& host, uint16_t port, const std::string& path, int timeout_ms = 5000);
 

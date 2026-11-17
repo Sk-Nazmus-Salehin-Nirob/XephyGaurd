@@ -1,7 +1,9 @@
 #include "xg/http.hpp"
 
+#include <charconv>
 #include <cstring>
 #include <sstream>
+#include <string_view>
 
 #include "xg/util.hpp"
 
@@ -13,16 +15,37 @@
 
 namespace xg::net {
 
-bool parse_http_response(const std::string& raw, HttpResponse& out, size_t* consumed) {
+namespace {
+// Parses an unsigned number in `s` (no sign, no spaces, base 10 or 16). Fails on empty, junk or overflow.
+bool parse_size(std::string_view s, int base, size_t& out) {
+    if (s.empty()) return false;
+    const char* end = s.data() + s.size();
+    auto [p, ec] = std::from_chars(s.data(), end, out, base);
+    return ec == std::errc{} && p == end;
+}
+}  // namespace
+
+bool parse_http_response(const std::string& raw, HttpResponse& out, size_t* consumed, bool* malformed) {
+    bool bad_dummy = false;
+    bool& bad = malformed ? *malformed : bad_dummy;
+    bad = false;
+    auto fail = [&] {
+        bad = true;
+        return false;
+    };
     const size_t hdr_end = raw.find("\r\n\r\n");
-    if (hdr_end == std::string::npos) return false;
+    if (hdr_end == std::string::npos) return raw.size() > kMaxHeaderBytes ? fail() : false;
+    if (hdr_end > kMaxHeaderBytes) return fail();
     std::istringstream hs(raw.substr(0, hdr_end));
     std::string line;
     std::getline(hs, line);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
     // HTTP/1.1 200 OK
     auto sp = line.find(' ');
-    if (sp == std::string::npos) return false;
-    out.status = std::atoi(line.c_str() + sp + 1);
+    if (sp == std::string::npos || !line.starts_with("HTTP/")) return fail();
+    size_t status = 0;
+    if (!parse_size(std::string_view(line).substr(sp + 1, 3), 10, status) || status < 100 || status > 999) return fail();
+    out.status = int(status);
     out.headers.clear();
     while (std::getline(hs, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -36,8 +59,12 @@ bool parse_http_response(const std::string& raw, HttpResponse& out, size_t* cons
         std::string body;
         while (true) {
             size_t le = raw.find("\r\n", pos);
-            if (le == std::string::npos) return false;
-            size_t len = std::stoul(raw.substr(pos, le - pos), nullptr, 16);
+            if (le == std::string::npos) return (raw.size() - pos > 64) ? fail() : false;
+            std::string_view size_line(raw.data() + pos, le - pos);
+            if (auto semi = size_line.find(';'); semi != std::string_view::npos) size_line = size_line.substr(0, semi);
+            while (!size_line.empty() && (size_line.back() == ' ' || size_line.back() == '\t')) size_line.remove_suffix(1);
+            size_t len = 0;
+            if (size_line.size() > 16 || !parse_size(size_line, 16, len) || len > kMaxBodyBytes) return fail();
             pos = le + 2;
             if (len == 0) {
                 // Skip optional trailers up to the final CRLF.
@@ -51,14 +78,19 @@ bool parse_http_response(const std::string& raw, HttpResponse& out, size_t* cons
                 pos += 2;
                 break;
             }
-            if (raw.size() < pos + len + 2) return false;
+            // Overflow-safe: compare against what is left instead of computing pos + len + 2.
+            const size_t left = raw.size() - pos;
+            if (left < 2 || len > left - 2) return false;
+            if (raw.compare(pos + len, 2, "\r\n") != 0) return fail();
+            if (body.size() + len > kMaxBodyBytes) return fail();
             body.append(raw, pos, len);
             pos += len + 2;
         }
         out.body = std::move(body);
     } else if (auto cl = out.headers.find("content-length"); cl != out.headers.end()) {
-        size_t len = std::stoul(cl->second);
-        if (raw.size() < pos + len) return false;
+        size_t len = 0;
+        if (!parse_size(cl->second, 10, len) || len > kMaxBodyBytes) return fail();
+        if (raw.size() - pos < len) return false;
         out.body = raw.substr(pos, len);
         pos += len;
     } else if (out.status == 204 || out.status == 304 || (out.status >= 100 && out.status < 200)) {
@@ -121,7 +153,14 @@ HttpResponse HttpsClient::do_request(const std::string& method, const std::strin
     char buf[16384];
     size_t consumed = 0;
     while (true) {
-        if (parse_http_response(raw, resp, &consumed)) break;
+        bool malformed = false;
+        if (parse_http_response(raw, resp, &consumed, &malformed)) break;
+        if (malformed) {
+            resp = HttpResponse{};
+            resp.error = "malformed response";
+            conn_.reset();
+            return resp;
+        }
         long n = conn_->read_some(buf, sizeof buf);
         if (n <= 0) {
             // Connection closed: accept "read until close" bodies.
@@ -168,7 +207,14 @@ HttpResponse http_get_plain(const std::string& host, uint16_t port, const std::s
         raw.append(buf, size_t(n));
         if (raw.size() > 4 * 1024 * 1024) break;
         size_t consumed;
-        if (parse_http_response(raw, resp, &consumed)) { socket_close(s); return resp; }
+        bool malformed = false;
+        if (parse_http_response(raw, resp, &consumed, &malformed)) { socket_close(s); return resp; }
+        if (malformed) {
+            socket_close(s);
+            resp = HttpResponse{};
+            resp.error = "malformed response";
+            return resp;
+        }
     }
     socket_close(s);
     size_t he = raw.find("\r\n\r\n");

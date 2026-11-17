@@ -342,9 +342,14 @@ void Agent::scan_ports() {
             probed_ports_.insert(key);
             const std::string primary_host = (s.address == "::1") ? "::1" : "127.0.0.1";
             for (const auto& path : probe.paths) {
-                auto r = net::http_get_plain(primary_host, s.port, path, 400);
-                if (r.status == 0 && s.address == "::") {
-                    r = net::http_get_plain("::1", s.port, path, 400);
+                // The answering process is any local user's: one bad reply must not abort the whole scan.
+                net::HttpResponse r;
+                try {
+                    r = net::http_get_plain(primary_host, s.port, path, 400);
+                    if (r.status == 0 && s.address == "::") r = net::http_get_plain("::1", s.port, path, 400);
+                } catch (const std::exception& e) {
+                    log::debug("ports: probe of {} failed: {}", s.port, e.what());
+                    continue;
                 }
                 if ((r.status == 200 || r.status == 400 || r.status == 405 || r.status == 422) &&
                     (icontains(r.headers["content-type"], "json") || r.body.starts_with("{")) &&
