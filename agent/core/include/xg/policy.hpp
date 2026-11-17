@@ -67,6 +67,8 @@ struct Policy {
     std::string screen_codec = "jpeg";
     int screen_quality = 85;
     int screen_webp_method = 1;
+    /// `screen.cpu_budget_pct` (number 1..100, default 8): CPU budget of the screen capture/encode thread.
+    double screen_cpu_budget_pct = 8.0;
 
     static Policy default_for(Mode m);
     static Policy from_json(const json& j, std::string* err = nullptr);

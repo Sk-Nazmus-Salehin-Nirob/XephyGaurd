@@ -91,7 +91,7 @@ Done as part of M0-4, docs only:
 - [x] M4-5a Step 54: encoder `webp_method` (advanced WebP API), bench `--codec/--quality/--webp-method`; measured in docs/EVALUATION.md (JPEG 4-6x cheaper than WebP on moving content)
 - [x] M4-5b Step 54 [agent]: JPEG q85 default in the helper (was WebP method 4); optional policy `screen.codec`/`quality`/`webp_method` (invalid keeps the default) passed to the helper in `config`, applied from the next view (PROTOCOL.md). Server does not send them yet
 - [x] M4-6a Step 52: `core/governor` (budget % of one core, fps first down to the 2 fps floor, then quality to 0.5; recovers below 60 % of the budget, quality first) measures the capture thread's own CPU time once per second; live pacing + quality from it; `stream_stats()` counters; bench prints them. JPEG scrolling 10.6 % -> 6.7 %. Rectangle size lever waits for M5-3
-- [ ] M4-6b Step 52 [agent]: policy `screen.cpu_budget_pct` -> helper `set_cpu_budget_pct` (PROTOCOL.md)
+- [x] M4-6b Step 52 [agent]: policy `screen.cpu_budget_pct` -> helper `set_cpu_budget_pct`, applied at once (PROTOCOL.md)
 - [ ] M4-6c Step 52 [server]: setting for the budget, sent in the policy
 - [ ] M4-7 Step 56: Windows dirty-rect copy, right adapter, GDI cap 5 fps (compile-checked only)
 - [ ] M4-8 Step 57 [agent]: streaming cost in heartbeat; ETHICS.md check

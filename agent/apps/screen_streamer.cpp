@@ -75,6 +75,7 @@ struct ScreenStreamer::Impl {
     WindowSource window_source;
     std::vector<MaskRule> mask_rules;
     ScreenEncoding encoding;
+    double cpu_budget_pct = 8.0;
     std::shared_ptr<FrameOut> out;  // kept so a settings change can rebuild the state machine
     void make_sm_locked(std::shared_ptr<ScreenCapture> capture) {
         EncoderConfig cfg{};
@@ -85,6 +86,7 @@ struct ScreenStreamer::Impl {
         sm = std::make_unique<AgentStateMachine>(std::move(capture), cfg, [o = out](const std::vector<uint8_t>& d) {
             (*o)(std::string_view(reinterpret_cast<const char*>(d.data()), d.size()));
         });
+        sm->set_cpu_budget_pct(cpu_budget_pct);
         install_filter_locked();  // always: with no window source the filter masks everything
     }
     // The filter is rebuilt (not mutated) when the rules change; the state machine swaps it under its own lock.
@@ -129,6 +131,17 @@ void ScreenStreamer::set_encoding(const ScreenEncoding& enc) {
         auto capture = impl_->factory();
         if (capture) impl_->make_sm_locked(std::move(capture));
     }
+}
+
+void ScreenStreamer::set_cpu_budget_pct(double pct) {
+    std::lock_guard lk(impl_->mu);
+    impl_->cpu_budget_pct = std::clamp(pct, 1.0, 100.0);
+    if (impl_->sm) impl_->sm->set_cpu_budget_pct(impl_->cpu_budget_pct);
+}
+
+StreamStats ScreenStreamer::stream_stats() const {
+    std::lock_guard lk(impl_->mu);
+    return impl_->sm ? impl_->sm->stream_stats() : StreamStats{};
 }
 
 bool ScreenStreamer::start(uint32_t stream_id, FrameOut out, std::function<void(bool)> on_viewing_changed) {

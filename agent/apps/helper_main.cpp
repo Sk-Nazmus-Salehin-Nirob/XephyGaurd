@@ -434,6 +434,8 @@ int helper_main() {
                     if (sc.contains("webp_method") && sc["webp_method"].is_number_integer())
                         enc.webp_method = static_cast<int>(std::clamp<int64_t>(sc["webp_method"].get<int64_t>(), 0, 6));
                     screen_streamer.set_encoding(enc);
+                    if (sc.contains("cpu_budget_pct") && sc["cpu_budget_pct"].is_number())
+                        screen_streamer.set_cpu_budget_pct(sc["cpu_budget_pct"].get<double>());  // clamped 1..100
                 }
                 uint32_t pc_id = 0;
                 try { pc_id = static_cast<uint32_t>(std::stoul(pc_id_str)); } catch (...) {}

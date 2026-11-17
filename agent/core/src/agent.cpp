@@ -864,7 +864,8 @@ void Agent::push_helper_config() {
                                     // No gateway address or credential: the helper streams through the service
                                     // (DECISIONS #24), so the student's session never holds a screen token.
                                     {"screen", {{"enabled", cfg_.screen_enabled}, {"privacy_rules", mask_rules}, {"codec", p.screen_codec},
-                                                {"quality", p.screen_quality}, {"webp_method", p.screen_webp_method}}},
+                                                {"quality", p.screen_quality}, {"webp_method", p.screen_webp_method},
+                                                {"cpu_budget_pct", p.screen_cpu_budget_pct}}},
                                     {"collect", {{"window", p.collect.window}, {"clipboard", p.collect.clipboard},
                                                  {"keys", p.collect.keys}}}}));
     plat_.ipc->broadcast(ipc::line({{"t", "indicator"},

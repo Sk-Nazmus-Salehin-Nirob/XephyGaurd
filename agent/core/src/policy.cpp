@@ -224,6 +224,10 @@ Policy Policy::from_json(const json& j, std::string* err) {
             };
             int_in("quality", 10, 100, p.screen_quality);
             int_in("webp_method", 0, 6, p.screen_webp_method);
+            if (s.contains("cpu_budget_pct") && s["cpu_budget_pct"].is_number()) {
+                const double v = s["cpu_budget_pct"].get<double>();
+                if (v >= 1.0 && v <= 100.0) p.screen_cpu_budget_pct = v;
+            }
         }
     } catch (const std::exception& e) {
         if (err) *err = e.what();
@@ -274,7 +278,8 @@ json Policy::to_json() const {
             json a = json::array();
             for (const auto& m : screen_mask_rules) a.push_back({{"process", m.process}, {"title_regex", m.title_regex}});
             return a;
-        }()}, {"codec", screen_codec}, {"quality", screen_quality}, {"webp_method", screen_webp_method}}},
+        }()}, {"codec", screen_codec}, {"quality", screen_quality}, {"webp_method", screen_webp_method},
+                    {"cpu_budget_pct", screen_cpu_budget_pct}}},
     };
 }
 

@@ -369,6 +369,11 @@ TEST_CASE("policy screen encoding: defaults to JPEG, takes valid values, ignores
     CHECK(bad.screen_codec == "jpeg");
     CHECK(bad.screen_quality == 85);
     CHECK(bad.screen_webp_method == 1);
+    CHECK(d.screen_cpu_budget_pct == 8.0);
+    CHECK(Policy::from_json(json{{"screen", {{"cpu_budget_pct", 15}}}}).screen_cpu_budget_pct == 15.0);
+    CHECK(Policy::from_json(json{{"screen", {{"cpu_budget_pct", 0.5}}}}).screen_cpu_budget_pct == 8.0);
+    CHECK(Policy::from_json(json{{"screen", {{"cpu_budget_pct", "9"}}}}).screen_cpu_budget_pct == 8.0);
+    CHECK(Policy::from_json(Policy::from_json(json{{"screen", {{"cpu_budget_pct", 12.5}}}}).to_json()).screen_cpu_budget_pct == 12.5);
 }
 
 TEST_CASE("policy network_lock parses known values and falls back to off") {

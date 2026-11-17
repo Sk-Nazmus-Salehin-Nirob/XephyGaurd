@@ -56,6 +56,9 @@ drops entries that would make the agent reject the policy (bad type, over 256 by
 shown; measured in docs/EVALUATION.md M4-5). All optional; a missing or invalid value keeps the default and never rejects
 the policy. The service passes them to the helper in `config.screen`; a view in progress keeps its settings. The server
 does not send them yet (agent defaults apply).
+`policy.screen.cpu_budget_pct` (number 1..100, default 8, optional, invalid keeps the default) is the CPU budget of the
+helper's capture/encode thread in percent of one core; the governor lowers fps (floor 2) then quality to stay under it.
+Passed in `config.screen` like the above, applied at once (also to a running view).
 
 `policy.network_lock` (`off` | `observe` | `strict`, default `off`, DECISIONS #23) is applied only when
 `proxy_mode` is `proxy_only` and the mode is not `always_on`. `observe` drops QUIC (UDP 443) to public
@@ -209,7 +212,7 @@ and replays it once when a lease arrives (the viewer's request can beat the comm
 only inside a lease, stops by itself when `ttl_s` lapses or the service link drops, and a gateway request alone never
 starts it (screen Step 15).
 `screen_rx` data is one gateway message. The helper's `config` carries only
-`screen.enabled`, `screen.privacy_rules` (mask rules, see the policy section) and `screen.codec`/`quality`/`webp_method`: no gateway address, port or token reaches the student session (screen Step 61); the helper opens
+`screen.enabled`, `screen.privacy_rules` (mask rules, see the policy section) and `screen.codec`/`quality`/`webp_method`/`cpu_budget_pct`: no gateway address, port or token reaches the student session (screen Step 61); the helper opens
 no network connection for the screen.
 
 ## Proxy → CCC (internal)

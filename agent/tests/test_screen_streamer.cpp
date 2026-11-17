@@ -8,6 +8,7 @@
 #include <optional>
 #include <thread>
 
+#include "agent_state.h"
 #include "fake_capture.h"
 #include "protocol.h"
 #include "screen_streamer.hpp"
@@ -249,5 +250,15 @@ TEST_CASE("streamer encodes JPEG by default and WebP after set_encoding, from th
     r.s.on_gateway_message(control(MsgType::KeyframeReq, 0, 9));
     REQUIRE(Rig::eventually([&] { return first_codec(r) >= 0; }));
     CHECK(first_codec(r) == static_cast<int>(Codec::Webp));
+    r.s.stop();
+}
+
+TEST_CASE("streamer passes the CPU budget to the running view's governor", "[screen]") {
+    Rig r;
+    REQUIRE(r.start(11));
+    r.s.set_cpu_budget_pct(15);
+    CHECK(r.s.stream_stats().budget_pct == 15.0);
+    r.s.set_cpu_budget_pct(500);  // clamped
+    CHECK(r.s.stream_stats().budget_pct == 100.0);
     r.s.stop();
 }

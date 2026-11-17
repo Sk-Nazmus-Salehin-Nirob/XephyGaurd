@@ -14,6 +14,7 @@
 namespace xg {
 
 class ScreenCapture;
+struct StreamStats;
 
 /// The window the student is working in, as the helper's window monitor last saw it. Used only to decide
 /// whether to mask the picture; never sent anywhere (ETHICS.md, screen Step 11).
@@ -54,6 +55,11 @@ public:
     void set_mask_rules(std::vector<MaskRule> rules);
     /// Replaces the encoder settings. A view in progress keeps its settings; the next one uses the new ones.
     void set_encoding(const ScreenEncoding& enc);
+    /// CPU budget of the capture/encode thread in percent of one core (policy `screen.cpu_budget_pct`, 1..100,
+    /// default 8). Takes effect at once, also on a running view.
+    void set_cpu_budget_pct(double pct);
+    /// The governor's choice and measured CPU of the current or last view (numbers only).
+    StreamStats stream_stats() const;
 
     /// Arms the streamer for `stream_id`. Capture starts only when the gateway asks for a picture.
     /// A no-op if already armed for the same stream.
