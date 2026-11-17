@@ -89,9 +89,6 @@ class PublicController extends Controller
     {
         abort_unless(preg_match('/^[A-Za-z0-9._-]+\.(deb|rpm|msi|exe|bat|sha256)$/', $file), 404);
         $path = storage_path('app/public/downloads/'.$file);
-        if (! is_file($path) && $file === 'start-screen-stream.bat') {
-            return $this->dynamicScreenStreamBat();
-        }
         if (! is_file($path) && preg_match('/^xephyguard-agent_latest_([A-Za-z0-9]+)\.(deb|rpm)$/', $file, $m)) {
             $matches = glob(storage_path('app/public/downloads/xephyguard-agent_*_'.$m[1].'.'.$m[2])) ?: [];
             if ($matches !== []) {
@@ -150,45 +147,6 @@ JS;
         return response($js, 200, [
             'Content-Type' => 'application/x-ns-proxy-autoconfig; charset=utf-8',
             'Cache-Control' => 'no-store, max-age=0',
-        ]);
-    }
-
-    private function dynamicScreenStreamBat(): Response
-    {
-        $ccc = $this->resolveCccHost();
-        $gwUrl = (string) config('services.screen_gateway.url', '');
-        $port = (int) config('services.screen_gateway.port', 8082);
-        $prefix = rtrim((string) config('services.screen_gateway.path', '/screen-gw'), '/');
-        $parsed = $gwUrl !== '' ? (parse_url($gwUrl) ?: []) : [];
-        $scheme = strtolower((string) ($parsed['scheme'] ?? ''));
-        if ($parsed !== []) {
-            if (! empty($parsed['host']) && ! in_array($parsed['host'], ['127.0.0.1', 'localhost'], true)) {
-                $ccc = $parsed['host'];
-            }
-            if (! empty($parsed['port'])) {
-                $port = (int) $parsed['port'];
-            } elseif ($scheme === 'https' || $scheme === 'wss') {
-                $port = 443;
-            }
-        }
-        $tls = $port === 443 || $port === 8443 || in_array($scheme, ['https', 'wss'], true);
-        $path = $tls ? (($prefix !== '' ? $prefix : '/screen-gw').'/agent') : '/agent';
-        $scheme = request()->isSecure() ? 'wss' : 'ws';
-        $script = "@echo off\r\n"
-            ."set \"XG_CCC_HOST={$ccc}\"\r\n"
-            ."set \"XG_SCREEN_PORT={$port}\"\r\n"
-            ."set \"XG_SCREEN_PATH={$path}\"\r\n"
-            ."set /p STREAM_ID=\"Enter Stream / PC ID (blank to auto-read agent.toml or 1): \"\r\n"
-            ."if \"%STREAM_ID%\"==\"\" (\r\n"
-            ."  \"%~dp0xgagent.exe\" --host \"%XG_CCC_HOST%\" --port \"%XG_SCREEN_PORT%\"\r\n"
-            .") else (\r\n"
-            ."  \"%~dp0xgagent.exe\" --host \"%XG_CCC_HOST%\" --port \"%XG_SCREEN_PORT%\" --stream-id \"%STREAM_ID%\"\r\n"
-            .")\r\n"
-            ."rem Server endpoint base: {$scheme}://{$ccc}:{$port}\r\n";
-
-        return response($script, 200, [
-            'Content-Type' => 'application/octet-stream',
-            'Content-Disposition' => 'attachment; filename="start-screen-stream.bat"',
         ]);
     }
 
