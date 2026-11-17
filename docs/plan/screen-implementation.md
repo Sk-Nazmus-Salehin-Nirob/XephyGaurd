@@ -112,7 +112,7 @@ Done as part of M0-4, docs only:
 - [ ] M5-11 Step 38: re-run bench against targets; decide the H.264 gate (needs owner, new dependency)
 
 ## M6: remaining fixes
-- [ ] M6-1 Step 39 + ccc-2: gateway loopback default, `-dev-insecure` loopback only; install.sh stops opening :8082
+- [x] M6-1 Step 39 + ccc-2 (default `127.0.0.1:8082`, `-dev-insecure` fatal on non-loopback `-addr` via `isLoopbackAddr`, install.sh env `SCREEN_GATEWAY_ADDR=127.0.0.1:8082`, no :8082 firewall rule existed; vet only, test written not run): gateway loopback default, `-dev-insecure` loopback only; install.sh stops opening :8082
 - [ ] M6-2 Step 40: viewer token in the first WebSocket message (server page code cross)
 - [ ] M6-3 Step 41: pin libwebp / libjpeg-turbo by commit
 - [ ] M6-4 Step 44: timeouts, ping/pong 10 s, "agent offline" status

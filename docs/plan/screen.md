@@ -85,7 +85,7 @@ Each step quotes before/after numbers from Step 20. Stop and re-plan if two step
 - [ ] Step 38: [screen] Re-run benchmark; record results against the targets above and decide the "H.264 gate" below (fixes none; touches F43)
 
 ## Phase 4: Config and secrets
-- [ ] Step 39: [screen] Gateway listens on `127.0.0.1:8082` by default; `-dev-insecure` refuses non-loopback binds (fixes none, supports I-CCC-1; touches F45) [CROSS: ccc-deploy Step 1-2]
+- [x] Step 39 (vet only): [screen] Gateway listens on `127.0.0.1:8082` by default; `-dev-insecure` refuses non-loopback binds (fixes none, supports I-CCC-1; touches F45) [CROSS: ccc-deploy Step 1-2]
 - [ ] Step 40: [screen] Viewer token sent as the first WebSocket message instead of the URL query (fixes I-SCREEN-29; touches F43, F45) [CROSS: server page code]
 - [ ] Step 41: [screen] Pin libwebp / libjpeg-turbo by commit hash and document the CMake patch (fixes I-SCREEN-33; touches F47)
 

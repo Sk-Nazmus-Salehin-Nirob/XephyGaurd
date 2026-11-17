@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -119,7 +120,7 @@ func devStreamID(r *http.Request) uint32 {
 }
 
 func main() {
-	addr := flag.String("addr", envOrDefault("SCREEN_GATEWAY_ADDR", ":8082"), "Gateway HTTP/WebSocket address")
+	addr := flag.String("addr", envOrDefault("SCREEN_GATEWAY_ADDR", "127.0.0.1:8082"), "Gateway HTTP/WebSocket address")
 	secret := flag.String("secret", envOrDefault("SCREEN_GATEWAY_SECRET", ""), "JWT Secret")
 	issuer := flag.String("issuer", envOrDefault("SCREEN_GATEWAY_ISSUER", "xephyguard-ccc"), "JWT Issuer")
 	audience := flag.String("audience", envOrDefault("SCREEN_GATEWAY_AUDIENCE", "xephyguard-gateway"), "JWT Audience")
@@ -129,6 +130,9 @@ func main() {
 	devInsecure := flag.Bool("dev-insecure", envBool("SCREEN_GATEWAY_DEV_INSECURE", false), "Allow unauthenticated dev connections (never use in production)")
 	flag.Parse()
 
+	if *devInsecure && !isLoopbackAddr(*addr) {
+		log.Fatalf("-dev-insecure only with a loopback -addr (got %q)", *addr)
+	}
 	if !*devInsecure && *secret == "" {
 		log.Fatal("SCREEN_GATEWAY_SECRET (-secret) is required unless -dev-insecure is explicitly set")
 	}
@@ -172,4 +176,18 @@ func splitList(v string) []string {
 		}
 	}
 	return out
+}
+
+// isLoopbackAddr reports whether a listen address binds loopback only (127.0.0.0/8, ::1 or localhost).
+// An empty host (":8082") binds every interface and is not loopback.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
 }
