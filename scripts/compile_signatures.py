@@ -72,6 +72,16 @@ def validate_web(web: dict) -> list[str]:
     for proc, dom in (web.get("process_domains") or {}).items():
         if not isinstance(dom, str) or "." not in dom:
             errors.append(f"web.process_domains.{proc}: must be a host name")
+    tunnel = web.get("tunnel")
+    if tunnel is not None:
+        if not isinstance(tunnel, dict) or not str(tunnel.get("id", "")).startswith("net."):
+            errors.append("web.tunnel: needs an id starting with 'net.'")
+        elif tunnel.get("severity", "medium") not in ("info", "low", "medium", "high", "critical"):
+            errors.append("web.tunnel.severity: bad severity")
+        else:
+            ports = tunnel.get("tcp_ports", [])
+            if not ports or not all(isinstance(x, int) and 0 < x < 65536 and x not in (80, 443) for x in ports):
+                errors.append("web.tunnel.tcp_ports: 1-65535, never 80/443 (normal web traffic)")
     return errors
 
 

@@ -44,3 +44,12 @@ process_domains:
   copilot: api.githubcopilot.com
   claude: api.anthropic.com
   ollama: ollama.com
+# Outbound TCP connections to a public address on these ports are flagged as a possible tunnel during a
+# session (practice / test): the proxy cannot see inside them. Only the destination address, port and the
+# process name are reported, never the traffic. UDP VPNs (WireGuard, OpenVPN/UDP) show up as a VPN adapter
+# (adapters.yaml) instead. A tunnel on port 443 looks like normal HTTPS and is not detected by this rule.
+tunnel:
+  id: net.tunnel_flow
+  severity: medium
+  description: "Connection to an outside host on a tunnel port (SSH / VPN / SOCKS / Tor)"
+  tcp_ports: [22, 1080, 1194, 1723, 8388, 9001, 9030, 9050, 9150]
