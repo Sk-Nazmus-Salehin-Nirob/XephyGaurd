@@ -852,6 +852,8 @@ void Agent::push_helper_config() {
     if (!plat_.ipc) return;
     const Policy& p = policy_;
     const std::string pac_url = effective_pac_url();
+    json mask_rules = json::array();
+    for (const auto& m : p.screen_mask_rules) mask_rules.push_back({{"process", m.process}, {"title_regex", m.title_regex}});
     plat_.ipc->broadcast(ipc::line({{"t", "config"},
                                     {"mode", to_string(p.mode)},
                                     {"title_capture", to_string(p.title_capture)},
@@ -861,7 +863,7 @@ void Agent::push_helper_config() {
                                     {"proxy_pac_url", pac_url},
                                     // No gateway address or credential: the helper streams through the service
                                     // (DECISIONS #24), so the student's session never holds a screen token.
-                                    {"screen", {{"enabled", cfg_.screen_enabled}}},
+                                    {"screen", {{"enabled", cfg_.screen_enabled}, {"privacy_rules", mask_rules}}},
                                     {"collect", {{"window", p.collect.window}, {"clipboard", p.collect.clipboard},
                                                  {"keys", p.collect.keys}}}}));
     plat_.ipc->broadcast(ipc::line({{"t", "indicator"},

@@ -29,6 +29,16 @@ personal messages, file contents, microphone or camera. Keystrokes and clipboard
 numbers on the PC (`agent/core/src/keystats.cpp`, `paste.cpp`) and the originals are discarded
 immediately.
 
+## Screen privacy mask
+A live screen view never shows the content of windows on the CCC's privacy list (password managers, online banking,
+private browser windows and similar; the list is set by the lab admins, not built into the agent). While the focused
+window matches the list, the PC sends a grey "masked" placeholder instead of pixels, and the viewer sees that the
+picture is hidden. The mask also applies when the PC cannot tell which window is focused or the list cannot be read:
+the picture is hidden, never shown. To decide this, the session helper keeps the name and title of the focused
+window in memory on the PC; they are not sent anywhere for this purpose and are discarded when the helper stops.
+Window names and titles are sent to the CCC only under the existing "Name of the focused application" and
+"Window titles" settings above.
+
 ## Transparency
 * An always-visible indicator on every PC ("Monitored by XephyGuard · mode: Test").
 * A login banner on Windows and Linux.

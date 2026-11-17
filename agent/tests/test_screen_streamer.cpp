@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 #include "fake_capture.h"
@@ -28,6 +29,27 @@ struct Rig {
     std::mutex mu;
     std::vector<std::string> frames;
     std::atomic<int> viewing{-1};
+    std::mutex wmu;
+    std::optional<ScreenWindow> win = ScreenWindow{"editor", "main.cpp"};  // what the "window monitor" reports
+    Rig() {
+        s.set_window_source([this] {
+            std::lock_guard lk(wmu);
+            return win;
+        });
+    }
+    void set_window(std::optional<ScreenWindow> w) {
+        std::lock_guard lk(wmu);
+        win = std::move(w);
+    }
+    // 1 = a MASKED placeholder was sent, 2 = a real (unmasked) frame was sent, 0 = nothing yet.
+    int kinds() {
+        std::lock_guard lk(mu);
+        int k = 0;
+        for (const auto& f : frames)
+            if (auto m = decode(reinterpret_cast<const uint8_t*>(f.data()), f.size()); m && m->type == MsgType::Frame)
+                k |= (m->flags & Flags::MASKED) ? 1 : 2;
+        return k;
+    }
     bool start(uint32_t id) {
         return s.start(id, [this](std::string_view f) {
             std::lock_guard lk(mu);
@@ -81,4 +103,55 @@ TEST_CASE("helper streamer stops capturing when the service link is lost and ign
     r.s.stop();
     CHECK_FALSE(r.s.is_running());
     CHECK_FALSE(r.start(0));  // no stream id, no streamer
+}
+
+TEST_CASE("privacy mask: no window source or an unknown window masks the picture (fail-safe)", "[screen][privacy]") {
+    Rig r;
+    r.set_window(std::nullopt);  // the helper has no window report yet
+    REQUIRE(r.start(42));
+    r.s.on_gateway_message(control(MsgType::KeyframeReq, 0, 42));
+    REQUIRE(Rig::eventually([&] { return r.kinds() != 0; }));
+    CHECK(r.kinds() == 1);
+
+    ScreenStreamer bare([] { return std::make_shared<FakeCapture>(320, 240); });  // never given a window source
+    std::mutex mu;
+    int masked = 0, real = 0;
+    REQUIRE(bare.start(7, [&](std::string_view f) {
+        auto m = decode(reinterpret_cast<const uint8_t*>(f.data()), f.size());
+        std::lock_guard lk(mu);
+        if (m && m->type == MsgType::Frame) ((m->flags & Flags::MASKED) ? masked : real)++;
+        return true;
+    }));
+    bare.on_gateway_message(control(MsgType::KeyframeReq, 0, 7));
+    REQUIRE(Rig::eventually([&] { std::lock_guard lk(mu); return masked > 0; }));
+    std::lock_guard lk(mu);
+    CHECK(real == 0);
+}
+
+TEST_CASE("privacy mask: a matching window is masked, leaving it lifts the mask", "[screen][privacy]") {
+    Rig r;
+    r.s.set_mask_rules({{"keepassxc", ""}, {"", "private|incognito"}});
+    r.set_window(ScreenWindow{"KeePassXC", "Passwords"});  // app name compares case-insensitively
+    REQUIRE(r.start(42));
+    r.s.on_gateway_message(control(MsgType::KeyframeReq, 0, 42));
+    REQUIRE(Rig::eventually([&] { return r.kinds() != 0; }));
+    CHECK(r.kinds() == 1);
+
+    r.set_window(ScreenWindow{"firefox", "Hello - Incognito window"});  // title regex rule
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    CHECK(r.kinds() == 1);
+
+    r.set_window(ScreenWindow{"editor", "main.cpp"});
+    REQUIRE(Rig::eventually([&] { return (r.kinds() & 2) != 0; }));
+}
+
+TEST_CASE("privacy mask: an invalid rule regex masks (fail-safe); rules can change on a running stream", "[screen][privacy]") {
+    Rig r;
+    r.s.set_mask_rules({{"", "([unclosed"}});
+    REQUIRE(r.start(42));
+    r.s.on_gateway_message(control(MsgType::KeyframeReq, 0, 42));
+    REQUIRE(Rig::eventually([&] { return r.kinds() != 0; }));
+    CHECK(r.kinds() == 1);
+    r.s.set_mask_rules({});  // the bad list is replaced
+    REQUIRE(Rig::eventually([&] { return (r.kinds() & 2) != 0; }));
 }

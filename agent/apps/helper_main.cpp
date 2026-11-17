@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -95,6 +96,7 @@ struct LastCopyInfo {
 struct HelperState {
     std::recursive_mutex mu;
     bool want_window = false, want_clipboard = false, want_keys = false;
+    bool screen_on = false;  // screen streaming armed: the window monitor must run to feed the privacy mask
     bool window_on = false, clipboard_on = false, keys_on = false;
     std::string mode = "always_on";
     bool full_titles = false;  // title_capture=full: file names from titles may label copy/paste (I-AGENT-9)
@@ -104,6 +106,11 @@ struct HelperState {
     std::string last_title;
     std::string last_file;
     LastCopyInfo last_copy;
+    // Foreground window for the screen privacy mask only: kept in memory, never sent (ETHICS.md). Separate from
+    // last_app/last_title, which exist only while window collection is on.
+    std::mutex mask_mu;
+    bool mask_known = false;
+    std::string mask_app, mask_title;
 };
 
 int count_monitors() {
@@ -255,11 +262,19 @@ int helper_main() {
 
     auto apply_config = [&] {
         std::lock_guard lk(st.mu);
-        if (plat->window && st.want_window != st.window_on) {
-            if (st.want_window)
+        const bool need_window = st.want_window || st.screen_on;
+        if (plat->window && need_window != st.window_on) {
+            if (need_window)
                 st.window_on = plat->window->start([&](const WindowInfo& w) {
                     {
+                        std::lock_guard lk3(st.mask_mu);
+                        st.mask_known = true;
+                        st.mask_app = w.app;
+                        st.mask_title = w.title;
+                    }
+                    {
                         std::lock_guard lk2(st.mu);
+                        if (!st.want_window) return;  // running only for the screen mask
                         st.last_app = w.app;
                         st.last_title = w.title;
                         st.last_file = st.full_titles ? extract_active_file(w.app, w.title) : std::string{};
@@ -269,6 +284,8 @@ int helper_main() {
             else {
                 plat->window->stop();
                 st.window_on = false;
+                std::lock_guard lk3(st.mask_mu);
+                st.mask_known = false;
             }
         }
         if (plat->clipboard && st.want_clipboard != st.clipboard_on) {
@@ -342,6 +359,12 @@ int helper_main() {
     };
 
     ScreenStreamer screen_streamer;
+    // Fail-safe: until the window monitor has reported a window the streamer masks the picture (screen Step 11).
+    screen_streamer.set_window_source([&st]() -> std::optional<ScreenWindow> {
+        std::lock_guard lk(st.mask_mu);
+        if (!st.mask_known) return std::nullopt;
+        return ScreenWindow{st.mask_app, st.mask_title};
+    });
     // The helper only captures and encodes: frames go to the service over IPC and the service alone talks to
     // the gateway with its mTLS cert (DECISIONS #24). The helper never sees a gateway credential and never
     // reads agent.toml (I-AGENT-2). Settings come only from the service.
@@ -385,6 +408,22 @@ int helper_main() {
                     s_enabled = j["screen"].value("enabled", s_enabled);
                 }
                 cfg_screen_enabled.store(s_enabled);
+                if (j.contains("screen") && j["screen"].is_object()) {
+                    // The service sends the whole list on every config; a malformed one masks everything.
+                    std::vector<MaskRule> rules;
+                    bool bad = false;
+                    const auto& pr = j["screen"].value("privacy_rules", json::array());
+                    if (!pr.is_array() || pr.size() > 128) bad = true;
+                    else for (const auto& r : pr) {
+                        auto ok_str = [&](const char* k) { return !r.contains(k) || r[k].is_string(); };
+                        if (!r.is_object() || !ok_str("process") || !ok_str("title_regex")) { bad = true; break; }
+                        MaskRule m{r.value("process", std::string{}), r.value("title_regex", std::string{})};
+                        if (m.app.empty() && m.title_regex.empty()) { bad = true; break; }
+                        rules.push_back(std::move(m));
+                    }
+                    if (bad) rules = {MaskRule{{}, ".*"}};  // match every title
+                    screen_streamer.set_mask_rules(std::move(rules));
+                }
                 uint32_t pc_id = 0;
                 try { pc_id = static_cast<uint32_t>(std::stoul(pc_id_str)); } catch (...) {}
                 if (pc_id > 0 && s_enabled && linux_screen_ready()) {
@@ -399,6 +438,7 @@ int helper_main() {
                     std::lock_guard lk(st.mu);
                     const auto c = j.value("collect", json::object());
                     st.want_window = c.value("window", false);
+                    st.screen_on = pc_id > 0 && s_enabled && linux_screen_ready();
                     st.want_clipboard = c.value("clipboard", false);
                     st.want_keys = c.value("keys", false);
                     st.mode = j.value("mode", "always_on");

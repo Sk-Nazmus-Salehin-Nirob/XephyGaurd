@@ -1,6 +1,7 @@
 #include "screen_streamer.hpp"
 
 #include <mutex>
+#include <stdexcept>
 #include <vector>
 
 #include "agent_state.h"
@@ -28,6 +29,27 @@ std::shared_ptr<ScreenCapture> platform_capture() {
 #endif
 }
 
+constexpr size_t kMaxTitleBytes = 512;  // bounds the regex work on a title the student controls
+
+std::shared_ptr<PrivacyFilter> make_filter(const WindowSource& src, const std::vector<MaskRule>& rules) {
+    auto f = std::make_shared<PrivacyFilter>();
+    std::vector<PrivacyRule> pr;
+    for (const auto& r : rules) {
+        PrivacyRule x;
+        if (!r.app.empty()) x.process_name = r.app;
+        if (!r.title_regex.empty()) x.title_regex = r.title_regex;
+        pr.push_back(std::move(x));
+    }
+    f->set_rules(std::move(pr));
+    f->set_window_provider([src]() -> xg::WindowInfo {
+        auto w = src ? src() : std::nullopt;
+        if (!w) throw std::runtime_error("foreground window unknown");  // PrivacyFilter turns this into MASKED
+        if (w->title.size() > kMaxTitleBytes) w->title.resize(kMaxTitleBytes);
+        return {w->app, {}, w->title};
+    });
+    return f;
+}
+
 }  // namespace
 
 struct ScreenStreamer::Impl {
@@ -37,6 +59,12 @@ struct ScreenStreamer::Impl {
     uint32_t stream_id = 0;
     bool viewing = false;
     std::function<void(bool)> on_viewing_changed;
+    WindowSource window_source;
+    std::vector<MaskRule> mask_rules;
+    // The filter is rebuilt (not mutated) when the rules change; the state machine swaps it under its own lock.
+    void install_filter_locked() {
+        if (sm) sm->set_privacy_filter(make_filter(window_source, mask_rules));
+    }
 
     void set_viewing(bool v) {
         if (viewing == v) return;
@@ -55,6 +83,18 @@ ScreenStreamer::ScreenStreamer(CaptureFactory factory) : impl_(std::make_unique<
 
 ScreenStreamer::~ScreenStreamer() { stop(); }
 
+void ScreenStreamer::set_window_source(WindowSource src) {
+    std::lock_guard lk(impl_->mu);
+    impl_->window_source = std::move(src);
+    impl_->install_filter_locked();
+}
+
+void ScreenStreamer::set_mask_rules(std::vector<MaskRule> rules) {
+    std::lock_guard lk(impl_->mu);
+    impl_->mask_rules = std::move(rules);
+    impl_->install_filter_locked();
+}
+
 bool ScreenStreamer::start(uint32_t stream_id, FrameOut out, std::function<void(bool)> on_viewing_changed) {
     if (stream_id == 0 || !out) return false;
     std::lock_guard lk(impl_->mu);
@@ -70,6 +110,7 @@ bool ScreenStreamer::start(uint32_t stream_id, FrameOut out, std::function<void(
     impl_->sm = std::make_unique<AgentStateMachine>(capture, cfg, [out = std::move(out)](const std::vector<uint8_t>& d) {
         out(std::string_view(reinterpret_cast<const char*>(d.data()), d.size()));
     });
+    impl_->install_filter_locked();  // always: with no window source the filter masks everything
     impl_->stream_id = stream_id;
     impl_->on_viewing_changed = std::move(on_viewing_changed);
     return true;

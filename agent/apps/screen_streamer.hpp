@@ -6,12 +6,27 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace xg {
 
 class ScreenCapture;
+
+/// The window the student is working in, as the helper's window monitor last saw it. Used only to decide
+/// whether to mask the picture; never sent anywhere (ETHICS.md, screen Step 11).
+struct ScreenWindow {
+    std::string app;    // executable name
+    std::string title;
+};
+/// nullopt = unknown (no monitor, no event yet): the streamer then masks the screen (fail-safe).
+using WindowSource = std::function<std::optional<ScreenWindow>()>;
+/// A window to hide: every non-empty field must match (app case-insensitive, title as case-insensitive regex).
+struct MaskRule {
+    std::string app, title_regex;
+};
 
 class ScreenStreamer {
 public:
@@ -25,6 +40,11 @@ public:
 
     ScreenStreamer(const ScreenStreamer&) = delete;
     ScreenStreamer& operator=(const ScreenStreamer&) = delete;
+
+    /// Where the streamer learns the focused window. Without one the picture stays masked.
+    void set_window_source(WindowSource src);
+    /// Replaces the windows to hide. Takes effect on a running stream. An invalid regex masks the screen.
+    void set_mask_rules(std::vector<MaskRule> rules);
 
     /// Arms the streamer for `stream_id`. Capture starts only when the gateway asks for a picture.
     /// A no-op if already armed for the same stream.

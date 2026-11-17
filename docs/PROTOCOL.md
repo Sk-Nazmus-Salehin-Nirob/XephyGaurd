@@ -40,6 +40,15 @@ one issued with that token (`AuthenticateAgent`). Per-agent rate limit: 120 requ
 `policy.version` is a deterministic CRC of the policy. Agents refuse signature bundles whose signature
 does not verify against the lab CA and report a `tamper/signature_invalid` event.
 
+`policy.screen.privacy_rules` (optional, at most 128 entries) lists windows the live screen view must never show:
+`[{"process": "keepassxc", "title_regex": "bank|incognito"}]`. A window matches an entry when every field that is set
+matches (`process` = executable name, case-insensitive; `title_regex` = case-insensitive regex search over the first
+512 bytes of the title); an entry needs at least one field, strings are at most 256 bytes. A malformed list rejects
+the whole policy. The service passes the list to the helper in `config` as `screen.privacy_rules`; the helper keeps
+the focused window in memory only to decide the mask and never sends it for this purpose. While the focused window is
+unknown, a rule does not compile, or the list is malformed, the helper masks the screen (a `MASKED` placeholder
+frame, no pixels). The server does not send rules yet (screen Step 11 covers the agent side).
+
 `policy.network_lock` (`off` | `observe` | `strict`, default `off`, DECISIONS #23) is applied only when
 `proxy_mode` is `proxy_only` and the mode is not `always_on`. `observe` drops QUIC (UDP 443) to public
 addresses; `strict` drops every public destination except the CCC. If the local rules disappear the agent
@@ -169,7 +178,7 @@ decodes the payload, and closes the connection on an unknown type, an empty or a
 accepted only on connections that passed the helper peer check above, and relayed only from the helper the
 service chose as source: one that sent `{"t":"screen_caps",...,"ipc_stream":true}` from the active session.
 Service → helper: `{"t":"screen_rx","data":"<base64 gateway message>"}`. The helper's `config` carries only
-`screen.enabled`: no gateway address, port or token reaches the student session (screen Step 61); the helper opens
+`screen.enabled` and `screen.privacy_rules` (mask rules, see the policy section): no gateway address, port or token reaches the student session (screen Step 61); the helper opens
 no network connection for the screen.
 
 ## Proxy → CCC (internal)

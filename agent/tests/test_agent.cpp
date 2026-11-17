@@ -318,6 +318,27 @@ TEST_CASE("a tunnel to an outside host is flagged for review during a session, n
     CHECK(h.of(ev::rule_hit).size() == 1);  // de-duplicated
 }
 
+TEST_CASE("policy screen.privacy_rules parse, round-trip, and a malformed list rejects the policy") {
+    const json ok = {{"screen", {{"privacy_rules", json::array({{{"process", "keepassxc"}}, {{"title_regex", "bank|private"}}})}}}};
+    std::string err;
+    auto p = Policy::from_json(ok, &err);
+    REQUIRE(err.empty());
+    REQUIRE(p.screen_mask_rules.size() == 2);
+    CHECK(p.screen_mask_rules[0].process == "keepassxc");
+    CHECK(p.screen_mask_rules[1].title_regex == "bank|private");
+    CHECK(Policy::from_json(p.to_json()).screen_mask_rules.size() == 2);
+    CHECK(Policy::from_json(json::object()).screen_mask_rules.empty());
+
+    for (const json& bad : {json{{"screen", {{"privacy_rules", "x"}}}}, json{{"screen", {{"privacy_rules", json::array({json::object()})}}}},
+                            json{{"screen", {{"privacy_rules", json::array({{{"process", 5}}})}}}},
+                            json{{"screen", {{"privacy_rules", json::array({{{"title_regex", std::string(300, 'a')}}})}}}}}) {
+        std::string e;
+        auto q = Policy::from_json(bad, &e);
+        CHECK_FALSE(e.empty());
+        CHECK(q.screen_mask_rules.empty());
+    }
+}
+
 TEST_CASE("policy network_lock parses known values and falls back to off") {
     CHECK(Policy::from_json(json{{"network_lock", "strict"}}).network_lock == NetworkLock::strict);
     CHECK(Policy::from_json(json{{"network_lock", "OBSERVE"}}).network_lock == NetworkLock::observe);

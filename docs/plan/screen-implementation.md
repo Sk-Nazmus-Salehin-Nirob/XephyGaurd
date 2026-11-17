@@ -61,7 +61,8 @@ Done as part of M0-4, docs only:
 - [x] M2-8 Step 8: `HandleAgent` data race (done in M2-2)
 - [x] M2-9 Step 9: keyframe cache TTL 5 s, cleared on MASKED/SECURE
 - [x] M2-10 Step 10: X11 shm 0600 + `IPC_RMID`
-- [ ] M2-11 Step 11 [agent]: privacy filter in the embedded streamer, fail-safe mask; ETHICS.md wording
+- [x] M2-11 Step 11 [agent]: privacy filter in the embedded streamer, fail-safe mask; ETHICS.md wording (agent side only: policy `screen.privacy_rules` -> helper; the rule list in data/ and the server delivery are M2-11b)
+- [ ] M2-11b [data/server]: `data/` YAML list of masked windows (password managers, banking, private windows), server sends it as policy `screen.privacy_rules`; PROTOCOL.md already describes the field
 - [ ] M2-12 Step 12: viewer ordered frame queue
 - [ ] M2-13 Step 13 → Step 14: gateway sends `mode` in `Status`; streamer honours wall/snapshot/live
 - [ ] M2-14 Step 15 [agent]: helper starts only on service command with lease expiry

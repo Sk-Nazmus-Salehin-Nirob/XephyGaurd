@@ -1,6 +1,7 @@
 #include "xg/policy.hpp"
 
 #include <algorithm>
+#include <stdexcept>
 
 #include "xg/json_read.hpp"
 #include "xg/util.hpp"
@@ -189,6 +190,26 @@ Policy Policy::from_json(const json& j, std::string* err) {
         }
         if (j.contains("network_lock") && j["network_lock"].is_string())
             p.network_lock = parse_network_lock(j["network_lock"].get<std::string>());
+        if (j.contains("screen") && j["screen"].is_object() && j["screen"].contains("privacy_rules")) {
+            // A malformed list rejects the whole policy: a half-read mask list would silently show windows.
+            const auto& arr = j["screen"]["privacy_rules"];
+            if (!arr.is_array() || arr.size() > 128) throw std::runtime_error("screen.privacy_rules must be an array of at most 128 rules");
+            std::vector<Policy::MaskRule> rules;
+            for (const auto& r : arr) {
+                if (!r.is_object()) throw std::runtime_error("screen.privacy_rules entry must be an object");
+                Policy::MaskRule m;
+                for (const char* k : {"process", "title_regex"}) {
+                    if (!r.contains(k)) continue;
+                    if (!r[k].is_string() || r[k].get<std::string>().size() > 256)
+                        throw std::runtime_error(std::string("screen.privacy_rules.") + k + " must be a string of at most 256 bytes");
+                }
+                m.process = r.value("process", std::string{});
+                m.title_regex = r.value("title_regex", std::string{});
+                if (m.process.empty() && m.title_regex.empty()) throw std::runtime_error("screen.privacy_rules entry has no process or title_regex");
+                rules.push_back(std::move(m));
+            }
+            p.screen_mask_rules = std::move(rules);
+        }
     } catch (const std::exception& e) {
         if (err) *err = e.what();
     }
@@ -234,6 +255,11 @@ json Policy::to_json() const {
         {"proxy_mode", proxy_mode},
         {"proxy_pac_url", proxy_pac_url},
         {"network_lock", to_string(network_lock)},
+        {"screen", {{"privacy_rules", [&] {
+            json a = json::array();
+            for (const auto& m : screen_mask_rules) a.push_back({{"process", m.process}, {"title_regex", m.title_regex}});
+            return a;
+        }()}}},
     };
 }
 

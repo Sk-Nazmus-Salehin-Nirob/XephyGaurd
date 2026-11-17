@@ -55,6 +55,14 @@ struct Policy {
     std::string proxy_pac_url;                // https://<ccc>/proxy.pac when proxy_mode == proxy_only
     NetworkLock network_lock = NetworkLock::off;  // per session; applied only in proxy_only and not Always-on
 
+    /// Windows whose content the live screen view must never show (F43, screen Step 11): a window matches when
+    /// every field that is set matches (process = executable name, case-insensitive; title_regex = case-insensitive
+    /// search). Delivered as `screen.privacy_rules`; the lists live in the CCC data, never in the agent.
+    struct MaskRule {
+        std::string process, title_regex;
+    };
+    std::vector<MaskRule> screen_mask_rules;
+
     static Policy default_for(Mode m);
     static Policy from_json(const json& j, std::string* err = nullptr);
     json to_json() const;
