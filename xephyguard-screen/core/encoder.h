@@ -9,6 +9,7 @@ struct EncoderConfig {
   Codec codec = Codec::Webp;
   int webp_method = 4;       // 0 (fastest) .. 6 (smallest); 4 is libwebp's default
   double full_frame_threshold = 0.6;  // fraction of tiles that triggers FULL
+  bool rectangles = false;   // true: protocol v2, dirty tiles merged into rectangles (max 256x256), one image each
 };
 
 class FrameEncoder {
@@ -19,6 +20,11 @@ public:
   Message build(const Frame& f, const std::vector<uint32_t>& tile_indices,
                 uint32_t stream_id, uint32_t seq, uint32_t base_seq, bool keyframe);
   void set_quality_scale(double s);  // 0.3..1.0, used by flow control
+
+  struct Region { int x, y, w, h; };  // pixels, inside the frame
+  // Merges the given tile indices (ty*cols+tx) into rectangles of whole tiles, at most 4x4 tiles (256x256 px),
+  // clipped to width x height. Only tiles in the list are covered, none twice. Order: row-major by first tile.
+  static std::vector<Region> merge_tiles(const std::vector<uint32_t>& tile_indices, int width, int height);
 
 private:
   EncoderConfig cfg_;

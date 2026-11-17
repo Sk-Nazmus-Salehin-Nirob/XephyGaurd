@@ -174,3 +174,110 @@ TEST_CASE("FrameEncoder: BGRX input with zero alpha produces opaque WebP and Raw
   REQUIRE(mr.tiles[0].payload.size() == 64 * 64 * 4);
   CHECK(mr.tiles[0].payload[3] == 0xFF);
 }
+
+#include <random>
+#include <set>
+
+TEST_CASE("merge_tiles: covers exactly the given tiles, no overlap, rectangles <= 256x256") {
+  const int W = 1000, H = 700;  // 16 x 11 tiles, ragged right and bottom edges
+  const int cols = 16, rows = 11;
+  std::mt19937 rng(99);
+  for (int round = 0; round < 300; ++round) {
+    std::vector<uint32_t> dirty;
+    const int density = 1 + static_cast<int>(rng() % 100);
+    std::set<uint32_t> want;
+    for (int i = 0; i < cols * rows; ++i) {
+      if (static_cast<int>(rng() % 100) < density) { dirty.push_back(static_cast<uint32_t>(i)); want.insert(static_cast<uint32_t>(i)); }
+    }
+    auto regions = xg::FrameEncoder::merge_tiles(dirty, W, H);
+    std::set<uint32_t> got;
+    for (const auto& r : regions) {
+      CHECK(r.w >= 1); CHECK(r.h >= 1);
+      CHECK(r.w <= 256); CHECK(r.h <= 256);
+      CHECK(r.x % xg::kTile == 0); CHECK(r.y % xg::kTile == 0);
+      CHECK(r.x + r.w <= W); CHECK(r.y + r.h <= H);
+      for (int ty = r.y / 64; ty < (r.y + r.h + 63) / 64; ++ty)
+        for (int tx = r.x / 64; tx < (r.x + r.w + 63) / 64; ++tx)
+          CHECK(got.insert(static_cast<uint32_t>(ty * cols + tx)).second);  // no tile twice
+    }
+    CHECK(got == want);
+  }
+}
+
+TEST_CASE("merge_tiles: a full 1920x1080 frame is 40 rectangles, a lone tile stays one") {
+  std::vector<uint32_t> all;
+  for (uint32_t i = 0; i < 30 * 17; ++i) all.push_back(i);
+  auto r = xg::FrameEncoder::merge_tiles(all, 1920, 1080);
+  CHECK(r.size() == 8 * 5);
+  CHECK(r[0].w == 256);
+  CHECK(r[0].h == 256);
+  CHECK(r.back().h == 1080 - 4 * 256);
+  auto one = xg::FrameEncoder::merge_tiles({35}, 1920, 1080);  // tile (5,1)
+  REQUIRE(one.size() == 1);
+  CHECK(one[0].x == 320);
+  CHECK(one[0].y == 64);
+  CHECK(xg::FrameEncoder::merge_tiles({}, 1920, 1080).empty());
+  CHECK(xg::FrameEncoder::merge_tiles({999999}, 1920, 1080).empty());  // out of range ignored
+}
+
+TEST_CASE("FrameEncoder: rectangles mode emits v2, one decodable image per merged rectangle") {
+  xg::EncoderConfig cfg;
+  cfg.rectangles = true;
+  cfg.full_frame_threshold = 2.0;  // never FULL, so only the given tiles are sent
+  SUBCASE("jpeg") { cfg.codec = xg::Codec::Jpeg; }
+  SUBCASE("webp") { cfg.codec = xg::Codec::Webp; }
+  SUBCASE("raw") { cfg.codec = xg::Codec::Raw; }
+  xg::FrameEncoder encoder(cfg);
+
+  xg::Frame f;
+  f.width = 300;  // 5 x 4 tiles, ragged edges
+  f.height = 200;
+  f.stride = f.width * 4;
+  f.bgra.assign(static_cast<size_t>(f.stride) * f.height, 0x80);
+
+  // tiles (0,0)(1,0)(0,1)(1,1) -> one 128x128 rectangle; (4,3) -> the 44x8 corner
+  auto msg = encoder.build(f, {0, 1, 5, 6, 19}, 3, 9, 8, false);
+  CHECK(msg.version == xg::kVersion2);
+  REQUIRE(msg.tiles.size() == 2);
+  CHECK(msg.tiles[0].x == 0); CHECK(msg.tiles[0].y == 0);
+  CHECK(msg.tiles[0].w == 128); CHECK(msg.tiles[0].h == 128);
+  CHECK(msg.tiles[1].x == 256); CHECK(msg.tiles[1].y == 192);
+  CHECK(msg.tiles[1].w == 44); CHECK(msg.tiles[1].h == 8);
+
+  auto wire = xg::encode(msg);
+  auto back = xg::decode(wire.data(), wire.size());
+  REQUIRE(back.has_value());
+  REQUIRE(back->tiles.size() == 2);
+  for (const auto& t : back->tiles) {
+    REQUIRE_FALSE(t.payload.empty());
+    if (t.codec == xg::Codec::Webp) {
+      int dw = 0, dh = 0;
+      uint8_t* px = WebPDecodeBGRA(t.payload.data(), t.payload.size(), &dw, &dh);
+      REQUIRE(px != nullptr);
+      CHECK(dw == t.w); CHECK(dh == t.h);
+      WebPFree(px);
+    } else if (t.codec == xg::Codec::Jpeg) {
+      tjhandle d = tjInitDecompress();
+      int jw = 0, jh = 0, ss = 0, cs = 0;
+      REQUIRE(tjDecompressHeader3(d, t.payload.data(), t.payload.size(), &jw, &jh, &ss, &cs) == 0);
+      CHECK(jw == t.w); CHECK(jh == t.h);
+      tjDestroy(d);
+    } else {
+      CHECK(t.payload.size() == static_cast<size_t>(t.w) * t.h * 4);
+    }
+  }
+}
+
+TEST_CASE("FrameEncoder: default stays v1 with 64 px tile indices") {
+  xg::EncoderConfig cfg;
+  xg::FrameEncoder encoder(cfg);
+  xg::Frame f;
+  f.width = 128; f.height = 128; f.stride = 512;
+  f.bgra.assign(512u * 128u, 0x40);
+  auto msg = encoder.build(f, {1, 2}, 1, 1, 0, false);
+  CHECK(msg.version == xg::kVersion);
+  REQUIRE(msg.tiles.size() == 2);
+  CHECK(msg.tiles[0].x == 1); CHECK(msg.tiles[0].y == 0);
+  CHECK(msg.tiles[1].x == 0); CHECK(msg.tiles[1].y == 1);
+  CHECK(msg.tiles[0].w == 0);
+}

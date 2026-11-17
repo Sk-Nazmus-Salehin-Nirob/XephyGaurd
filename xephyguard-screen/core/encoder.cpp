@@ -13,9 +13,49 @@ void FrameEncoder::set_quality_scale(double s) {
   quality_scale_ = std::clamp(s, 0.3, 1.0);
 }
 
+std::vector<FrameEncoder::Region> FrameEncoder::merge_tiles(const std::vector<uint32_t>& tile_indices,
+                                                            int width, int height) {
+  constexpr int kSpan = kMaxRectSide / kTile;  // tiles per rectangle side
+  std::vector<Region> out;
+  const int cols = (width + kTile - 1) / kTile;
+  const int rows = (height + kTile - 1) / kTile;
+  if (cols <= 0 || rows <= 0) return out;
+  // 0 = clean, 1 = dirty and not yet covered
+  std::vector<uint8_t> grid(static_cast<size_t>(cols) * rows, 0);
+  for (uint32_t idx : tile_indices) {
+    if (idx < grid.size()) grid[idx] = 1;
+  }
+  for (int ty = 0; ty < rows; ++ty) {
+    for (int tx = 0; tx < cols; ++tx) {
+      if (!grid[static_cast<size_t>(ty) * cols + tx]) continue;
+      int tw = 1;
+      while (tw < kSpan && tx + tw < cols && grid[static_cast<size_t>(ty) * cols + tx + tw]) ++tw;
+      int th = 1;
+      while (th < kSpan && ty + th < rows) {
+        bool whole = true;
+        for (int i = 0; i < tw; ++i) {
+          if (!grid[static_cast<size_t>(ty + th) * cols + tx + i]) { whole = false; break; }
+        }
+        if (!whole) break;
+        ++th;
+      }
+      for (int j = 0; j < th; ++j)
+        for (int i = 0; i < tw; ++i) grid[static_cast<size_t>(ty + j) * cols + tx + i] = 0;
+      Region r;
+      r.x = tx * kTile;
+      r.y = ty * kTile;
+      r.w = std::min(tw * kTile, width - r.x);
+      r.h = std::min(th * kTile, height - r.y);
+      out.push_back(r);
+    }
+  }
+  return out;
+}
+
 Message FrameEncoder::build(const Frame& f, const std::vector<uint32_t>& tile_indices,
                             uint32_t stream_id, uint32_t seq, uint32_t base_seq, bool keyframe) {
   Message m;
+  m.version = cfg_.rectangles ? kVersion2 : kVersion;
   m.type = MsgType::Frame;
   m.monitor_id = 0;
   m.stream_id = stream_id;
@@ -65,17 +105,30 @@ Message FrameEncoder::build(const Frame& f, const std::vector<uint32_t>& tile_in
   }
 
   std::vector<uint8_t> tile_bgra;
-  tile_bgra.reserve(kTile * kTile * 4);
+  tile_bgra.reserve(static_cast<size_t>(kMaxRectSide) * kMaxRectSide * 4);
 
-  m.tiles.reserve(targets.size());
-  for (uint32_t idx : targets) {
-    int tx = static_cast<int>(idx % cols);
-    int ty = static_cast<int>(idx / cols);
+  // v1: one region per 64 px tile. v2: dirty tiles merged into rectangles.
+  std::vector<Region> regions;
+  if (cfg_.rectangles) {
+    regions = merge_tiles(targets, f.width, f.height);
+  } else {
+    regions.reserve(targets.size());
+    for (uint32_t idx : targets) {
+      Region r;
+      r.x = static_cast<int>(idx % cols) * kTile;
+      r.y = static_cast<int>(idx / cols) * kTile;
+      r.w = std::min(kTile, f.width - r.x);
+      r.h = std::min(kTile, f.height - r.y);
+      regions.push_back(r);
+    }
+  }
 
-    int start_x = tx * kTile;
-    int start_y = ty * kTile;
-    int tile_w = std::min(kTile, f.width - start_x);
-    int tile_h = std::min(kTile, f.height - start_y);
+  m.tiles.reserve(regions.size());
+  for (const Region& rg : regions) {
+    const int start_x = rg.x;
+    const int start_y = rg.y;
+    const int tile_w = rg.w;
+    const int tile_h = rg.h;
 
     if (tile_w <= 0 || tile_h <= 0) continue;
 
@@ -91,8 +144,15 @@ Message FrameEncoder::build(const Frame& f, const std::vector<uint32_t>& tile_in
     }
 
     TileRec rec;
-    rec.x = static_cast<uint16_t>(tx);
-    rec.y = static_cast<uint16_t>(ty);
+    if (cfg_.rectangles) {
+      rec.x = static_cast<uint16_t>(start_x);
+      rec.y = static_cast<uint16_t>(start_y);
+      rec.w = static_cast<uint16_t>(tile_w);
+      rec.h = static_cast<uint16_t>(tile_h);
+    } else {
+      rec.x = static_cast<uint16_t>(start_x / kTile);
+      rec.y = static_cast<uint16_t>(start_y / kTile);
+    }
     rec.codec = cfg_.codec;
 
     if (cfg_.codec == Codec::Webp) {
@@ -124,6 +184,12 @@ Message FrameEncoder::build(const Frame& f, const std::vector<uint32_t>& tile_in
         tjFree(jpeg_buf);
       }
     } else {
+      rec.codec = Codec::Raw;
+      rec.payload = tile_bgra;
+    }
+
+    // A compressed rectangle must fit the wire limit; the raw one always does (w*h*4 <= 256*256*4).
+    if (cfg_.rectangles && rec.payload.size() > kMaxRectPayload) {
       rec.codec = Codec::Raw;
       rec.payload = tile_bgra;
     }
