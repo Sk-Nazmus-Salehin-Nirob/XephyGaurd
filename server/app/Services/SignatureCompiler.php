@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\BlocklistEntry;
 use App\Models\Rule;
+use App\Models\Setting;
 use App\Models\SignatureVersion;
 use Symfony\Component\Yaml\Yaml;
 
@@ -53,7 +54,7 @@ class SignatureCompiler
             }
             foreach (['probe', 'scan'] as $extra) {
                 if (isset($doc[$extra])) {
-                    \App\Models\Setting::put("signatures.$kind.$extra", $doc[$extra]);
+                    Setting::put("signatures.$kind.$extra", $doc[$extra]);
                 }
             }
         }
@@ -88,9 +89,9 @@ class SignatureCompiler
             ->get(['category', 'value']) as $entry) {
             $bundle['domains'][$entry->category][] = strtolower($entry->value);
         }
-        $bundle['ports']['probe'] = \App\Models\Setting::get('signatures.port.probe', ['enabled' => true,
+        $bundle['ports']['probe'] = Setting::get('signatures.port.probe', ['enabled' => true,
             'paths' => ['/v1/models', '/api/tags'], 'severity' => 'high', 'min_rss_mb' => 300]);
-        $bundle['artifacts']['scan'] = \App\Models\Setting::get('signatures.artifact.scan', ['roots' => ['~'], 'max_depth' => 6]);
+        $bundle['artifacts']['scan'] = Setting::get('signatures.artifact.scan', ['roots' => ['~'], 'max_depth' => 6]);
 
         return $bundle;
     }
