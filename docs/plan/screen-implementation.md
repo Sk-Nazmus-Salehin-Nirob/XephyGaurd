@@ -51,7 +51,7 @@ Done as part of M0-4, docs only:
 - [x] M1-14 [server] [owner approved]: drop the screen-stream `.bat` for the retired xgagent (`PublicController::dynamicScreenStreamBat`)
 
 ## M2: Phase 1 security and bugs
-- [ ] M2-1 server-1, server-2: `stream_id` derived server-side, `pc_id` in every viewer JWT; instructor-only screen routes
+- [x] M2-1 server-1, server-2: `stream_id` derived server-side, `pc_id` in every viewer JWT; instructor-only screen routes
 - [ ] M2-2 Step 3: agent connection bound to its cert's PC stream; mismatching frames dropped
 - [ ] M2-3 Step 4: `AuthViewer` returns `{stream_id, mode, exp, pc_id}`, no `student_id` fallback, enforce `mode`
 - [ ] M2-4 Step 5: close viewers at lease expiry; loopback `POST /internal/revoke`

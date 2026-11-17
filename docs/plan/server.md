@@ -11,7 +11,7 @@ Note: commit e9ded61 deliberately restored credentials on `/downloads`; Step 8 r
 ## Phase 1: Critical/High security and bugs
 Screen access chain:
 - [x] Step 1: `ViewTokenController` ignores client `stream_id`; derive it from the authorised PC/student and put `pc_id` into every JWT, including the renewed one (fixes I-SERVER-1, I-SERVER-30 part; touches F43, F44) [CROSS: gateway must check `pc_id`]
-- [ ] Step 2: Screen routes get `role:instructor` + active-user check; explicit authorisation rule when the PC has no active session (fixes I-SERVER-3; touches F43, F44)
+- [x] Step 2: Screen routes get `role:instructor` + active-user check; explicit authorisation rule when the PC has no active session (fixes I-SERVER-3; touches F43, F44)
 - [x] Step 3: (revised by DECISIONS #24) `PolicyBuilder::screenGatewayConfig` stops sending `agent_secret`; the agent needs no screen credential, only the `wss://<ccc>:8443/screen-gw/agent` URL (its mTLS cert identifies the PC) (fixes I-SERVER-11; touches F32, F45) [CROSS: after screen Step 62; PROTOCOL.md]
 
 Access control and enrollment:

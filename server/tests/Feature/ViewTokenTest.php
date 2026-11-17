@@ -347,4 +347,30 @@ class ViewTokenTest extends TestCase
 
         $this->actingAs($instructor)->postJson("/api/screen/{$audit->id}/renew")->assertStatus(422);
     }
+
+    public function test_assistant_cannot_get_screen_tokens(): void
+    {
+        $this->bootLab();
+        $assistant = $this->user('assistant');
+        [$pc] = $this->enrolledPc('192.168.10.45', 'PC-ASSIST');
+        $student = Student::create(['name' => 'Jo', 'login' => 'jo', 'student_number' => 'S1010']);
+        $this->activeSessionFor($assistant->id, $student, $pc->id);
+
+        $this->actingAs($assistant)->postJson("/api/screen/pc/{$pc->id}/token")->assertForbidden();
+        $this->actingAs($assistant)->postJson("/api/screen/{$student->id}/token")->assertForbidden();
+        $this->assertDatabaseCount('screen_view_audits', 0);
+    }
+
+    public function test_deactivated_instructor_cannot_view_or_renew(): void
+    {
+        $this->bootLab();
+        $instructor = $this->user('instructor');
+        [$pc] = $this->enrolledPc('192.168.10.46', 'PC-INACTIVE');
+
+        $auditId = $this->actingAs($instructor)->postJson("/api/screen/pc/{$pc->id}/token")->assertOk()->json('audit_id');
+        $instructor->update(['active' => false]);
+
+        $this->actingAs($instructor)->postJson("/api/screen/pc/{$pc->id}/token")->assertForbidden();
+        $this->actingAs($instructor)->postJson("/api/screen/{$auditId}/renew")->assertForbidden();
+    }
 }
