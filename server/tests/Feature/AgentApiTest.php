@@ -117,6 +117,24 @@ class AgentApiTest extends TestCase
         $this->assertSame('ok', $cmd->fresh()->status);
     }
 
+    public function test_network_lock_tamper_and_tunnel_hits_become_alerts(): void
+    {
+        $this->bootLab();
+        [$pc, $token, $cert] = $this->enrolledPc();
+        $this->withHeaders($this->agentHeaders($token, $cert))->postJson('/api/agent/v1/events', $this->batch($pc->id, [
+            $this->ev(1, 'tamper', ['kind' => 'network_lock_removed', 'user' => 'alice']),
+            $this->ev(2, 'rule_hit', ['rule_id' => 'net.tunnel_flow', 'severity' => 'medium', 'category' => 'tunnel',
+                'description' => 'Connection to an outside host on a tunnel port', 'subject' => 'ssh:198.51.100.7:22',
+                'actions' => ['log', 'alert'], 'mode' => 'test', 'user' => 'alice',
+                'context' => ['process' => 'ssh', 'remote_ip' => '198.51.100.7', 'remote_port' => 22]]),
+        ], ['network_lock' => 'observe']))->assertOk();
+        $tamper = Alert::where('rule_id', 'tamper.network_lock_removed')->firstOrFail();
+        $this->assertSame('Session network lock was removed locally (re-applied)', $tamper->title);
+        $tunnel = Alert::where('rule_id', 'net.tunnel_flow')->firstOrFail();
+        $this->assertSame('medium', $tunnel->severity);
+        $this->assertStringContainsString('ssh:198.51.100.7:22', $tunnel->title);
+    }
+
     public function test_broadcast_auth_only_for_own_channel(): void
     {
         $this->bootLab();

@@ -45,6 +45,7 @@ class EventIngestor
         'signature_invalid' => 'Agent received an invalid signature bundle',
         'helper_terminated' => 'Session helper was terminated by user (re-launched)',
         'isolation_rule_removed' => 'Network isolation rule was removed locally (re-applied)',
+        'network_lock_removed' => 'Session network lock was removed locally (re-applied)',
     ];
 
     public function __construct(private readonly SessionManager $sessions, private readonly PolicyBuilder $policies) {}
