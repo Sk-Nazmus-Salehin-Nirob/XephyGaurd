@@ -111,6 +111,14 @@ signs the agent's own channel. Event name `command`, data `{id, type, args}`:
 
 Every command is acknowledged with a `command_result` event.
 
+## Screen relay (agent → CCC)
+`wss://<ccc>:8443/screen-gw/agent`, mTLS required (403 without a verified client cert). Opened by the
+root service only (DECISIONS #24); frames are the screen protocol in `xephyguard-screen/core/protocol.h`.
+nginx drops any client-sent `X-Agent-Cert-Fingerprint` / `X-Agent-Token` and passes `X-SSL-Client-Verify`
+and `X-SSL-Client-Cert` (URL-escaped PEM) to the gateway on 127.0.0.1:8082, which takes the agent identity
+as the SHA-256 of that certificate (same value as `agents.cert_fingerprint`). The dashboard port 443
+never forwards these headers. Not used by the agent yet (screen Step 60).
+
 ## Helper ↔ service IPC
 JSON lines over `/run/xephyguard/helper.sock` (Linux, peer checked with `SO_PEERCRED` + `/proc/<pid>/exe`)
 or `\\.\pipe\XephyGuardHelper` (Windows, client image path + session id checked). See

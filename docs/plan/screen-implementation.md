@@ -37,12 +37,12 @@ Done as part of M0-4, docs only:
 ## M1: Phase 0 architecture (order matters: old path keeps working until Step 62)
 - [x] M1-1 Step 43: retire xgagent (program + CMake target only), update docs/FEATURES.md F47
 - [x] M1-2 ccc-1: screen-gateway on `127.0.0.1:8082` in production compose; nginx `/screen-gw/` is the only public path
-- [ ] M1-3 ccc nginx: `/screen-gw/agent` verifies the client cert, strips client `X-Agent-Cert-Fingerprint`, sets its own (pairs with M1-4)
-- [ ] M1-4 Step 1: gateway trusts that header only from `-trusted-proxy` loopback
+- [x] M1-3 ccc nginx: `/screen-gw/agent` verifies the client cert, strips client `X-Agent-Cert-Fingerprint`, passes the verified PEM as `X-SSL-Client-Cert` (owner chose PEM over SHA-1; pairs with M1-4)
+- [ ] M1-4 Step 1: gateway trusts `X-SSL-Client-Verify`/`X-SSL-Client-Cert` only from `-trusted-proxy` loopback, hashes the PEM to SHA-256, ignores `X-Agent-Cert-Fingerprint`
 - [ ] M1-5 Step 59 [agent]: helper→service "screen frame" IPC message (opaque, 4 MB cap, peer check), PROTOCOL.md "Helper ↔ service IPC"
 - [ ] M1-6 Step 60 [agent]: service relays to the gateway over the realtime mTLS WSS client; check fragment handling and size cap there
 - [ ] M1-7 Step 61 [agent]: helper drops its WinHTTP/WS client and `X-Agent-Token`
-- [ ] M1-8 Step 62 [screen]: gateway removes `-agent-secret` / `X-Agent-Token`
+- [ ] M1-8 Step 62 [screen]: gateway removes `-agent-secret` / `X-Agent-Token`; then nginx 443 `/screen-gw/` stops proxying the agent path (ccc)
 - [ ] M1-9 server-3 (revised): policy stops sending `agent_secret`; tick agent-9 and agent-10 as covered
 
 ## M2: Phase 1 security and bugs
