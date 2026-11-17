@@ -117,7 +117,10 @@ root service only (DECISIONS #24); frames are the screen protocol in `xephyguard
 nginx drops any client-sent `X-Agent-Cert-Fingerprint` / `X-Agent-Token` and passes `X-SSL-Client-Verify`
 and `X-SSL-Client-Cert` (URL-escaped PEM) to the gateway on 127.0.0.1:8082, which takes the agent identity
 as the SHA-256 of that certificate (same value as `agents.cert_fingerprint`). The dashboard port 443
-never forwards these headers. Not used by the agent yet (screen Step 60).
+never forwards these headers. The service opens it (`?stream_id=<pc_id>`, numeric only) while a helper of the
+active session streams over IPC (`screen_caps.ipc_stream`), relays helper frames up unchanged (queue capped at
+8 MiB, excess dropped) and gateway messages down as `screen_rx`; reconnect backoff 1 s doubling to 30 s.
+Messages from the gateway are capped at 64 KiB per WebSocket message (fragments included) and 1 KiB per relayed message.
 
 ## Helper ↔ service IPC
 JSON lines over `/run/xephyguard/helper.sock` (Linux, peer checked with `SO_PEERCRED` + `/proc/<pid>/exe`)
@@ -128,8 +131,9 @@ Helper → service also carries binary **screen frame** records (`agent/core/inc
 DECISIONS #24): `0x00`, type `0x01`, payload length (4 bytes, big-endian, 1 .. 4 MiB), payload = one encoded
 screen-protocol message. A JSON line never starts with `0x00`. The service checks type and length only, never
 decodes the payload, and closes the connection on an unknown type, an empty or an oversize record. Records are
-accepted only on connections that passed the helper peer check above. Not sent by the helper yet (screen Step 61);
-the service relays them to the gateway from screen Step 60.
+accepted only on connections that passed the helper peer check above, and relayed only from the helper the
+service chose as source: one that sent `{"t":"screen_caps",...,"ipc_stream":true}` from the active session.
+Service → helper: `{"t":"screen_rx","data":"<base64 gateway message>"}`. Not sent by the helper yet (screen Step 61).
 
 ## Proxy → CCC (internal)
 `POST http://127.0.0.1:8000/api/internal/net-events` with `Authorization: Bearer $XG_INTERNAL_TOKEN`,

@@ -1,0 +1,164 @@
+// Service-side screen relay: helper frames up to the gateway, gateway control messages down (screen Step 60).
+#include <catch2/catch_test_macros.hpp>
+
+#include <chrono>
+#include <thread>
+
+#include "fakes.hpp"
+#include "xg/crypto.hpp"
+#include "xg/screen_relay.hpp"
+
+using namespace xg;
+
+namespace {
+struct FakeLink : IScreenLink {
+    std::mutex mu;
+    std::vector<std::string> sent;
+    std::deque<std::string> inbox;
+    std::atomic<bool> is_open{true};
+    bool send(const std::string& m) override { std::lock_guard lk(mu); sent.push_back(m); return is_open.load(); }
+    std::optional<std::string> receive(int ms) override {
+        {
+            std::lock_guard lk(mu);
+            if (!inbox.empty()) { auto m = inbox.front(); inbox.pop_front(); return m; }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::min(ms, 20)));
+        return std::nullopt;
+    }
+    bool open() const override { return is_open.load(); }
+    void close() override { is_open = false; }
+};
+// The relay owns and frees its link; the rig keeps the fake alive so the test can still inspect it.
+struct LinkHandle : IScreenLink {
+    std::shared_ptr<FakeLink> l;
+    bool send(const std::string& m) override { return l->send(m); }
+    std::optional<std::string> receive(int ms) override { return l->receive(ms); }
+    bool open() const override { return l->open(); }
+    void close() override { l->close(); }
+};
+
+struct Rig {
+    Snapshot<UplinkView> view;
+    test::FakeIpc ipc;
+    std::atomic<int> connects{0};
+    std::atomic<FakeLink*> link{nullptr};
+    std::vector<std::shared_ptr<FakeLink>> links;
+    std::unique_ptr<ScreenRelay> relay;
+    std::atomic<bool> stop{false};
+    std::thread th;
+    UplinkView seen;
+    std::mutex mu;
+
+    Rig() {
+        UplinkView v;
+        v.enrolled = true;
+        v.ccc_host = "ccc.lab";
+        v.pc_id = "42";
+        view.set(v);
+        relay = std::make_unique<ScreenRelay>(view, &ipc, [this](const UplinkView& uv, std::string*) {
+            ++connects;
+            auto h = std::make_unique<LinkHandle>();
+            h->l = std::make_shared<FakeLink>();
+            {
+                std::lock_guard lk(mu);
+                seen = uv;
+                links.push_back(h->l);
+            }
+            link = h->l.get();
+            return std::unique_ptr<IScreenLink>(std::move(h));
+        });
+        th = std::thread([this] { relay->run(stop); });
+    }
+    ~Rig() { stop = true; relay->wake(); th.join(); }
+    template <class F> static bool eventually(F f) {
+        for (int i = 0; i < 200; ++i) {
+            if (f()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return false;
+    }
+    size_t sent_count() {
+        auto* l = link.load();
+        if (!l) return 0;
+        std::lock_guard lk(l->mu);
+        return l->sent.size();
+    }
+};
+}  // namespace
+
+TEST_CASE("screen relay stays disconnected until the core names a source helper", "[screen]") {
+    Rig r;
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    CHECK(r.connects == 0);
+    r.relay->push(7, "frame");  // no source: dropped, never queued
+    CHECK(r.relay->dropped() == 1);
+    r.relay->set_source(7);
+    REQUIRE(Rig::eventually([&] { return r.link.load() != nullptr; }));
+    CHECK(r.connects == 1);
+    std::lock_guard lk(r.mu);
+    CHECK(r.seen.pc_id == "42");
+}
+
+TEST_CASE("screen relay forwards only the source helper's frames, unchanged", "[screen]") {
+    Rig r;
+    r.relay->set_source(7);
+    REQUIRE(Rig::eventually([&] { return r.link.load() != nullptr; }));
+    REQUIRE(Rig::eventually([&] { r.relay->push(7, std::string("\x00\x01\xff", 3)); return r.sent_count() >= 1; }));
+    const auto before = r.relay->dropped();
+    r.relay->push(8, "other user's helper");  // wrong peer
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    CHECK(r.relay->dropped() == before + 1);
+    std::lock_guard lk(r.link.load()->mu);
+    for (const auto& m : r.link.load()->sent) CHECK(m == std::string("\x00\x01\xff", 3));
+}
+
+TEST_CASE("screen relay sends gateway messages to the source helper as screen_rx, capped", "[screen]") {
+    Rig r;
+    r.relay->set_source(7);
+    REQUIRE(Rig::eventually([&] { return r.link.load() != nullptr; }));
+    {
+        std::lock_guard lk(r.link.load()->mu);
+        r.link.load()->inbox.push_back(std::string(28, '\x01'));
+        r.link.load()->inbox.push_back(std::string(ScreenRelay::kMaxDownlink + 1, 'x'));  // oversize: dropped
+    }
+    const std::string b64 = crypto::base64_encode(std::string(28, '\x01'));
+    REQUIRE(Rig::eventually([&] { return r.ipc.count_containing(b64) == 1; }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    CHECK(r.ipc.count_containing("\"screen_rx\"") == 1);
+}
+
+TEST_CASE("screen relay reconnects after the link drops and closes it when the source goes away", "[screen]") {
+    Rig r;
+    r.relay->set_source(7);
+    REQUIRE(Rig::eventually([&] { return r.connects == 1 && r.link.load(); }));
+    r.link.load()->close();
+    REQUIRE(Rig::eventually([&] { return r.connects == 2; }));  // after the 1 s backoff
+    auto* l = r.link.load();
+    r.relay->set_source(0);
+    REQUIRE(Rig::eventually([&] { return !l->open(); }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK(r.connects == 2);
+}
+
+TEST_CASE("screen relay backoff grows from 1 s and is capped at 30 s", "[screen]") {
+    CHECK(ScreenRelay::next_backoff_ms(0) == 1000);
+    CHECK(ScreenRelay::next_backoff_ms(1000) == 2000);
+    CHECK(ScreenRelay::next_backoff_ms(16000) == 30000);
+    CHECK(ScreenRelay::next_backoff_ms(30000) == 30000);
+}
+
+TEST_CASE("mTLS screen link refuses to connect without a numeric pc id and a client cert", "[screen]") {
+    auto f = mtls_screen_link_factory();
+    UplinkView v;
+    v.enrolled = true;
+    v.ccc_host = "127.0.0.1";
+    v.pc_id = "42/../../api";
+    v.cert_file = "c.pem";
+    v.key_file = "k.pem";
+    std::string err;
+    CHECK(f(v, &err) == nullptr);
+    v.pc_id = "42";
+    v.cert_file.clear();
+    CHECK(f(v, &err) == nullptr);
+    CHECK_FALSE(err.empty());
+}

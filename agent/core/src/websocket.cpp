@@ -179,6 +179,7 @@ bool WebSocketClient::connect(const std::string& host, uint16_t port, const std:
     use_tls_ = use_tls;
     buf_.clear();
     partial_.clear();
+    in_message_ = false;
     if (use_tls_) {
         if (!conn_.connect(host, port, opts, err)) return false;
     } else {
@@ -293,15 +294,19 @@ std::optional<std::string> WebSocketClient::receive(int timeout_ms) {
                 }
                 case WsOpcode::text:
                 case WsOpcode::binary:
-                case WsOpcode::cont:
-                    partial_ += fr->payload;
-                    if (fr->fin) { std::string m = std::move(partial_); partial_.clear(); return m; }
-                    if (partial_.size() > 16 * 1024 * 1024) {
+                case WsOpcode::cont: {
+                    // RFC 6455 5.4: a continuation needs an open message, a new message needs none open.
+                    const bool bad_order = (fr->opcode == WsOpcode::cont) != in_message_;
+                    if (bad_order || partial_.size() + fr->payload.size() > max_message_) {
                         std::lock_guard lk(io_mu_);
                         raw_close_locked();
                         return std::nullopt;
                     }
+                    partial_ += fr->payload;
+                    in_message_ = !fr->fin;
+                    if (fr->fin) { std::string m = std::move(partial_); partial_.clear(); return m; }
                     continue;
+                }
                 default: continue;
             }
         }

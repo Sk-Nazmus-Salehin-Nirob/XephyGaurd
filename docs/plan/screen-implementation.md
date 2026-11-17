@@ -40,7 +40,7 @@ Done as part of M0-4, docs only:
 - [x] M1-3 ccc nginx: `/screen-gw/agent` verifies the client cert, strips client `X-Agent-Cert-Fingerprint`, passes the verified PEM as `X-SSL-Client-Cert` (owner chose PEM over SHA-1; pairs with M1-4)
 - [x] M1-4 Step 1: gateway trusts `X-SSL-Client-Verify`/`X-SSL-Client-Cert` only from `-trusted-proxy` loopback, hashes the PEM to SHA-256, ignores `X-Agent-Cert-Fingerprint`
 - [x] M1-5 Step 59 [agent]: helper→service "screen frame" IPC message (opaque, 4 MB cap, peer check), PROTOCOL.md "Helper ↔ service IPC"
-- [ ] M1-6 Step 60 [agent]: service relays to the gateway over the realtime mTLS WSS client; check fragment handling and size cap there
+- [x] M1-6 Step 60 [agent]: service relays to the gateway over the realtime mTLS WSS client; check fragment handling and size cap there
 - [ ] M1-7 Step 61 [agent]: helper drops its WinHTTP/WS client and `X-Agent-Token`
 - [ ] M1-8 Step 62 [screen]: gateway removes `-agent-secret` / `X-Agent-Token`; then nginx 443 `/screen-gw/` stops proxying the agent path (ccc)
 - [ ] M1-9 server-3 (revised): policy stops sending `agent_secret`; tick agent-9 and agent-10 as covered

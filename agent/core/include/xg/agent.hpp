@@ -19,6 +19,7 @@
 #include "xg/process_tracker.hpp"
 #include "xg/protocol.hpp"
 #include "xg/rules.hpp"
+#include "xg/screen_relay.hpp"
 #include "xg/uplink.hpp"
 #include "xg/worker.hpp"
 
@@ -126,6 +127,7 @@ private:
     AgentStatus status_;
     std::unique_ptr<Uplink> uplink_;
     std::unique_ptr<Realtime> realtime_;
+    std::unique_ptr<ScreenRelay> screen_relay_;  // helper frames -> gateway over mTLS (DECISIONS #24)
     Worker worker_;        // artifact walks
     Worker probe_worker_;  // LLM API port probes (F74)
     std::vector<std::thread> threads_;

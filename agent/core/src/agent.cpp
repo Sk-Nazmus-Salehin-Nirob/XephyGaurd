@@ -46,6 +46,7 @@ Agent::Agent(Config cfg, std::string config_path, ServicePlatform& plat)
     uplink_ = std::make_unique<Uplink>(queue_.get(), view_, mailbox_, status_);
     probe_worker_.start();  // idle until scan_ports hands it candidates
     realtime_ = std::make_unique<Realtime>(view_, mailbox_, status_);
+    screen_relay_ = std::make_unique<ScreenRelay>(view_, plat_.ipc.get(), mtls_screen_link_factory());
     policy_ = Policy::default_for(Mode::always_on);
 
     // Fail-safe: start from the last known policy and signatures, then refresh from the CCC.
@@ -727,6 +728,7 @@ void Agent::on_helper_conn(const IIpcServer::Peer& peer, bool connected) {
     else {
         helpers_.erase(peer.conn_id);
         peer_budget_.erase(peer.conn_id);
+        if (screen_relay_->source() == peer.conn_id) screen_relay_->set_source(0);
     }
     if (!connected) {
         sink_->emit(ev::helper_status, {{"connected", false}, {"user", peer.user}, {"pid", peer.pid}});
@@ -831,6 +833,16 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
             {"monitors", jr::i64(j, "monitors", 1, 1, 16)},
             {"secure_desktop", jr::boolean(j, "secure_desktop")},
         };
+        // A helper that streams over IPC (screen Step 61) becomes the relay source, but only for the active
+        // session: another logged-in user's helper must not feed this PC's stream.
+        uint32_t active_uid = 0;
+        bool have_active = false;
+        if (plat_.system)
+            for (const auto& s : plat_.system->sessions())
+                if (s.active) { active_uid = s.uid; have_active = true; break; }
+        const bool may_stream = cfg_.screen_enabled && jr::boolean(j, "ipc_stream") && have_active && peer.uid == active_uid;
+        if (may_stream) screen_relay_->set_source(peer.conn_id);
+        else if (screen_relay_->source() == peer.conn_id) screen_relay_->set_source(0);
     } else if (t == "ping") {
         if (plat_.ipc) plat_.ipc->send(peer.conn_id, ipc::line({{"t", "pong"}}));
     }
@@ -1485,6 +1497,9 @@ int Agent::run(std::atomic<bool>& stop) {
 
     // Platform callbacks run on platform threads: they only post to the core.
     if (plat_.ipc) {
+        // Frames bypass the core (up to 4 MiB each): the IPC thread hands them straight to the relay queue.
+        plat_.ipc->set_frame_handler(
+            [this](const IIpcServer::Peer& peer, std::string&& f) { screen_relay_->push(peer.conn_id, std::move(f)); });
         const bool ok = plat_.ipc->start(
             cfg_.ipc_path,
             [this](const IIpcServer::Peer& peer, const std::string& line) { post(msg::HelperLine{peer, line}); },
@@ -1510,6 +1525,7 @@ int Agent::run(std::atomic<bool>& stop) {
     worker_.start();
     threads_.emplace_back([this, &stop] { uplink_->run(stop); });
     threads_.emplace_back([this, &stop] { realtime_->run(stop); });
+    threads_.emplace_back([this, &stop] { screen_relay_->run(stop); });
     if (plat_.service_host) plat_.service_host->notify_ready();
     log::info("agent {} running (pc {}, mode {})", XG_VERSION, cfg_.pc_id.empty() ? "unenrolled" : cfg_.pc_id,
               to_string(policy_.mode));
@@ -1557,6 +1573,7 @@ int Agent::run(std::atomic<bool>& stop) {
     if (plat_.files) plat_.files->stop();
     if (plat_.input) plat_.input->stop();
     wake_uplink();
+    screen_relay_->wake();
     worker_.stop();
     probe_worker_.stop();
     for (auto& t : threads_) t.join();
