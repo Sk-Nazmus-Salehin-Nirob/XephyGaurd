@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,11 +12,11 @@ import (
 )
 
 var (
-	ErrMissingToken       = errors.New("missing authorization token")
-	ErrReplayedToken      = errors.New("replayed JWT token rejected (jti reused)")
-	ErrInvalidAlgorithm   = errors.New("invalid signing algorithm (only HS256 allowed)")
-	ErrMissingCert        = errors.New("missing mTLS client certificate")
-	ErrInvalidClaims      = errors.New("invalid token claims")
+	ErrMissingToken        = errors.New("missing authorization token")
+	ErrReplayedToken       = errors.New("replayed JWT token rejected (jti reused)")
+	ErrInvalidAlgorithm    = errors.New("invalid signing algorithm (only HS256 allowed)")
+	ErrMissingCert         = errors.New("missing mTLS client certificate")
+	ErrInvalidClaims       = errors.New("invalid token claims")
 	ErrTokenExpiredOrEarly = errors.New("token expired or not yet valid")
 )
 
@@ -116,20 +114,4 @@ func (tv *TokenValidator) AuthViewer(r *http.Request) (uint32, error) {
 	}
 
 	return streamID, nil
-}
-
-func (tv *TokenValidator) AuthAgent(r *http.Request) (string, error) {
-	// If mTLS client certificate is present
-	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-		cert := r.TLS.PeerCertificates[0]
-		h := sha256.Sum256(cert.Raw)
-		return hex.EncodeToString(h[:]), nil
-	}
-
-	// Fallback for dev / proxy header if explicitly forwarded
-	if clientFP := r.Header.Get("X-Agent-Cert-Fingerprint"); clientFP != "" {
-		return clientFP, nil
-	}
-
-	return "", ErrMissingCert
 }

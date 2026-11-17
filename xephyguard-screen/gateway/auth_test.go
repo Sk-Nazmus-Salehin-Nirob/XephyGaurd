@@ -114,8 +114,6 @@ func TestAuthViewerValidationAndReplayPrevention(t *testing.T) {
 }
 
 func TestAuthAgentMTLSFingerprint(t *testing.T) {
-	tv := NewTokenValidator(AuthConfig{})
-
 	// Generate a dummy self-signed cert in memory
 	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
 	template := x509.Certificate{
@@ -136,7 +134,7 @@ func TestAuthAgentMTLSFingerprint(t *testing.T) {
 	req := httptest.NewRequest("GET", "/agent", nil)
 	req.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}
 
-	fp, err := tv.AuthAgent(req)
+	fp, err := AgentCertFingerprint(req, nil)
 	if err != nil {
 		t.Fatalf("expected mTLS auth to succeed, got: %v", err)
 	}

@@ -26,7 +26,7 @@ Decided so no bug fix lands in code that is about to be deleted. Agent and ccc-d
 
 ## Phase 1: Critical/High security and bugs
 Gateway trust and authorisation:
-- [ ] Step 1: [screen] Gateway stops trusting `X-Agent-Cert-Fingerprint`; accept `X-SSL-Client-Verify`/`X-SSL-Client-Cert` only from a configured loopback proxy (`-trusted-proxy`) and hash the PEM to SHA-256 (DECISIONS #24) (fixes I-SCREEN-1 part 1; touches F45) [CROSS: ccc-deploy nginx sets and strips the header]
+- [x] Step 1: [screen] Gateway stops trusting `X-Agent-Cert-Fingerprint`; accept `X-SSL-Client-Verify`/`X-SSL-Client-Cert` only from a configured loopback proxy (`-trusted-proxy`) and hash the PEM to SHA-256 (DECISIONS #24) (fixes I-SCREEN-1 part 1; touches F45) [CROSS: ccc-deploy nginx sets and strips the header]
 - [x] ~~Step 2: [screen] Agent auth by short-lived per-PC JWT~~ **Dropped** (DECISIONS #24): the mTLS cert is the agent identity; replaced by Steps 60 and 62 [CROSS: tell server Step 3 and agent Step 10 that the screen JWT is not needed]
 - [ ] Step 3: [screen] Bind an agent connection to the stream of its cert's PC; drop frames whose header `stream_id` differs (fixes I-SCREEN-2; touches F45)
 - [ ] Step 4: [screen] `AuthViewer` returns `{stream_id, mode, exp, pc_id}`; reject missing/zero `stream_id` and remove the `student_id` fallback; enforce `mode` (fixes I-SCREEN-6, I-SCREEN-24; touches F43, F45)
