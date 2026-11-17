@@ -10,7 +10,7 @@ install.sh and gateway forwarding were never run on a real two-NIC host, so ever
 **[APPROVAL]** = changes a documented feature or DECISIONS entry; **[CROSS]** = another component's plan has the matching step.
 
 ## Phase 1: Critical/High security and bugs
-- [ ] Step 1: Add the `screen-gateway` service to the production compose, listening on `127.0.0.1:8082` only; nginx `/screen-gw/` (mTLS/TLS) is the only public path (fixes I-CCC-7; touches F112) [CROSS: screen]
+- [x] Step 1: Add the `screen-gateway` service to the production compose, listening on `127.0.0.1:8082` only; nginx `/screen-gw/` (mTLS/TLS) is the only public path (fixes I-CCC-7; touches F112) [CROSS: screen]
 - [ ] Step 2: install.sh and `.env.local` stop opening `:8082` on all interfaces; `SCREEN_GATEWAY_URL` = `wss://<ccc>:8443/screen-gw` so `PolicyBuilder` sends `tls=true` (fixes I-CCC-1; touches F112) [CROSS: server Step 3, agent Step 9; docs/PROTOCOL.md]
 - [ ] Step 3: mitmproxy and Unbound bind the lab-side address, not `0.0.0.0`; `block_global=true`; `proxy_only` mode gets a minimal WAN input drop (fixes I-CCC-4; touches F112) [CROSS: proxy Step 3]
 - [ ] Step 4: `xephyguard-ccc backup` uses `set -e`, checks `mysqldump`, writes with `umask 077` before creating files (fixes I-CCC-5, I-CCC-8; touches F113)
