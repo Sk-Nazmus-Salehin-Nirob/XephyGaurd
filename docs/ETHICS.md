@@ -20,8 +20,10 @@ such controls work.
 | Work-folder save timestamps and size changes — **never file contents** | – | – | ✓ |
 | Blocked website attempts (host name) | – | if blocking | ✓ |
 | Visited hosts/paths of allowed sites | – | off by default | off by default |
+| Live screen view by lab staff (on demand, not stored; every view is logged in `screen_view_audits`) | on request | on request | on request |
+| Screenshot saved as evidence by staff (with a note; audited; deleted with raw data) | on request | on request | on request |
 
-**Never collected:** typed characters, clipboard text, screenshots or screen content, passwords,
+**Never collected:** typed characters, clipboard text, continuous screen recordings, passwords,
 personal messages, file contents, microphone or camera. Keystrokes and clipboard text are reduced to
 numbers on the PC (`agent/core/src/keystats.cpp`, `paste.cpp`) and the originals are discarded
 immediately.
