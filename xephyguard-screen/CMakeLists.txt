@@ -151,6 +151,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     tests/test_downscale.cpp
     tests/test_capabilities.cpp
     tests/test_privacy.cpp
+    tests/test_x11_shm.cpp
   )
   target_include_directories(xgtests PRIVATE core capture agent third_party)
   target_link_libraries(xgtests PRIVATE xgcore)

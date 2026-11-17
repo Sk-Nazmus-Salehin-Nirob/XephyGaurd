@@ -37,7 +37,7 @@ Gateway trust and authorisation:
 - [x] Step 9: [screen] Keyframe cache: 5 s TTL, cleared on MASKED/SECURE, replayed frames flagged cached (fixes I-SCREEN-16; touches F43, F45)
 
 Privacy and capture:
-- [ ] Step 10: [screen] X11 shared memory created 0600 and removed (`IPC_RMID`) right after attach (fixes I-SCREEN-4; touches F43, F47, F95)
+- [x] Step 10: [screen] X11 shared memory created 0600 and removed (`IPC_RMID`) right after attach (fixes I-SCREEN-4; touches F43, F47, F95)
 - [ ] Step 11: [agent] Wire `PrivacyFilter` into the embedded streamer (window provider from helper, rules from policy, fail-safe mask) (fixes I-SCREEN-5; touches F95, F43) [APPROVAL: ETHICS.md wording for what is masked]
 - [ ] Step 12: [screen] Viewer ordered frame queue: one frame at a time in sequence, tiles decoded in parallel, stale frames dropped, ACK on receive (fixes I-SCREEN-9; touches F43)
 - [ ] Step 13: [screen] Gateway sends the token's `mode` to the agent in the `Status` message (reserved field) (fixes I-SCREEN-7 part 1; touches F43, F45) [update docs/PROTOCOL.md]

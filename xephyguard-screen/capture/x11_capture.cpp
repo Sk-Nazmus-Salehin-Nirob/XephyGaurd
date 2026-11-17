@@ -41,7 +41,7 @@ bool X11Capture::initialize() {
   }
 
   shminfo_.shmid = shmget(IPC_PRIVATE, shm_image_->bytes_per_line * shm_image_->height,
-                          IPC_CREAT | 0777);
+                          IPC_CREAT | 0600);  // owner only: the segment holds screen pixels
   if (shminfo_.shmid < 0) {
     cleanup();
     return false;
@@ -49,6 +49,8 @@ bool X11Capture::initialize() {
 
   shminfo_.shmaddr = shm_image_->data = static_cast<char*>(shmat(shminfo_.shmid, nullptr, 0));
   if (shminfo_.shmaddr == reinterpret_cast<char*>(-1)) {
+    shmctl(shminfo_.shmid, IPC_RMID, nullptr);
+    shminfo_.shmid = -1;
     cleanup();
     return false;
   }
@@ -58,6 +60,11 @@ bool X11Capture::initialize() {
     cleanup();
     return false;
   }
+  // Once the X server has attached, mark the segment for removal: it disappears when both sides
+  // detach, so no other process can attach it later and nothing is left behind after a crash.
+  XSync(display_, False);
+  shmctl(shminfo_.shmid, IPC_RMID, nullptr);
+  shm_removed_ = true;
 
   // Damage extension
   int damage_event, damage_error;
@@ -153,7 +160,9 @@ void X11Capture::cleanup() {
     if (shminfo_.shmaddr && shminfo_.shmaddr != reinterpret_cast<char*>(-1)) {
       XShmDetach(display_, &shminfo_);
       shmdt(shminfo_.shmaddr);
-      shmctl(shminfo_.shmid, IPC_RMID, nullptr);
+      // Remove only if not already marked: a removed id may be reused by another segment.
+      if (!shm_removed_ && shminfo_.shmid >= 0) shmctl(shminfo_.shmid, IPC_RMID, nullptr);
+      shm_removed_ = false;
       shminfo_.shmaddr = nullptr;
     }
     if (shm_image_) {

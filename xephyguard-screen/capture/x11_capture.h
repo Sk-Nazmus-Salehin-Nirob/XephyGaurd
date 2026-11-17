@@ -19,6 +19,9 @@ public:
   CaptureStatus capture(Frame& out) override;
   void stop() override;
 
+  /// SysV shared memory id of the capture image (-1 when none); for tests.
+  int shm_segment_id() const { return shminfo_.shmaddr ? shminfo_.shmid : -1; }
+
 private:
   void cleanup();
 
@@ -27,6 +30,7 @@ private:
   Window root_ = 0;
   XImage* shm_image_ = nullptr;
   XShmSegmentInfo shminfo_{};
+  bool shm_removed_ = false;  // IPC_RMID already done after attach
   Damage damage_ = 0;
   int width_ = 0;
   int height_ = 0;

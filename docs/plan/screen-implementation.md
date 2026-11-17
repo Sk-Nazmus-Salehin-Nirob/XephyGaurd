@@ -60,7 +60,7 @@ Done as part of M0-4, docs only:
 - [x] M2-7 Step 7: Origin check, remove `InsecureSkipVerify`
 - [x] M2-8 Step 8: `HandleAgent` data race (done in M2-2)
 - [x] M2-9 Step 9: keyframe cache TTL 5 s, cleared on MASKED/SECURE
-- [ ] M2-10 Step 10: X11 shm 0600 + `IPC_RMID`
+- [x] M2-10 Step 10: X11 shm 0600 + `IPC_RMID`
 - [ ] M2-11 Step 11 [agent]: privacy filter in the embedded streamer, fail-safe mask; ETHICS.md wording
 - [ ] M2-12 Step 12: viewer ordered frame queue
 - [ ] M2-13 Step 13 → Step 14: gateway sends `mode` in `Status`; streamer honours wall/snapshot/live
