@@ -589,6 +589,7 @@ document.addEventListener('alpine:init', () => {
             os: ((pcObj.os || 'Linux') + ' ' + (pcObj.os_version || '')).trim(),
             session: mappedSession,
             agent: pcObj.agent_version || '—',
+            streamCost: pcObj.screen_cost || '',
             status: pcUiStatus,
             user: pcUser,
             last: pcObj.last_event || (pcUiStatus === 'offline' ? 'Offline' : 'Active'),

@@ -235,7 +235,7 @@
               <div class="scorering" style="width:40px;height:40px" :style="'--v:'+(typeof active.score === 'number' ? active.score : 0)+';--c:'+ringColor(active)"><b x-text="active.score" style="font-size:12px"></b></div>
               <div style="min-width:0"><div style="font-weight:600;font-size:14px" x-text="active.name"></div><div class="small muted" x-text="statusText(active) + ' · ' + active.user"></div></div>
             </div>
-            <dl class="prop"><dt>Computer</dt><dd class="mono" x-text="active.host"></dd><dt>Address</dt><dd class="mono" x-text="active.ip"></dd><dt>System</dt><dd x-text="active.os"></dd><dt>Agent</dt><dd x-text="'v' + active.agent"></dd><dt>Last event</dt><dd x-text="active.last"></dd></dl>
+            <dl class="prop"><dt>Computer</dt><dd class="mono" x-text="active.host"></dd><dt>Address</dt><dd class="mono" x-text="active.ip"></dd><dt>System</dt><dd x-text="active.os"></dd><dt>Agent</dt><dd x-text="'v' + active.agent"></dd><dt x-show="active.streamCost">Streaming</dt><dd class="mono" x-show="active.streamCost" x-text="active.streamCost"></dd><dt>Last event</dt><dd x-text="active.last"></dd></dl>
             <div class="row" style="padding:0 16px 16px">
               <button class="btn btn-sm btn-solid" @click="openInspector(activePcId)">Open inspector</button>
               <button class="btn btn-sm" @click="message(activePcId)">Message</button>

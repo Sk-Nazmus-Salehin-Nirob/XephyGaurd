@@ -79,7 +79,8 @@ Response: `{ack_seq, server_time_ms, policy_version, signatures_version, isolate
 * `usage.screen` (only in a heartbeat after screen frames went up): `{"fps": 6.5, "kbps": 820, "cpu_pct": 5.9, "level": 3}`.
   `fps`/`kbps` are frames and kbit/s the service relayed since the previous heartbeat; `cpu_pct` (capture thread, % of
   one core) and `level` (governor throttle, 0 = none) come from the helper's `screen_cost` and are left out when
-  older than 30 s. Numbers only, nothing from the screen (screen Step 57).
+  older than 30 s. Numbers only, nothing from the screen (screen Step 57). The server keeps only these four numbers
+  and shows them in the PC drawer.
 * Max 500 events / 1 MB per batch, 64 kB per event; malformed batches are rejected with 422.
 * `seq` is monotonic per installation and survives restarts and acknowledgements (SQLite queue).
   The CCC ignores `seq <= agents.last_seq` and has a unique `(agent_id, seq)` index, so a batch

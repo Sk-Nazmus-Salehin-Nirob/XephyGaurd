@@ -180,6 +180,11 @@ class EventIngestor
         $pc->capabilities = is_array($hb['capabilities'] ?? null) ? $hb['capabilities'] : $pc->capabilities;
         $pc->usage = is_array($hb['usage'] ?? null) ? $hb['usage'] + ['helpers' => $hb['helpers'] ?? null,
             'queue_depth' => $hb['queue_depth'] ?? null, 'realtime' => $hb['realtime'] ?? null] : $pc->usage;
+        if (is_array($pc->usage) && array_key_exists('screen', $pc->usage)) {
+            $u = $pc->usage;
+            $u['screen'] = self::screenCost($u['screen']);
+            $pc->usage = $u;
+        }
         if ($pc->status === 'offline') {
             $pc->status = 'clean';
             $this->refreshLiveScore($pc, $session);
@@ -435,5 +440,21 @@ class EventIngestor
         }
         $pc->status = $open->whereIn('severity', ['high', 'critical'])->isNotEmpty() ? 'alert'
             : ($open->where('severity', 'medium')->isNotEmpty() ? 'warning' : 'clean');
+    }
+
+    /** Heartbeat usage.screen (screen Step 57): only the four known numbers, clamped; anything else is dropped. */
+    public static function screenCost(mixed $s): ?array
+    {
+        if (! is_array($s)) {
+            return null;
+        }
+        $out = [];
+        foreach (['fps' => 1000, 'kbps' => 10000000, 'cpu_pct' => 1000, 'level' => 1000] as $k => $max) {
+            if (isset($s[$k]) && (is_int($s[$k]) || is_float($s[$k])) && is_finite((float) $s[$k])) {
+                $out[$k] = max(0, min($max, $s[$k]));
+            }
+        }
+
+        return $out ?: null;
     }
 }

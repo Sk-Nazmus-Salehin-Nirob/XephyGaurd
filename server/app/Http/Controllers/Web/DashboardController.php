@@ -140,7 +140,8 @@ class DashboardController extends Controller
 
         return response()->json([
             'pc' => $pc->tile() + ['hostname' => $pc->hostname, 'os_version' => $pc->os_version, 'ip' => $pc->ip,
-                'capabilities' => $pc->capabilities, 'usage' => $pc->usage, 'agent_version' => $pc->agent?->version],
+                'capabilities' => $pc->capabilities, 'usage' => $pc->usage, 'agent_version' => $pc->agent?->version,
+                'screen_cost' => $pc->screenCostLabel()],
             'student' => $student ? ['id' => $student->id, 'name' => $student->name, 'login' => $student->login] : null,
             'alerts' => Alert::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)->latest('occurred_at')
                 ->limit(50)->get(['id', 'rule_id', 'severity', 'title', 'occurred_at', 'acknowledged_at'])

@@ -57,6 +57,30 @@ class Pc extends Model
     }
 
     /** Data shown on a live-view tile (also the payload of the PcUpdated broadcast). */
+    /** "6.5 fps · 820 kbit/s · 5.9 % CPU · throttle 3" from the last heartbeat's usage.screen, null while not streaming. */
+    public function screenCostLabel(): ?string
+    {
+        $s = is_array($this->usage['screen'] ?? null) ? $this->usage['screen'] : null;
+        if (! $s) {
+            return null;
+        }
+        $parts = [];
+        if (isset($s['fps'])) {
+            $parts[] = round((float) $s['fps'], 1).' fps';
+        }
+        if (isset($s['kbps'])) {
+            $parts[] = (int) $s['kbps'].' kbit/s';
+        }
+        if (isset($s['cpu_pct'])) {
+            $parts[] = round((float) $s['cpu_pct'], 1).' % CPU';
+        }
+        if (isset($s['level'])) {
+            $parts[] = 'throttle '.(int) $s['level'];
+        }
+
+        return $parts ? implode(' · ', $parts) : null;
+    }
+
     public function tile(): array
     {
         return [

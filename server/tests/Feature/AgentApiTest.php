@@ -93,6 +93,25 @@ class AgentApiTest extends TestCase
             ->assertJsonPath('running_processes.1.exe', 'code');
     }
 
+    public function test_heartbeat_screen_cost_is_numbers_only_and_shown_in_the_pc_drawer(): void
+    {
+        Queue::fake();
+        $this->bootLab();
+        [$pc, $token, $cert] = $this->enrolledPc();
+        $h = $this->agentHeaders($token, $cert);
+        $usage = ['cpu_pct' => 0.4, 'screen' => ['fps' => 6.5, 'kbps' => 820, 'cpu_pct' => 5.9, 'level' => 3,
+            'title' => 'secret window', 'fps_x' => 'x']];
+        $this->withHeaders($h)->postJson('/api/agent/v1/events', $this->batch($pc->id, [], ['usage' => $usage]))->assertOk();
+        $pc->refresh();
+        $this->assertSame(['fps' => 6.5, 'kbps' => 820, 'cpu_pct' => 5.9, 'level' => 3], $pc->usage['screen']);
+        $this->actingAs($this->user('admin'))->getJson("/pcs/{$pc->id}")->assertOk()
+            ->assertJsonPath('pc.screen_cost', '6.5 fps · 820 kbit/s · 5.9 % CPU · throttle 3');
+
+        // Not streaming: no usage.screen, no label.
+        $this->withHeaders($h)->postJson('/api/agent/v1/events', $this->batch($pc->id, [], ['usage' => ['cpu_pct' => 0.4]]))->assertOk();
+        $this->getJson("/pcs/{$pc->id}")->assertOk()->assertJsonPath('pc.screen_cost', null);
+    }
+
     public function test_rejects_malformed_and_foreign_batches(): void
     {
         $this->bootLab();
