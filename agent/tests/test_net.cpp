@@ -6,6 +6,7 @@
 #ifndef _WIN32
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <atomic>
@@ -367,4 +368,69 @@ TEST_CASE("WebSocketClient supports plain TCP binary duplex frames and extra hea
     CHECK(seen_hdr.find("X-Agent-Token: tok-xyz\r\n") != std::string::npos);
     CHECK(seen_bin == payload);
 }
+TEST_CASE("an interruptible WebSocket receive blocks without polling and interrupt() ends it") {
+    int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
+    REQUIRE(lfd >= 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    REQUIRE(::bind(lfd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0);
+    REQUIRE(::listen(lfd, 1) == 0);
+    socklen_t alen = sizeof addr;
+    REQUIRE(::getsockname(lfd, reinterpret_cast<sockaddr*>(&addr), &alen) == 0);
+    const uint16_t port = ntohs(addr.sin_port);
+
+    std::thread srv([&]() {  // completes the handshake, then stays silent until the client goes away
+        int cfd = ::accept(lfd, nullptr, nullptr);
+        if (cfd < 0) return;
+        std::string req;
+        char buf[2048];
+        while (req.find("\r\n\r\n") == std::string::npos) {
+            ssize_t n = ::recv(cfd, buf, sizeof buf, 0);
+            if (n <= 0) { ::close(cfd); return; }
+            req.append(buf, size_t(n));
+        }
+        auto pos = req.find("Sec-WebSocket-Key:");
+        auto eol = req.find("\r\n", pos);
+        std::string key = req.substr(pos + 18, eol - (pos + 18));
+        while (!key.empty() && key.front() == ' ') key.erase(key.begin());
+        std::string resp = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " +
+                           net::ws_accept_key(key) + "\r\n\r\n";
+        ::send(cfd, resp.data(), resp.size(), 0);
+        while (::recv(cfd, buf, sizeof buf, 0) > 0) {}
+        ::close(cfd);
+    });
+
+    net::WebSocketClient ws;
+    net::TlsOptions opts;
+    opts.timeout_ms = 2000;
+    std::string err;
+    REQUIRE(ws.connect("127.0.0.1", port, "/x", opts, &err, {}, false));
+
+    long wakeups = -1;
+    std::optional<std::string> rx;
+    std::chrono::milliseconds took{0};
+    std::thread rcv([&]() {
+        rusage a{}, b{};
+        getrusage(RUSAGE_THREAD, &a);
+        const auto t0 = std::chrono::steady_clock::now();
+        rx = ws.receive(10000, true);
+        took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0);
+        getrusage(RUSAGE_THREAD, &b);
+        wakeups = b.ru_nvcsw - a.ru_nvcsw;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    ws.interrupt();
+    rcv.join();
+    ws.close();
+    srv.join();
+    ::close(lfd);
+
+    CHECK_FALSE(rx.has_value());
+    CHECK(took.count() >= 400);   // it waited for the interrupt, it did not time out or spin out early
+    CHECK(took.count() < 2000);   // and the interrupt ended it at once
+    CHECK(wakeups <= 3);          // one blocking poll; 50 ms slices would show about 10 here
+    CHECK_FALSE(ws.open());
+}
+
 #endif

@@ -271,7 +271,19 @@ bool WebSocketClient::send_binary(const std::string& data) {
     return open_.load() && send_frame(WsOpcode::binary, data);
 }
 
-std::optional<std::string> WebSocketClient::receive(int timeout_ms) {
+void WebSocketClient::interrupt() {
+    std::lock_guard lk(io_mu_);
+    if (!open_.load()) return;
+    const long long fd = use_tls_ ? conn_.native_handle() : plain_sock_;
+    if (fd < 0) return;
+#ifdef _WIN32
+    ::shutdown(static_cast<SOCKET>(fd), SD_BOTH);
+#else
+    ::shutdown(int(fd), SHUT_RDWR);
+#endif
+}
+
+std::optional<std::string> WebSocketClient::receive(int timeout_ms, bool interruptible) {
     const int64_t deadline = steady_ms() + timeout_ms;
     char b[16384];
     while (open_.load()) {
@@ -317,7 +329,7 @@ std::optional<std::string> WebSocketClient::receive(int timeout_ms) {
         }
         const int64_t left = deadline - steady_ms();
         if (left <= 0) return std::nullopt;
-        const int slice = int(std::min<int64_t>(left, 50));
+        const int slice = interruptible ? int(left) : int(std::min<int64_t>(left, 50));
         if (!raw_wait_readable(slice)) continue;
         long n = 0;
         {

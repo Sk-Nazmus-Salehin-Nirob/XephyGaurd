@@ -38,7 +38,12 @@ public:
     bool send_binary(const void* data, size_t len);
     bool send_binary(const std::string& data);
     /// Waits up to `timeout_ms` for a complete message. Returns nullopt on timeout (check open()).
-    std::optional<std::string> receive(int timeout_ms);
+    /// With `interruptible` the wait is one blocking poll for the whole timeout (no 50 ms slices, so an idle link costs
+    /// no wake-ups) and only a message, the peer or interrupt() ends it early.
+    std::optional<std::string> receive(int timeout_ms, bool interruptible = false);
+    /// Thread-safe: makes a receive() blocked on another thread return now. The connection is shut down, not just
+    /// nudged, so the owner closes it after the receive returns.
+    void interrupt();
     void close();
     bool open() const { return open_.load(); }
     /// Largest accepted message, fragments included (default 16 MiB). A larger one closes the connection.
