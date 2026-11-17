@@ -453,3 +453,18 @@ TEST_CASE("copy/paste targets keep file names only with title_capture=full (I-AG
         CHECK(ev[0].data["src"] == want);
     }
 }
+
+TEST_CASE("a flooding helper is rate limited per connection (I-AGENT-16)") {
+    Harness h;
+    auto p = Policy::default_for(Mode::practice);
+    p.collect.window = true;
+    h.agent->apply_policy(p);
+    IIpcServer::Peer flood{7, 1000, 555, "alice"}, other{8, 1001, 556, "bob"};
+    for (int i = 0; i < 2000; ++i)
+        h.agent->on_helper_message(flood, R"({"t":"window","app":"code","title":"x"})");
+    const size_t got = h.of(ev::window_focus).size();
+    CHECK(got >= 200);
+    CHECK(got < 260);  // burst 200 + refill while looping
+    h.agent->on_helper_message(other, R"({"t":"window","app":"code","title":"x"})");
+    CHECK(h.of(ev::window_focus).size() == got + 1);  // other peers are unaffected
+}

@@ -34,6 +34,7 @@ Red-team scenario ids refer to `eval/scenarios/*.yaml`; measured outcomes go in 
 | 20 | Spoof IP to get another PC's (exempt) policy | DHCP reservations, switch port security (recommended) | duplicate IP shows as two PCs reporting the same IP | per-IP network policy relies on IP integrity on the lab LAN | – |
 | 21 | Tamper with signatures pushed to agents | bundles signed with the CA key, verified on the PC | `tamper.signature_invalid` | – | – |
 | 22 | Attack the CCC from the lab LAN | only nginx is exposed (80/443/8443); internal APIs on 127.0.0.1; login rate limit; CSRF; roles enforced server-side; append-only audit log | audit log | keep the CCC patched (`xephyguard-ccc update`) | – |
+| 23 | Feed forged or flooding data from the session helper (run the real helper with LD_PRELOAD/ptrace, or a patched helper that passes the exe check) | helper data is treated as user-controlled: per-connection rate limit (burst 200, 50 msg/s), 16 KB line cap, typed reads, key_stats rebuilt from a numeric allow-list; event queue hard row/byte cap evicts oldest non-tamper events first | `ipc: helper ... exceeds` agent log; flood shows as many window/paste events | a student can still send plausible fake window/paste/keys data for their own session (it only affects their own flags) or suppress it (`helper_missing` after 90 s) | – |
 
 ## Trust assumptions
 * Lab users are **standard users** (no sudo / local admin). With admin rights every agent-side

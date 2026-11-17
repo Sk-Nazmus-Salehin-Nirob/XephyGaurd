@@ -720,7 +720,10 @@ void Agent::on_device_event(const DeviceInfo& d) {
 
 void Agent::on_helper_conn(const IIpcServer::Peer& peer, bool connected) {
     if (connected) helpers_[peer.conn_id] = peer;
-    else helpers_.erase(peer.conn_id);
+    else {
+        helpers_.erase(peer.conn_id);
+        peer_budget_.erase(peer.conn_id);
+    }
     if (!connected) {
         sink_->emit(ev::helper_status, {{"connected", false}, {"user", peer.user}, {"pid", peer.pid}});
         sink_->emit(ev::tamper, {{"kind", "helper_terminated"}, {"user", peer.user},
@@ -733,8 +736,29 @@ void Agent::on_helper_conn(const IIpcServer::Peer& peer, bool connected) {
 }
 
 // ----------------------------------------------------------------------------------- helper IPC
+bool Agent::allow_helper_message(const IIpcServer::Peer& peer) {
+    constexpr double kBurst = 200, kPerSecond = 50;
+    const int64_t now = steady_ms();
+    auto [it, fresh] = peer_budget_.try_emplace(peer.conn_id);
+    auto& b = it->second;
+    if (fresh) b = {kBurst, now, 0, 0};
+    b.tokens = std::min(kBurst, b.tokens + double(now - b.last_ms) * kPerSecond / 1000.0);
+    b.last_ms = now;
+    if (b.tokens >= 1) {
+        b.tokens -= 1;
+        return true;
+    }
+    ++b.dropped;
+    if (now - b.last_warn_ms > 60000) {
+        b.last_warn_ms = now;
+        log::warn("ipc: helper {} (pid {}) exceeds {} msg/s, {} messages dropped", peer.user, peer.pid, kPerSecond, b.dropped);
+    }
+    return false;
+}
+
 void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& line) {
     if (line.size() > ipc::kMaxLine) return;
+    if (!allow_helper_message(peer)) return;
     auto j = json::parse(line, nullptr, false);
     if (j.is_discarded() || !j.is_object()) return;
     const std::string t = jr::str(j, "t");

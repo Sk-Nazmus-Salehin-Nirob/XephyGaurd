@@ -375,3 +375,26 @@ TEST_CASE("make_private_temp_dir never reuses a directory (I-AGENT-24)") {
     fs::remove_all(a);
     fs::remove_all(b);
 }
+
+TEST_CASE("event queue hard cap evicts oldest non-tamper events when low-value ones are gone (I-AGENT-16)") {
+    const fs::path dir = fs::temp_directory_path() / ("xgq-" + random_hex(4));
+    fs::create_directories(dir);
+    {
+        EventQueue q((dir / "q.db").string(), 50, 1u << 30);
+        q.emit(ev::tamper, {{"kind", "first"}});
+        for (int i = 0; i < 500; ++i) q.emit(ev::paste, {{"chars", i}});
+        CHECK(q.size() <= 60);
+        auto evs = q.peek(100);
+        REQUIRE_FALSE(evs.empty());
+        CHECK(evs.front().type == ev::tamper);  // tamper evidence survives
+        CHECK(evs.back().data["chars"] == 499);  // newest kept
+    }
+    {
+        EventQueue q((dir / "b.db").string(), 100000, 20000);  // byte cap
+        for (int i = 0; i < 300; ++i) q.emit(ev::paste, {{"pad", std::string(200, 'x')}});
+        size_t bytes = 0;
+        for (const auto& e : q.peek(1000)) bytes += e.data.dump().size();
+        CHECK(bytes < 30000);
+    }
+    fs::remove_all(dir);
+}

@@ -149,6 +149,10 @@ private:
     KeyStatsAggregator keys_;
     std::map<std::string, json> file_agg_;
     std::map<uint64_t, IIpcServer::Peer> helpers_;
+    /// Token bucket per helper connection: helper data is user-controlled (I-AGENT-16, I-AGENT-23).
+    struct PeerBudget { double tokens = 0; int64_t last_ms = 0; uint64_t dropped = 0; int64_t last_warn_ms = 0; };
+    std::map<uint64_t, PeerBudget> peer_budget_;
+    bool allow_helper_message(const IIpcServer::Peer& peer);
     int64_t helper_missing_since_ = 0;
     bool helper_missing_reported_ = false;
     std::map<std::string, std::string> file_hashes_;
