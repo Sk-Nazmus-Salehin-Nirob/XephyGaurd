@@ -1,13 +1,17 @@
 // Streamer benchmark (screen Step 20, part a): the real AgentStateMachine loop, tile diff, encoder and flow
 // control on synthetic 1080p workloads. The capture is synthetic and behaves like the current X11 capture
 // (full copy per call, full_dirty = true), so its memcpy cost is included, as a real capture's would be.
-// An immediate ACK stands in for the viewer. Gateway and headless-viewer latency are part b (M3-3b).
+// An immediate ACK stands in for the viewer, unless --stdio is given: then every wire message leaves on stdout
+// as `u32 len | u64 capture time (unix ns) | wire` and messages from the gateway come in on stdin as
+// `u32 len | wire` (max 4 KB), so gateway/cmd/screenbench can carry them over a real gateway (M3-3b); the row goes to stderr.
 // Reports per phase: fps, bytes/s, ms from capture return to sent (tile diff + encode) p50/p95, keyframes,
 // CPU seconds per second and per frame, thread wake-ups per second. Pin it with `taskset -c 0`.
 #include "../agent/agent_state.h"
 #include "../capture/capture.h"
 
 #include <sys/resource.h>
+#include <poll.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
@@ -113,7 +117,25 @@ Usage usage() {
   return {ru.ru_utime.tv_sec + ru.ru_utime.tv_usec / 1e6 + ru.ru_stime.tv_sec + ru.ru_stime.tv_usec / 1e6, ru.ru_nvcsw};
 }
 
-void run_phase(const std::string& workload, int seconds, bool json) {
+uint64_t unix_ns() {
+  return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+bool read_full(int fd, void* buf, size_t n, const std::atomic<bool>& keep) {
+  auto* p = static_cast<uint8_t*>(buf);
+  while (n) {
+    pollfd pf{fd, POLLIN, 0};
+    if (!keep.load()) return false;
+    if (::poll(&pf, 1, 100) <= 0) continue;  // wake 10x/s to notice the end of the phase
+    const ssize_t r = ::read(fd, p, n);
+    if (r <= 0) return false;
+    p += r; n -= size_t(r);
+  }
+  return true;
+}
+
+void run_phase(const std::string& workload, int seconds, bool json, bool use_stdio) {
+  FILE* res = use_stdio ? stderr : stdout;
   auto cap = std::make_shared<SyntheticCapture>(workload);
   std::vector<double> lat;
   uint64_t frames = 0, bytes = 0, keys = 0;
@@ -123,6 +145,20 @@ void run_phase(const std::string& workload, int seconds, bool json) {
     const double ms = ms_since(cap->captured_at());
     std::lock_guard<std::mutex> lk(m);
     ++frames; bytes += wire.size();
+    if (use_stdio) {  // to the gateway bridge; the viewer's ACKs come back on stdin
+      std::vector<uint8_t> rec(12 + wire.size());
+      const uint32_t len = uint32_t(8 + wire.size());
+      const uint64_t t = unix_ns() - uint64_t(ms * 1e6);
+      std::memcpy(&rec[0], &len, 4);
+      std::memcpy(&rec[4], &t, 8);
+      std::memcpy(&rec[12], wire.data(), wire.size());
+      if (::write(STDOUT_FILENO, rec.data(), rec.size()) < 0) {}
+      if (wire.size() >= 28 && wire[3] == 1) {
+        lat.push_back(ms);
+        if (wire[4] & 1) ++keys;
+      }
+      return;
+    }
     if (wire.size() >= 28 && wire[3] == 1) {
       lat.push_back(ms);
       if (wire[4] & 1) ++keys;
@@ -137,6 +173,18 @@ void run_phase(const std::string& workload, int seconds, bool json) {
   sm_ptr = &sm;
   if (workload != "idle" && !sm.on_view_start(1, "live")) { std::cerr << "streamer did not start\n"; return; }
 
+  std::atomic<bool> reading{use_stdio};
+  std::thread reader;
+  if (use_stdio) reader = std::thread([&] {
+    uint32_t len = 0;
+    std::vector<uint8_t> msg;
+    while (reading.load() && read_full(STDIN_FILENO, &len, 4, reading) && len >= 28 && len <= 4096) {
+      msg.resize(len);
+      if (!read_full(STDIN_FILENO, msg.data(), len, reading)) break;
+      sm.on_incoming_message(msg.data(), msg.size());
+    }
+  });
+
   const uint64_t c0 = cap->captures.load();
   const Usage u0 = usage();
   const auto t0 = Clock::now();
@@ -145,37 +193,41 @@ void run_phase(const std::string& workload, int seconds, bool json) {
   const Usage u1 = usage();
   const double caps = double(cap->captures.load() - c0);
   sm.on_view_stop();
+  reading = false;
+  if (reader.joinable()) reader.join();
 
   std::lock_guard<std::mutex> lk(m);
   const double cpu = u1.cpu_s - u0.cpu_s;
   const double fps = frames / secs, wake = double(u1.wakeups - u0.wakeups) / secs;
   const double p50 = pct(lat, 0.5), p95 = pct(lat, 0.95);
   if (json) {
-    std::printf("{\"workload\":\"%s\",\"seconds\":%.1f,\"fps\":%.2f,\"bytes_per_s\":%.0f,\"build_ms_p50\":%.2f,\"build_ms_p95\":%.2f,"
+    std::fprintf(res, "{\"workload\":\"%s\",\"seconds\":%.1f,\"fps\":%.2f,\"bytes_per_s\":%.0f,\"build_ms_p50\":%.2f,\"build_ms_p95\":%.2f,"
                 "\"keyframes\":%llu,\"cpu_s_per_s\":%.4f,\"cpu_ms_per_frame\":%.2f,\"captures_per_s\":%.1f,\"cpu_ms_per_capture\":%.2f,\"wakeups_per_s\":%.1f}\n",
                 workload.c_str(), secs, fps, bytes / secs, p50, p95, (unsigned long long)keys, cpu / secs,
                 frames ? cpu * 1000 / frames : 0.0, caps / secs, caps ? cpu * 1000 / caps : 0.0, wake);
   } else {
-    std::printf("%-10s fps %6.2f  %9.0f B/s  build p50/p95 %6.2f/%6.2f ms  key %3llu  cpu %5.1f%% of a core  %7.2f ms/frame  %5.1f cap/s %6.2f ms/cap  wake-ups %6.1f/s\n",
+    std::fprintf(res, "%-10s fps %6.2f  %9.0f B/s  build p50/p95 %6.2f/%6.2f ms  key %3llu  cpu %5.1f%% of a core  %7.2f ms/frame  %5.1f cap/s %6.2f ms/cap  wake-ups %6.1f/s\n",
                 workload.c_str(), fps, bytes / secs, p50, p95, (unsigned long long)keys, 100 * cpu / secs,
                 frames ? cpu * 1000 / frames : 0.0, caps / secs, caps ? cpu * 1000 / caps : 0.0, wake);
   }
-  std::fflush(stdout);
+  std::fflush(res);
 }
 }  // namespace
 
 int main(int argc, char** argv) {
   int seconds = 10;
-  bool json = false;
+  bool json = false, use_stdio = false;
   std::vector<std::string> phases;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--seconds" && i + 1 < argc) seconds = std::max(1, std::atoi(argv[++i]));
     else if (a == "--workload" && i + 1 < argc) phases.push_back(argv[++i]);
     else if (a == "--json") json = true;
-    else { std::cerr << "usage: xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json]\n"; return 2; }
+    else if (a == "--stdio") use_stdio = true;
+    else { std::cerr << "usage: xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json] [--stdio]\n"; return 2; }
   }
+  if (use_stdio && phases.size() != 1) { std::cerr << "--stdio needs exactly one --workload\n"; return 2; }
   if (phases.empty()) phases = {"idle", "static", "typing", "scrolling", "drag", "video"};
-  for (const auto& p : phases) run_phase(p, seconds, json);
+  for (const auto& p : phases) run_phase(p, seconds, json, use_stdio);
   return 0;
 }
