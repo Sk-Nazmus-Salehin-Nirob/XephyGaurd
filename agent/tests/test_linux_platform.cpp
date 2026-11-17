@@ -464,6 +464,7 @@ TEST_CASE("Linux kill refuses a pid whose start time changed (F35)", "[linux]") 
     auto pm = xg::lnx::make_process_monitor();
     const pid_t child = ::fork();
     if (child == 0) {
+        ::signal(SIGTERM, SIG_DFL);  // not Catch2's inherited fatal-signal reporter
         ::pause();
         _exit(0);
     }
