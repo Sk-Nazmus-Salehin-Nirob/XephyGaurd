@@ -435,3 +435,21 @@ TEST_CASE("helper key stats keep only allow-listed numeric fields, clamped (I-AG
     CHECK(d["user"] == "alice");
     CHECK(d.dump().find("password") == std::string::npos);
 }
+
+TEST_CASE("copy/paste targets keep file names only with title_capture=full (I-AGENT-9)") {
+    Harness h;
+    IIpcServer::Peer peer{7, 1000, 555, "alice"};
+    const std::string msg = R"j({"t":"paste","chars":10,"src":"/usr/bin/code (secret_plan.cpp)","dst":"chrome"})j";
+    for (auto [tc, want] : {std::pair{TitleCapture::app_only, std::string("code")},
+                            std::pair{TitleCapture::full, std::string("code (secret_plan.cpp)")}}) {
+        auto p = Policy::default_for(Mode::practice);
+        p.collect.clipboard = true;
+        p.title_capture = tc;
+        h.agent->apply_policy(p);
+        h.sink.events.clear();
+        h.agent->on_helper_message(peer, msg);
+        auto ev = h.of(ev::paste);
+        REQUIRE(ev.size() == 1);
+        CHECK(ev[0].data["src"] == want);
+    }
+}

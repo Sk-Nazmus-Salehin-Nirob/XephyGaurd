@@ -796,11 +796,12 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
     } else if (t == "paste") {
         if (!pol.collect.clipboard) return;
         const bool is_copy = jr::boolean(j, "copy");
-        auto norm_target = [](const std::string& s) -> std::string {
+        // "app (file.cpp)" keeps the file part only with title_capture=full (I-AGENT-9).
+        const bool keep_file = pol.title_capture == TitleCapture::full;
+        auto norm_target = [keep_file](const std::string& s) -> std::string {
             auto pos = s.find(" (");
-            if (pos != std::string::npos && s.ends_with(')')) {
-                return normalize_exe(s.substr(0, pos)) + s.substr(pos);
-            }
+            if (pos != std::string::npos && s.ends_with(')'))
+                return keep_file ? normalize_exe(s.substr(0, pos)) + s.substr(pos) : normalize_exe(s.substr(0, pos));
             return normalize_exe(s);
         };
         sink_->emit(is_copy ? ev::copy : ev::paste,

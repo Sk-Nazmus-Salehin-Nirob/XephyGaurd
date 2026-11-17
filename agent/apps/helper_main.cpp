@@ -95,6 +95,7 @@ struct HelperState {
     bool want_window = false, want_clipboard = false, want_keys = false;
     bool window_on = false, clipboard_on = false, keys_on = false;
     std::string mode = "always_on";
+    bool full_titles = false;  // title_capture=full: file names from titles may label copy/paste (I-AGENT-9)
     std::string indicator_base = "Monitored by XephyGuard";
     std::string indicator_mode = "always_on";
     std::string last_app;
@@ -259,7 +260,7 @@ int helper_main() {
                         std::lock_guard lk2(st.mu);
                         st.last_app = w.app;
                         st.last_title = w.title;
-                        st.last_file = extract_active_file(w.app, w.title);
+                        st.last_file = st.full_titles ? extract_active_file(w.app, w.title) : std::string{};
                     }
                     send({{"t", "window"}, {"app", w.app}, {"title", w.title}, {"pid", w.pid}});
                 });
@@ -428,6 +429,9 @@ int helper_main() {
                     st.want_clipboard = c.value("clipboard", false);
                     st.want_keys = c.value("keys", false);
                     st.mode = j.value("mode", "always_on");
+                    st.full_titles = j.contains("title_capture") && j["title_capture"].is_string() &&
+                                     j["title_capture"].get<std::string>() == "full";
+                    if (!st.full_titles) st.last_file.clear();
                     if (plat->system) plat->system->set_taskmgr_disabled(st.mode == "test");  // no-op on Linux
                     if (j.contains("proxy_pac_url") && j["proxy_pac_url"].is_string() && plat->system) {
                         plat->system->set_user_proxy(j["proxy_pac_url"].get<std::string>());
