@@ -44,6 +44,11 @@ Done as part of M0-4, docs only:
 - [x] M1-7 Step 61 [agent]: helper drops its WinHTTP/WS client and `X-Agent-Token`
 - [x] M1-8 Step 62 [screen]: gateway removes `-agent-secret` / `X-Agent-Token`; then nginx 443 `/screen-gw/` stops proxying the agent path (ccc)
 - [x] M1-9 server-3 (revised): policy stops sending `agent_secret`; tick agent-9 and agent-10 as covered
+- [ ] M1-10 [agent]: drop the unused screen port/path/tls/token settings (`agent.toml [screen]`, `XG_SCREEN_PORT/PATH/TLS/TOKEN`, policy `screen.*` reads); keep `screen.enabled`. The relay always uses `:8443/screen-gw/agent`
+- [ ] M1-11 [server]: policy `screen` object stops sending `port`/`path`/`tls` (unread after M1-10)
+- [ ] M1-12 [ccc]: install.sh stops generating `SCREEN_GATEWAY_AGENT_SECRET`
+- [ ] M1-13 [setup scripts]: `start_server/*`, `new_setup_scripts/*` stop generating and passing `SCREEN_GATEWAY_AGENT_SECRET` (Windows .ps1 not run)
+- [ ] M1-14 [server] [needs owner approval, removes a download]: drop the screen-stream `.bat` for the retired xgagent (`PublicController::dynamicScreenStreamBat`)
 
 ## M2: Phase 1 security and bugs
 - [ ] M2-1 server-1, server-2: `stream_id` derived server-side, `pc_id` in every viewer JWT; instructor-only screen routes
