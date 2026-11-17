@@ -31,7 +31,10 @@ Run each from the repo root:
 Bench (part a, no gateway): `xephyguard-screen/build/xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json]`
 runs the real streamer loop, tile diff, encoder and flow control on synthetic 1080p workloads and prints fps, bytes/s, ms from capture to sent
 (p50/p95), keyframes, CPU per second / frame / capture and thread wake-ups per second. Worst case: `taskset -c 0 xgstreambench`. The capture is synthetic
-(full copy per call like the X11 capture) and the ACK is immediate; gateway + headless-viewer latency is M3-3b.
+(full copy per call like the X11 capture) and the ACK is immediate. `--capture x11` uses the real X11 capture on `$DISPLAY` (a forked painter draws the workload).
+With the real gateway and a headless viewer (latency p50/p95, viewer frames, drops; the viewer parses and ACKs but does not decode pixels or paint):
+`python3 eval/harness/screen_bench.py [--profile native|xvfb] [--workload W]... [--seconds N] [--cpu 0]` builds and starts the gateway (`-dev-insecure`, loopback),
+runs each workload and writes `eval/results/screen/screen_bench_*.json`. `xvfb` is the CPU-only worst case (real X11 capture on Xvfb). Needs `xgstreambench` built and `go`.
 
 Debug: gateway `GET http://127.0.0.1:8082/metrics` (loopback only, Prometheus text, aggregate counters, not under `/screen-gw/`);
 viewer page `index.html?debug=1&...` shows fps, kbit/s and paint lag (receipt to painted; end-to-end latency comes from the bench).

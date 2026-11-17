@@ -19,7 +19,7 @@ Do not run the simulator or the red-team harness against a real lab or the produ
 - [ ] Step 7: Fake CCC (`http.server` fixture) and tests for the harness `run` path, empty results, unknown `record` id, and the cleanup guarantee (fixes I-EVAL-17, I-EVAL-18 part 1; touches F119)
 - [ ] Step 8: Tests for `metrics.detection` and `metrics.overhead` with an in-memory SQLite fixture (fixes I-EVAL-18 part 2; touches F121)
 - [ ] Step 9: Test for `google_ai_overview` markers using a saved fixture page (fixes I-EVAL-16 part 1; touches F122)
-- [ ] Step 10: Screen benchmark entry point: `eval/harness/screen_bench.py` calls `xephyguard-screen/bench/stream_bench` and stores JSON in `eval/results/` (fixes I-EVAL-1 part 1; touches F122, F43) [CROSS: screen Step 20]
+- [x] Step 10: Screen benchmark entry point: `eval/harness/screen_bench.py` calls `xephyguard-screen/bench/stream_bench` and stores JSON in `eval/results/` (fixes I-EVAL-1 part 1; touches F122, F43) [CROSS: screen Step 20]
 - [ ] Step 11: Screen red-team scenarios (spoofed agent header, wrong `stream_id`, viewer message injection, expired lease, view of an idle PC, plaintext :8082 probe) in `scenarios/linux.yaml` (fixes I-EVAL-1 part 2; touches F119, F43) [CROSS: screen Step 23]
 
 ## Phase 3: Config and secrets
