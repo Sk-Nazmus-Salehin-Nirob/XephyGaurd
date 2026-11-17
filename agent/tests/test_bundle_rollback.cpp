@@ -1,6 +1,7 @@
 // Signature bundle rollback guard (I-AGENT-30, plan step 32).
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
+#include <thread>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
@@ -83,5 +84,37 @@ TEST_CASE("agent refuses an older signed bundle (rollback) but takes newer ones"
         CHECK(agent.apply_signatures(ca.envelope("2026.11.17-130000-cccccc")));
         CHECK(agent.rules().version() == "2026.11.17-130000-cccccc");
     }
+    fs::remove_all(dir);
+}
+
+TEST_CASE("integrity check reports a CA that differs from the enrollment pin (plan step 20)") {
+    const fs::path dir = fs::temp_directory_path() / ("xgp-" + random_hex(4));
+    fs::create_directories(dir);
+    TestCa pinned, swapped;
+    REQUIRE(write_file_atomic((dir / "ca.crt").string(), swapped.pem));
+    ServicePlatform plat;
+    plat.system = std::make_unique<test::FakeSystem>();
+    Config cfg = Config::defaults();
+    cfg.data_dir = dir.string();
+    cfg.ca_file = (dir / "ca.crt").string();
+    cfg.ca_fingerprint = *crypto::cert_fingerprint(pinned.pem);
+    cfg.pc_id = "1";
+    cfg.token = "t";
+    cfg.ccc_host = "127.0.0.1";
+    cfg.api_port = 1;  // nothing listens: uplink just fails
+    VectorSink sink;
+    {
+        Agent agent(cfg, (dir / "agent.toml").string(), plat);
+        agent.set_sink_for_tests(&sink);
+        std::atomic<bool> stop{false};
+        std::thread t([&] { agent.run(stop); });
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        stop = true;
+        t.join();
+    }
+    bool seen = false;
+    for (const auto& e : sink.events)
+        seen = seen || (e.type == ev::tamper && e.data["kind"] == "ca_changed" && e.data.value("pinned", false));
+    CHECK(seen);
     fs::remove_all(dir);
 }

@@ -1106,6 +1106,10 @@ void Agent::check_integrity(bool initial) {
             auto& prev = file_hashes_[cfg_.ca_file];
             if (!initial && !prev.empty() && prev != *fp) report("ca_changed", {{"path", cfg_.ca_file}});
             prev = *fp;
+            // The CA pinned at enrollment (config ca_fingerprint) must still be the one on disk; unlike the
+            // check above this also catches a swap made while the agent was not running.
+            if (!cfg_.ca_fingerprint.empty() && to_lower(cfg_.ca_fingerprint) != *fp)
+                report("ca_changed", {{"path", cfg_.ca_file}, {"pinned", true}});
         }
     }
     // Clock: wall time moved relative to the monotonic clock.
@@ -1214,7 +1218,8 @@ void Agent::on_ack(const msg::AckReceived& a) {
 void Agent::on_enroll_approved(const msg::EnrollApproved& e) {
     if (cfg_.enrolled()) return;
     write_file_atomic(cfg_.cert_file, e.cert_pem);
-    if (!e.ca_pem.empty()) write_file_atomic(cfg_.ca_file, e.ca_pem);
+    if (!e.ca_pem.empty() && write_file_atomic(cfg_.ca_file, e.ca_pem))
+        if (auto fp = crypto::cert_fingerprint(e.ca_pem)) cfg_.ca_fingerprint = *fp;  // keep the pin in step
     cfg_.pc_id = std::to_string(e.pc_id);
     cfg_.token = e.token;
     cfg_.poll_token.clear();

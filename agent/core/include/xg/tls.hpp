@@ -10,7 +10,6 @@ struct TlsOptions {
     std::string cert_file;        // client certificate (mTLS); empty during enrollment
     std::string key_file;
     std::string expected_host;    // name or IP checked against the server cert SAN
-    std::string pin_sha256;       // optional pin of the server leaf certificate (hex)
     bool insecure_skip_verify = false;  // only for `--insecure` diagnostics, never default
     int timeout_ms = 10000;
     bool tls13_only = true;

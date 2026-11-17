@@ -192,18 +192,6 @@ bool TlsConnection::connect(const std::string& host, uint16_t port, const TlsOpt
         impl_->reset();
         return false;
     }
-    if (!o.pin_sha256.empty()) {
-        X509* peer = SSL_get1_peer_certificate(impl_->ssl);
-        unsigned char md[EVP_MAX_MD_SIZE];
-        unsigned int len = 0;
-        bool match = peer && X509_digest(peer, EVP_sha256(), md, &len) == 1 && to_lower(o.pin_sha256) == hex_encode(md, len);
-        if (peer) X509_free(peer);
-        if (!match) {
-            if (err) *err = "server certificate does not match pinned fingerprint";
-            impl_->reset();
-            return false;
-        }
-    }
     return true;
 }
 

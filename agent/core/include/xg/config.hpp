@@ -21,7 +21,7 @@ struct Config {
     bool screen_enabled = true;        // Linux Xorg live stream (idle ~0% CPU until viewer attaches)
 #endif
     uint16_t discovery_port = 47474;   // UDP broadcast discovery
-    std::string ca_fingerprint;        // optional SHA-256 pin of the CCC CA (hex, no colons)
+    std::string ca_fingerprint;        // SHA-256 of the CA pinned at enrollment (hex); checked by the integrity scan
 
     // Identity (filled by enrollment)
     std::string pc_id;
