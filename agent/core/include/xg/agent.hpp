@@ -1,39 +1,34 @@
 #pragma once
 #include <atomic>
-#include <condition_variable>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
-#include <thread>
 #include <vector>
 
+#include "xg/agent_messages.hpp"
 #include "xg/config.hpp"
 #include "xg/event_queue.hpp"
 #include "xg/hit_dedup.hpp"
-#include "xg/http.hpp"
 #include "xg/interfaces.hpp"
 #include "xg/keystats.hpp"
+#include "xg/mailbox.hpp"
 #include "xg/policy.hpp"
 #include "xg/process_tracker.hpp"
 #include "xg/protocol.hpp"
 #include "xg/rules.hpp"
+#include "xg/uplink.hpp"
+#include "xg/worker.hpp"
 
 namespace xg {
 
-/// Runtime state shared between the agent threads and reported in heartbeats.
-struct AgentStatus {
-    std::atomic<bool> online{false};
-    std::atomic<bool> realtime_connected{false};
-    std::atomic<bool> isolated{false};
-    std::atomic<int64_t> clock_offset_ms{0};
-    std::atomic<int64_t> last_ack_seq{0};
-    std::atomic<uint64_t> bytes_up{0};
-    std::atomic<int> helpers_connected{0};
-};
-
+/// The agent core (actor). One thread, the one that calls run(), owns every member below. Platform
+/// watchers, the uplink, the realtime channel and the worker only post AgentMessages; they read back
+/// the published UplinkView. See DECISIONS #22.
+///
+/// The public scan_* / handle_* / apply_* methods are core-thread entry points; tests call them directly
+/// on the test thread, which then acts as the core thread.
 class Agent {
 public:
     Agent(Config cfg, std::string config_path, ServicePlatform& platform);
@@ -42,12 +37,17 @@ public:
     /// Main entry: blocks until `stop` becomes true.
     int run(std::atomic<bool>& stop);
 
-    // ---- pieces exposed for unit tests ----------------------------------------------------
+    /// Thread-safe: hands a message to the core. Returns false if the mailbox is full.
+    bool post(AgentMessage m) { return mailbox_.post(std::move(m)); }
+    /// Processes every queued message now (core thread / tests).
+    void drain();
+
+    // ---- core-thread entry points (also used by unit tests) --------------------------------
     void apply_policy(const Policy& p);
     /// `envelope` = {"version","bundle":"<json text>","signature":"<b64>"} as served by the CCC.
     bool apply_signatures(const json& envelope, bool require_signature = true);
     void handle_command(const protocol::Command& cmd);
-    bool isolated() const { return status_.isolated.load(); }
+    bool isolated() const { return isolated_; }
     void handle_rule_hit(const RuleHit& hit, const std::string& subject, json context, int64_t pid = 0);
     void scan_processes();
     void process_snapshot();
@@ -61,21 +61,28 @@ public:
     /// Re-evaluates everything already present (called automatically after a mode change).
     void reevaluate_all();
     json build_heartbeat();
-    Policy policy() const;
+    Policy policy() const { return policy_; }
     IEventSink& sink() { return *sink_; }
-    /// Replace the persistent queue by another sink (tests).
+    /// Replace the persistent queue by another sink (tests, one-shot scan).
     void set_sink_for_tests(IEventSink* s) { sink_ = s; }
     RuleEngine& rules() { return rules_; }
+    /// What the I/O threads currently see (tests).
+    std::shared_ptr<const UplinkView> view() const { return view_.get(); }
+    void publish_view();
 
 private:
-    // threads
-    void uplink_loop(std::atomic<bool>& stop);
-    void realtime_loop(std::atomic<bool>& stop);
-    void artifact_loop(std::atomic<bool>& stop);
-    bool flush_once();
-    bool fetch_policy();
-    bool poll_enrollment();
+    void dispatch(AgentMessage& m);
+    void on_policy_fetched(const json& body);
+    void on_ack(const msg::AckReceived& a);
+    void on_enroll_approved(const msg::EnrollApproved& e);
+    void on_helper_conn(const IIpcServer::Peer& peer, bool connected);
+    void on_device_event(const DeviceInfo& d);
+    void on_file_activity(const FileActivity& a);
+    void on_key(int64_t t_ms, bool backspace, bool paste_chord);
+    void on_artifacts_scanned(const ArtifactScanResult& res);
+    void maybe_start_artifact_scan(int64_t now_steady);
     void command_result(const std::string& id, const std::string& status, const json& detail);
+    void wake_uplink() { uplink_->wake(); }
 
     // periodic tasks
     void run_periodic(int64_t now_steady);
@@ -91,54 +98,55 @@ private:
     void restart_watchers();
     std::string active_user();
     std::vector<std::string> user_homes();
-    std::unique_ptr<net::HttpsClient> make_api_client(bool with_client_cert);
-    net::TlsOptions tls_options(bool with_client_cert) const;
 
     Config cfg_;
     std::string config_path_;
     ServicePlatform& plat_;
     std::unique_ptr<EventQueue> queue_;
     IEventSink* sink_ = nullptr;
+
+    // Actor plumbing. Declared before the I/O objects that reference them.
+    Mailbox<AgentMessage> mailbox_{8192};
+    Snapshot<UplinkView> view_;
+    AgentStatus status_;
+    std::unique_ptr<Uplink> uplink_;
+    std::unique_ptr<Realtime> realtime_;
+    Worker worker_;
+    std::vector<std::thread> threads_;
+    bool running_ = false;
+
+    // Core-owned state (no locks: only the core thread touches it).
     RuleEngine rules_;
-    mutable std::mutex policy_mu_;
     Policy policy_;
     json realtime_cfg_;
-    AgentStatus status_;
+    bool isolated_ = false;
+    int64_t clock_offset_ms_ = 0;
+    int64_t last_ack_seq_ = 0;
     HitDeduper dedup_;
     ProcessTracker tracker_;
-    std::mutex tracker_mu_;
-    std::map<int64_t, std::string> rule_pids_;               // pid -> rule id, for stop events
-    std::mutex hit_mu_;
+    std::map<int64_t, std::string> rule_pids_;  // pid -> rule id, for stop events
     uint64_t suppressed_hits_ = 0;
-    std::unique_ptr<net::HttpsClient> api_;
-    std::mutex api_mu_;
     bool input_running_ = false;
     bool files_running_ = false;
-    std::atomic<uint32_t> paste_chords_{0};
+    uint32_t paste_chords_ = 0;
     std::set<std::string> probed_ports_;
     std::string last_ext_hash_;
     json screen_caps_;
     double last_gpu_mem_ = -1;
-    bool warned_not_enrolled_ = false;
     std::map<std::string, std::string> reported_tamper_;
     std::set<std::string> known_ports_, known_adapters_, known_extensions_;
     std::map<std::string, AdapterInfo> adapters_;
-    std::mutex ai_flows_mu_;
     std::vector<std::pair<int64_t, OutboundAiFlow>> recent_ai_flows_;
     int default_routes_ = -1;
-    std::atomic<bool> network_dirty_{true};
-    std::atomic<bool> policy_dirty_{true};
+    bool network_dirty_ = true;
     // Signature bundle the agent refused (bad signature, parse error, no domains). While the server keeps
-    // announcing exactly this version, flush_once() does not re-trigger a fetch until the retry interval passes.
-    std::mutex rejected_sig_mu_;
+    // announcing exactly this version, on_ack() does not re-trigger a fetch until the retry interval passes.
     std::string rejected_sig_version_;
     int64_t rejected_sig_at_ms_ = 0;
-    std::atomic<bool> rescan_extensions_{false}, rescan_artifacts_{false};
-    std::mutex keys_mu_;
+    bool rescan_extensions_ = false, rescan_artifacts_ = false;
+    int64_t next_artifact_scan_ = 0;
     KeyStatsAggregator keys_;
-    std::mutex files_mu_;
     std::map<std::string, json> file_agg_;
-    std::mutex helpers_mu_;
     std::map<uint64_t, IIpcServer::Peer> helpers_;
     int64_t helper_missing_since_ = 0;
     bool helper_missing_reported_ = false;
@@ -149,13 +157,7 @@ private:
     int64_t last_cpu_sample_ = 0;
     double cpu_pct_ = 0;
     std::map<std::string, int64_t> next_run_;
-    std::condition_variable flush_cv_;
-    std::atomic<bool> wake_uplink_{false};
-    std::atomic<bool> reevaluate_{false};
-    void wake_uplink() { wake_uplink_ = true; flush_cv_.notify_all(); }
-    std::mutex flush_mu_;
-    std::vector<std::thread> threads_;
-    std::atomic<bool>* stop_ = nullptr;
+    bool reevaluate_ = false;
 };
 
 /// `xephyguard-agent enroll`: obtains the CA, generates a key + CSR and registers as Pending.

@@ -12,6 +12,7 @@
 #include "xg/log.hpp"
 #include "xg/pusher.hpp"
 #include "xg/util.hpp"
+#include "xg/worker.hpp"
 
 namespace xg {
 
@@ -36,6 +37,8 @@ Agent::Agent(Config cfg, std::string config_path, ServicePlatform& plat)
     : cfg_(std::move(cfg)), config_path_(std::move(config_path)), plat_(plat) {
     queue_ = std::make_unique<EventQueue>(join(cfg_.data_dir, "queue.db"));
     sink_ = queue_.get();
+    uplink_ = std::make_unique<Uplink>(queue_.get(), view_, mailbox_, status_);
+    realtime_ = std::make_unique<Realtime>(view_, mailbox_, status_);
     policy_ = Policy::default_for(Mode::always_on);
 
     // Fail-safe: start from the last known policy and signatures, then refresh from the CCC.
@@ -66,32 +69,20 @@ Agent::Agent(Config cfg, std::string config_path, ServicePlatform& plat)
         auto j = json::parse(*r, nullptr, false);
         if (!j.is_discarded()) realtime_cfg_ = j;
     }
+    publish_view();
 }
 
 Agent::~Agent() = default;
 
-Policy Agent::policy() const {
-    std::lock_guard lk(policy_mu_);
-    return policy_;
-}
-
 // ------------------------------------------------------------------------------------- policy
 void Agent::apply_policy(const Policy& p) {
-    Mode old_mode;
-    {
-        std::lock_guard lk(policy_mu_);
-        old_mode = policy_.mode;
-        policy_ = p;
-    }
+    const Mode old_mode = policy_.mode;
+    policy_ = p;
     rules_.set_disabled(p.disabled_rules);
-    {
-        std::lock_guard lk(keys_mu_);
-        keys_.set_window(p.intervals.keystats_window_s);
-    }
+    keys_.set_window(p.intervals.keystats_window_s);
     if (old_mode != p.mode) {
         log::info("policy: mode {} -> {} (policy v{}, profile '{}')", to_string(old_mode), to_string(p.mode), p.version,
                   p.profile_name);
-        std::lock_guard lk(hit_mu_);
         dedup_.reset();  // a new session should re-report what is already running
         reevaluate_ = true;
     }
@@ -105,7 +96,7 @@ void Agent::apply_policy(const Policy& p) {
         plat_.system->set_lab_dns(dns_target);
     }
     push_helper_config();
-    if (stop_) restart_watchers();
+    if (running_) restart_watchers();
 }
 
 bool Agent::apply_signatures(const json& env, bool require_signature) {
@@ -114,7 +105,6 @@ bool Agent::apply_signatures(const json& env, bool require_signature) {
     const std::string env_version = jr::str(env, "version");
     // Remember a refused version so the uplink loop does not refetch it in a tight loop.
     auto reject = [&] {
-        std::lock_guard rl(rejected_sig_mu_);
         rejected_sig_version_ = env_version;
         rejected_sig_at_ms_ = now_ms();
         return false;
@@ -142,19 +132,13 @@ bool Agent::apply_signatures(const json& env, bool require_signature) {
         log::warn("signatures: bundle {} has no domains; keeping {}", env_version, rules_.version());
         return reject();
     }
-    {
-        std::lock_guard rl(rejected_sig_mu_);
-        rejected_sig_version_.clear();
-        rejected_sig_at_ms_ = 0;
-    }
+    rejected_sig_version_.clear();
+    rejected_sig_at_ms_ = 0;
     log::info("signatures: loaded {} ({} rules)", set.version, set.rule_count());
     rules_.load(std::move(set));
     if (plat_.network) plat_.network->set_ai_domains(rules_.ai_domains());
     if (queue_) queue_->kv_set("signatures", env.dump());
-    {
-        std::lock_guard lk(hit_mu_);
-        dedup_.reset();
-    }
+    dedup_.reset();
     known_extensions_.clear();
     last_ext_hash_.clear();
     rescan_extensions_ = true;
@@ -164,11 +148,11 @@ bool Agent::apply_signatures(const json& env, bool require_signature) {
 
 // ------------------------------------------------------------------------------------ rule hits
 void Agent::handle_rule_hit(const RuleHit& hit, const std::string& subject, json context, int64_t pid) {
-    const Policy pol = policy();
+    const Policy& pol = policy_;
     if (!pol.rule_enabled(hit.rule_id)) return;
     auto actions = pol.actions_for(hit.rule_id, hit.severity);
     // While a PC is isolated, anything high-severity that tries to run is closed, whatever the mode.
-    if (status_.isolated.load() && hit.severity >= Severity::high) {
+    if (isolated_ && hit.severity >= Severity::high) {
         for (auto a : {Action::warn, Action::kill})
             if (std::find(actions.begin(), actions.end(), a) == actions.end()) actions.push_back(a);
     }
@@ -183,13 +167,8 @@ void Agent::handle_rule_hit(const RuleHit& hit, const std::string& subject, json
         return json{{"pid", pid}, {"killed", ok}};
     };
 
-    bool report;
-    {
-        std::lock_guard lk(hit_mu_);
-        report = dedup_.should_report(hit.rule_id, subject, steady_ms());
-        if (!report) ++suppressed_hits_;
-    }
-    if (!report) {
+    if (!dedup_.should_report(hit.rule_id, subject, steady_ms())) {
+        ++suppressed_hits_;
         do_kill();  // enforcement still applies to repeated launches; only the report is suppressed
         return;
     }
@@ -237,10 +216,7 @@ void Agent::on_process_started(const ProcessInfo& p) {
     auto exe = normalize_exe(p.exe_path.empty() ? p.name : p.exe_path);
     if (std::none_of(exe.begin(), exe.end(), [](unsigned char c) { return std::isalpha(c); }) && !p.name.empty())
         exe = normalize_exe(p.name);
-    {
-        std::lock_guard lk(tracker_mu_);
-        rule_pids_[p.pid] = hits.front().rule_id;
-    }
+    rule_pids_[p.pid] = hits.front().rule_id;
     sink_->emit(ev::process_start, {{"pid", p.pid}, {"ppid", p.ppid}, {"exe", exe}, {"user", p.user},
                                     {"rss_mb", p.rss_bytes / (1024 * 1024)}, {"rule_id", hits.front().rule_id}});
     for (const auto& h : hits)
@@ -250,31 +226,21 @@ void Agent::on_process_started(const ProcessInfo& p) {
 void Agent::scan_processes() {
     if (!plat_.processes) return;
     auto snap = plat_.processes->snapshot();
-    ProcessTracker::Diff d;
+    const ProcessTracker::Diff d = tracker_.update(snap);
     std::vector<std::pair<int64_t, std::string>> stopped_hits;
-    {
-        std::lock_guard lk(tracker_mu_);
-        d = tracker_.update(snap);
-        for (const auto& p : d.stopped)
-            if (auto it = rule_pids_.find(p.pid); it != rule_pids_.end()) {
-                stopped_hits.emplace_back(p.pid, it->second);
-                rule_pids_.erase(it);
-            }
-    }
+    for (const auto& p : d.stopped)
+        if (auto it = rule_pids_.find(p.pid); it != rule_pids_.end()) {
+            stopped_hits.emplace_back(p.pid, it->second);
+            rule_pids_.erase(it);
+        }
     for (const auto& p : d.started) on_process_started(p);
     for (const auto& [pid, rule] : stopped_hits) sink_->emit(ev::process_stop, {{"pid", pid}, {"rule_id", rule}});
 }
 
 void Agent::process_snapshot() {
-    ProcessTracker::NameSnapshot s;
-    std::vector<ProcessInfo> procs;
-    std::map<int64_t, std::string> rules_by_pid;
-    {
-        std::lock_guard lk(tracker_mu_);
-        s = tracker_.name_snapshot();
-        procs = tracker_.running();
-        rules_by_pid = rule_pids_;
-    }
+    ProcessTracker::NameSnapshot s = tracker_.name_snapshot();
+    std::vector<ProcessInfo> procs = tracker_.running();
+    const std::map<int64_t, std::string>& rules_by_pid = rule_pids_;
     auto is_sys_user = [](const std::string& u) {
         auto l = to_lower(u);
         return l.empty() || l == "system" || l == "local service" || l == "network service" || l == "root" ||
@@ -417,7 +383,7 @@ void Agent::scan_network() {
 
 // --------------------------------------------------------------------------------------- devices
 void Agent::scan_devices() {
-    if (!plat_.devices || !policy().collect.devices) return;
+    if (!plat_.devices || !policy_.collect.devices) return;
     for (const auto& d : plat_.devices->scan()) {
         auto hit = rules_.match_device(d);
         if (!hit && d.devclass != "usb_storage") continue;
@@ -460,20 +426,14 @@ void Agent::scan_ai_traffic() {
     if (!plat_.network) return;
     const int64_t now = steady_ms();
     auto flows = plat_.network->active_ai_flows();
-    {
-        std::lock_guard lk(ai_flows_mu_);
-        recent_ai_flows_.erase(
-            std::remove_if(recent_ai_flows_.begin(), recent_ai_flows_.end(),
-                           [now](const auto& kv) { return (now - kv.first) > 30000; }),
-            recent_ai_flows_.end());
-        for (const auto& f : flows) {
-            recent_ai_flows_.emplace_back(now, f);
-        }
-    }
+    recent_ai_flows_.erase(std::remove_if(recent_ai_flows_.begin(), recent_ai_flows_.end(),
+                                          [now](const auto& kv) { return (now - kv.first) > 30000; }),
+                           recent_ai_flows_.end());
+    for (const auto& f : flows) recent_ai_flows_.emplace_back(now, f);
     if (flows.empty()) return;
     rescan_extensions_ = true;
 
-    const bool ext_scan_active = plat_.extensions && policy().collect.extensions;
+    const bool ext_scan_active = plat_.extensions && policy_.collect.extensions;
     for (const auto& f : flows) {
         const auto dom = to_lower(f.domain);
         auto [rule_id, category, desc] = classify_ai_flow(rules_, dom, f.process);
@@ -504,21 +464,13 @@ void Agent::scan_extensions() {
     if (!plat_.extensions) return;
     scan_ai_traffic();
     auto exts = plat_.extensions->scan();
-    std::vector<ProcessInfo> procs;
-    {
-        std::lock_guard lk(tracker_mu_);
-        procs = tracker_.running();
-    }
+    std::vector<ProcessInfo> procs = tracker_.running();
     if (procs.empty() && plat_.processes) procs = plat_.processes->snapshot();
 
     std::vector<OutboundAiFlow> flows;
-    {
-        std::lock_guard lk(ai_flows_mu_);
-        const int64_t now = steady_ms();
-        for (const auto& [ts, f] : recent_ai_flows_) {
-            if (now - ts <= 30000) flows.push_back(f);
-        }
-    }
+    const int64_t flows_now = steady_ms();
+    for (const auto& [ts, f] : recent_ai_flows_)
+        if (flows_now - ts <= 30000) flows.push_back(f);
 
     std::map<int64_t, ProcessInfo> proc_by_pid;
     std::set<std::string> running_exes;
@@ -663,7 +615,7 @@ void Agent::scan_extensions() {
         ExtensionInfo ext;
     };
     std::vector<InactiveExtHit> inactive_test_hits;
-    const bool test_mode = policy().mode == Mode::test;
+    const bool test_mode = policy_.mode == Mode::test;
     std::vector<bool> flow_claimed(flows.size(), false);
     for (auto& e : exts) {
         auto h = rules_.match_extension(e);
@@ -767,13 +719,38 @@ void Agent::scan_extensions() {
     }
 }
 
+void Agent::on_device_event(const DeviceInfo& d) {
+    if (!policy_.collect.devices) return;
+    auto hit = rules_.match_device(d);
+    sink_->emit(ev::device, {{"action", d.action}, {"subsystem", d.subsystem}, {"class", d.devclass},
+                             {"vendor", d.vendor_id}, {"product", d.product_id}, {"model", limit(d.model, 128)},
+                             {"serial_hash", d.serial_hash}, {"rule_id", hit ? hit->rule_id : ""}});
+    if (hit && d.action == "add")
+        handle_rule_hit(*hit, d.vendor_id + ":" + d.product_id + ":" + d.serial_hash,
+                        json{{"class", d.devclass}, {"vendor", d.vendor_id}, {"model", d.model}});
+}
+
+void Agent::on_helper_conn(const IIpcServer::Peer& peer, bool connected) {
+    if (connected) helpers_[peer.conn_id] = peer;
+    else helpers_.erase(peer.conn_id);
+    if (!connected) {
+        sink_->emit(ev::helper_status, {{"connected", false}, {"user", peer.user}, {"pid", peer.pid}});
+        sink_->emit(ev::tamper, {{"kind", "helper_terminated"}, {"user", peer.user},
+                                 {"detail", "session helper process was disconnected or terminated"}});
+        wake_uplink();
+        check_helpers();
+    } else {
+        push_helper_config();
+    }
+}
+
 // ----------------------------------------------------------------------------------- helper IPC
 void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& line) {
     if (line.size() > ipc::kMaxLine) return;
     auto j = json::parse(line, nullptr, false);
     if (j.is_discarded() || !j.is_object()) return;
     const std::string t = jr::str(j, "t");
-    const Policy pol = policy();
+    const Policy& pol = policy_;
     const std::string user = peer.user;
     if (t == "hello") {
         sink_->emit(ev::helper_status, {{"connected", true}, {"user", user}, {"session", limit(jr::str(j, "session"), 64)},
@@ -842,8 +819,7 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
                      {"code", jr::boolean(j, "code")}, {"score", jr::num(j, "score", 0.0, 0.0, 1.0)},
                      {"src", limit(norm_target(jr::str(j, "src")), 64)},
                      {"dst", limit(norm_target(jr::str(j, "dst")), 64)}, {"user", user}});
-        wake_uplink_.store(true);
-        flush_cv_.notify_all();
+        wake_uplink();
     } else if (t == "keys") {
         if (!pol.collect.keys) return;
         json k = j;
@@ -854,7 +830,6 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
     } else if (t == "paste_chord") {
         ++paste_chords_;
     } else if (t == "screen_caps") {
-        std::lock_guard lk(helpers_mu_);
         screen_caps_ = {
             {"session_type", limit(jr::str(j, "session_type", "x11"), 16)},
             {"snapshot", jr::boolean(j, "snapshot")},
@@ -870,7 +845,7 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
 
 void Agent::push_helper_config() {
     if (!plat_.ipc) return;
-    const Policy p = policy();
+    const Policy& p = policy_;
     const std::string pac_url = (p.proxy_mode == "proxy_only") ? p.proxy_pac_url : std::string{};
     plat_.ipc->broadcast(ipc::line({{"t", "config"},
                                     {"mode", to_string(p.mode)},
@@ -890,7 +865,7 @@ void Agent::push_helper_config() {
     plat_.ipc->broadcast(ipc::line({{"t", "indicator"},
                                     {"mode", to_string(p.mode)},
                                     {"text", std::string("Monitored by XephyGuard · mode: ") + mode_label(p.mode) +
-                                                 (status_.isolated ? " · network isolated" : "")},
+                                                 (isolated_ ? " · network isolated" : "")},
                                     {"notice", p.notice_text}}));
 }
 
@@ -903,10 +878,7 @@ void Agent::check_helpers() {
     if (!plat_.system) return;
     const auto sessions = plat_.system->sessions();
     std::vector<uint32_t> connected;
-    {
-        std::lock_guard lk(helpers_mu_);
-        for (const auto& [id, p] : helpers_) connected.push_back(p.uid);
-    }
+    for (const auto& [id, p] : helpers_) connected.push_back(p.uid);
     if (plat_.helper_launcher) plat_.helper_launcher->ensure_helpers(sessions, connected);
     const bool graphical = std::any_of(sessions.begin(), sessions.end(), [](const UserSession& s) {
         return s.session_type == "x11" || s.session_type == "wayland" || s.session_type == "console" ||
@@ -928,7 +900,7 @@ void Agent::check_helpers() {
 
 // ------------------------------------------------------------------------------- isolation
 void Agent::apply_isolation(bool on) {
-    status_.isolated = on;
+    isolated_ = on;
     if (queue_) queue_->kv_set("isolated", on ? "1" : "0");  // survives agent restarts and reboots
     bool ok = true;
     if (plat_.isolator) {
@@ -942,10 +914,7 @@ void Agent::apply_isolation(bool on) {
                                   {"wireless", false}, {"virtual", false}, {"default_route", false},
                                   {"kind", on ? "net.isolated" : ""}, {"initial", false}});
     if (on) {
-        {
-            std::lock_guard lk(hit_mu_);
-            dedup_.reset();
-        }
+        dedup_.reset();
         reevaluate_ = true;  // close AI apps that are already running
     }
     push_helper_config();
@@ -953,61 +922,60 @@ void Agent::apply_isolation(bool on) {
 
 // ------------------------------------------------------------------------------- watchers, misc
 void Agent::restart_watchers() {
-    const Policy p = policy();
+    const Policy& p = policy_;
     if (plat_.files) {
         if (files_running_) { plat_.files->stop(); files_running_ = false; }
         if (p.collect.files && !p.work_dirs.empty()) {
             std::vector<std::string> dirs;
             for (const auto& h : user_homes())
                 for (const auto& d : p.work_dirs) dirs.push_back(expand_path(d, h));
-            files_running_ = plat_.files->watch(dirs, [this](const FileActivity& a) {
-                std::lock_guard lk(files_mu_);
-                auto& agg = file_agg_[a.dir];
-                if (agg.is_null()) agg = {{"dir", a.dir}, {"saves", 0}, {"created", 0}, {"deleted", 0}, {"bytes_delta", 0},
-                                          {"exts", json::array()}, {"first_ts", now_ms()}};
-                if (a.action == "created") agg["created"] = agg["created"].get<int>() + 1;
-                else if (a.action == "deleted") agg["deleted"] = agg["deleted"].get<int>() + 1;
-                else agg["saves"] = agg["saves"].get<int>() + 1;
-                agg["bytes_delta"] = agg["bytes_delta"].get<int64_t>() + a.size_delta;
-                agg["total_bytes"] = a.total_bytes;
-                auto& exts = agg["exts"];
-                if (!a.file_ext.empty() && exts.size() < 10 &&
-                    std::find(exts.begin(), exts.end(), a.file_ext) == exts.end())
-                    exts.push_back(a.file_ext);
-            });
+            files_running_ =
+                plat_.files->watch(dirs, [this](const FileActivity& a) { post(msg::FileEvent{a}); });
         }
     }
     if (plat_.input) {
         if (p.collect.keys && !input_running_) {
-            input_running_ = plat_.input->start([this](int64_t t, bool bs, bool paste_chord) {
-                if (paste_chord) {
-                    // Ask the user's helper to measure the clipboard being pasted (size/lines/code-likeness only).
-                    ++paste_chords_;
-                    if (plat_.ipc && policy().collect.clipboard) plat_.ipc->broadcast(ipc::line({{"t", "paste_probe"}}));
-                    return;
-                }
-                std::lock_guard lk(keys_mu_);
-                keys_.on_key(t, bs);
-            });
+            input_running_ = plat_.input->start(
+                [this](int64_t t, bool bs, bool paste_chord) { post(msg::KeyEvent{t, bs, paste_chord}); });
             if (input_running_) log::info("input: key-timing monitor started (timing only, no key identities)");
         } else if (!p.collect.keys && input_running_) {
             plat_.input->stop();
             input_running_ = false;
-            std::lock_guard lk(keys_mu_);
             keys_.flush(now_ms(), true);  // discard
         }
     }
 }
 
-void Agent::flush_keystats(int64_t now, bool force) {
-    std::optional<KeyStatsWindow> w;
-    {
-        std::lock_guard lk(keys_mu_);
-        w = keys_.flush(now, force);
+void Agent::on_file_activity(const FileActivity& a) {
+    auto& agg = file_agg_[a.dir];
+    if (agg.is_null())
+        agg = {{"dir", a.dir}, {"saves", 0}, {"created", 0}, {"deleted", 0}, {"bytes_delta", 0}, {"exts", json::array()},
+               {"first_ts", now_ms()}};
+    if (a.action == "created") agg["created"] = agg["created"].get<int>() + 1;
+    else if (a.action == "deleted") agg["deleted"] = agg["deleted"].get<int>() + 1;
+    else agg["saves"] = agg["saves"].get<int>() + 1;
+    agg["bytes_delta"] = agg["bytes_delta"].get<int64_t>() + a.size_delta;
+    agg["total_bytes"] = a.total_bytes;
+    auto& exts = agg["exts"];
+    if (!a.file_ext.empty() && exts.size() < 10 && std::find(exts.begin(), exts.end(), a.file_ext) == exts.end())
+        exts.push_back(a.file_ext);
+}
+
+void Agent::on_key(int64_t t, bool backspace, bool paste_chord) {
+    if (paste_chord) {
+        // Ask the user's helper to measure the clipboard being pasted (size/lines/code-likeness only).
+        ++paste_chords_;
+        if (plat_.ipc && policy_.collect.clipboard) plat_.ipc->broadcast(ipc::line({{"t", "paste_probe"}}));
+        return;
     }
-    const uint32_t chords = paste_chords_.exchange(0);
+    if (input_running_) keys_.on_key(t, backspace);
+}
+
+void Agent::flush_keystats(int64_t now, bool force) {
+    const std::optional<KeyStatsWindow> w = keys_.flush(now, force);
+    const uint32_t chords = std::exchange(paste_chords_, 0u);
     if (!w && chords == 0) return;
-    if (!policy().collect.keys) return;
+    if (!policy_.collect.keys) return;
     json j = w ? w->to_json() : json{{"window_start", now}, {"keys", 0}};
     j["paste_chords"] = chords;
     j["user"] = active_user();
@@ -1017,10 +985,7 @@ void Agent::flush_keystats(int64_t now, bool force) {
 
 void Agent::flush_file_activity() {
     std::map<std::string, json> agg;
-    {
-        std::lock_guard lk(files_mu_);
-        agg.swap(file_agg_);
-    }
+    agg.swap(file_agg_);
     for (auto& [dir, j] : agg) {
         j["user"] = active_user();
         sink_->emit(ev::file_activity, j);
@@ -1113,7 +1078,7 @@ void Agent::check_integrity(bool initial) {
 
 // ------------------------------------------------------------------------------------ heartbeat
 json Agent::build_heartbeat() {
-    const Policy p = policy();
+    const Policy& p = policy_;
     json caps = json::object();
     caps["processes"] = plat_.processes != nullptr;
     caps["network"] = plat_.network != nullptr;
@@ -1124,7 +1089,6 @@ json Agent::build_heartbeat() {
     caps["gpu"] = plat_.gpu != nullptr && plat_.gpu->available();
     std::vector<UserSession> sess_list = plat_.system ? plat_.system->sessions() : std::vector<UserSession>{};
     {
-        std::lock_guard lk(helpers_mu_);
         if (screen_caps_.is_object() && !screen_caps_.empty()) {
             caps["screen"] = screen_caps_;
         } else {
@@ -1174,11 +1138,7 @@ json Agent::build_heartbeat() {
     std::vector<std::string> users;
     if (plat_.system)
         for (const auto& s : plat_.system->sessions()) users.push_back(s.user + "@" + s.session_type);
-    int helpers;
-    {
-        std::lock_guard lk(helpers_mu_);
-        helpers = int(helpers_.size());
-    }
+    const int helpers = int(helpers_.size());
     return json{{"agent_version", XG_VERSION},
                 {"uptime_s", plat_.system ? plat_.system->uptime_s() : 0},
                 {"agent_uptime_s", (steady_ms() - started_steady_) / 1000},
@@ -1188,238 +1148,75 @@ json Agent::build_heartbeat() {
                 {"signatures_version", rules_.version()},
                 {"user", active_user()},
                 {"sessions", users},
-                {"clock_offset_ms", status_.clock_offset_ms.load()},
+                {"clock_offset_ms", clock_offset_ms_},
                 {"local_time_ms", now_ms()},
                 {"queue_depth", queue_ ? queue_->size() : 0},
                 {"helpers", helpers},
                 {"realtime", status_.realtime_connected.load()},
                 {"suppressed_hits", suppressed_hits_},
+                {"core_dropped", mailbox_.dropped()},
                 {"capabilities", caps},
                 {"usage", usage}};
 }
 
-// --------------------------------------------------------------------------------------- uplink
-net::TlsOptions Agent::tls_options(bool with_cert) const {
-    net::TlsOptions o;
-    o.ca_file = cfg_.ca_file;
-    if (with_cert) {
-        o.cert_file = cfg_.cert_file;
-        o.key_file = cfg_.key_file;
-    }
-    o.expected_host = cfg_.ccc_host;
-    o.timeout_ms = 10000;
-    return o;
-}
-
-std::unique_ptr<net::HttpsClient> Agent::make_api_client(bool with_cert) {
-    auto c = std::make_unique<net::HttpsClient>(cfg_.ccc_host, cfg_.api_port, tls_options(with_cert));
-    if (with_cert) c->set_bearer(cfg_.token);
-    return c;
-}
-
-bool Agent::poll_enrollment() {
-    if (cfg_.enrollment_id.empty()) {
-        if (!warned_not_enrolled_) {
-            log::warn("agent is not enrolled: run `xephyguard-agent enroll --key <lab key>`");
-            warned_not_enrolled_ = true;
-        }
-        return false;
-    }
-    auto api = make_api_client(false);
-    auto r = api->request("GET", std::string(protocol::kEnrollPath) + "/" + cfg_.enrollment_id +
-                                     "?poll_token=" + cfg_.poll_token);
-    if (!r.ok()) return false;
-    auto j = json::parse(r.body, nullptr, false);
-    if (j.is_discarded()) return false;
-    const auto st = jr::str(j, "status");
-    const std::string cert = jr::str(j, "cert_pem"), token = jr::str(j, "token");
-    const int64_t pc_id = jr::i64(j, "pc_id", 0, 1);
-    if (st == "approved" && !cert.empty() && !token.empty() && pc_id > 0) {
-        write_file_atomic(cfg_.cert_file, cert);
-        if (const auto ca_pem = jr::str(j, "ca_pem"); !ca_pem.empty()) write_file_atomic(cfg_.ca_file, ca_pem);
-        cfg_.pc_id = std::to_string(pc_id);
-        cfg_.token = token;
-        cfg_.poll_token.clear();
-        cfg_.save(config_path_);
-        if (auto h = crypto::sha256_file_hex(config_path_)) file_hashes_[config_path_] = *h;
-        log::info("enrollment approved: this PC is #{}", cfg_.pc_id);
-        policy_dirty_ = true;
-        push_helper_config();
-        return true;
-    }
-    if (st == "rejected") log::error("enrollment was rejected by the CCC administrator");
-    return false;
-}
-
-bool Agent::fetch_policy() {
-    std::lock_guard lk(api_mu_);
-    if (!api_) api_ = make_api_client(true);
-    auto r = api_->request("GET", protocol::kPolicyPath);
-    if (!r.ok()) {
-        log::warn("policy: fetch failed ({} {})", r.status, r.error);
-        return false;
-    }
-    auto j = json::parse(r.body, nullptr, false);
-    if (j.is_discarded() || !j.is_object() || !j.contains("policy") || !j["policy"].is_object()) return false;
-    if (j.contains("signatures") && j["signatures"].is_object() &&
-        jr::str(j["signatures"], "version") != rules_.version())
+// ------------------------------------------------------------------------- messages from the uplink
+void Agent::on_policy_fetched(const json& j) {
+    if (!j.is_object() || !j.contains("policy") || !j["policy"].is_object()) return;
+    if (j.contains("signatures") && j["signatures"].is_object() && jr::str(j["signatures"], "version") != rules_.version())
         apply_signatures(j["signatures"], true);
     std::string err;
     Policy p = Policy::from_json(j["policy"], &err);
     if (!err.empty()) {
         log::error("policy: invalid policy from CCC: {}", err);
-        return false;
+        return;
     }
-    if (j.contains("screen") && j["screen"].is_object()) {
-        const auto& sc = j["screen"];
-        if (sc.contains("port") && sc["port"].is_number_unsigned()) {
-            const uint16_t pnum = sc["port"].get<uint16_t>();
-            if (pnum > 0) cfg_.screen_port = pnum;
-        }
-        if (sc.contains("path") && sc["path"].is_string()) {
-            const std::string sp = sc["path"].get<std::string>();
-            if (!sp.empty()) cfg_.screen_path = sp;
-        }
-        if (sc.contains("tls") && sc["tls"].is_boolean()) {
-            cfg_.screen_tls = sc["tls"].get<bool>();
-        }
-        if (sc.contains("agent_token") && sc["agent_token"].is_string()) {
-            cfg_.screen_token = sc["agent_token"].get<std::string>();
-        }
-    }
+    const json& sc = jr::obj(j, "screen");
+    if (const auto port = jr::i64(sc, "port", 0, 1, 65535); port > 0) cfg_.screen_port = uint16_t(port);
+    if (const auto sp = jr::str(sc, "path"); !sp.empty()) cfg_.screen_path = sp;
+    if (const json* t = jr::field(sc, "tls"); t && t->is_boolean()) cfg_.screen_tls = t->get<bool>();
+    if (const json* t = jr::field(sc, "agent_token"); t && t->is_string()) cfg_.screen_token = t->get<std::string>();
     apply_policy(p);
     queue_->kv_set("policy", j["policy"].dump());
     if (j.contains("realtime") && j["realtime"].is_object()) {
         realtime_cfg_ = j["realtime"];
         queue_->kv_set("realtime", realtime_cfg_.dump());
     }
-    policy_dirty_ = false;
-    return true;
+    publish_view();
 }
 
-bool Agent::flush_once() {
-    std::lock_guard lk(api_mu_);
-    if (!api_) api_ = make_api_client(true);
-    const auto events = queue_ ? queue_->peek(protocol::kMaxBatchEvents) : std::vector<Event>{};
-    size_t included = 0;
-    const json body = protocol::build_batch(cfg_.pc_id, events, build_heartbeat(), &included);
-    const std::string s = body.dump();
-    const int64_t t0 = now_ms();
-    auto r = api_->request("POST", protocol::kEventsPath, s);
-    const int64_t t1 = now_ms();
-    if (!r.ok()) {
-        if (r.status == 401 || r.status == 403) log::error("uplink: CCC rejected our credentials ({})", r.status);
-        else log::debug("uplink: send failed ({} {})", r.status, r.error);
-        return false;
-    }
-    status_.bytes_up += s.size();
-    std::string err;
-    auto ack = protocol::parse_batch_ack(r.body, &err);
-    if (!ack) {
-        log::warn("uplink: bad ack: {}", err);
-        return false;
-    }
-    if (queue_ && ack->ack_seq > 0) queue_->ack(ack->ack_seq);
-    status_.last_ack_seq = ack->ack_seq;
-    if (ack->server_time_ms > 0) status_.clock_offset_ms = protocol::clock_offset(t0, t1, ack->server_time_ms);
-    const Policy p = policy();
-    if (ack->policy_version != 0 && ack->policy_version != p.version) policy_dirty_ = true;
-    if (!ack->signatures_version.empty() && ack->signatures_version != rules_.version()) {
+void Agent::on_ack(const msg::AckReceived& a) {
+    const auto& ack = a.ack;
+    last_ack_seq_ = ack.ack_seq;
+    if (ack.server_time_ms > 0) clock_offset_ms_ = protocol::clock_offset(a.t0_ms, a.t1_ms, ack.server_time_ms);
+    if (ack.policy_version != 0 && ack.policy_version != policy_.version) uplink_->request_policy();
+    if (!ack.signatures_version.empty() && ack.signatures_version != rules_.version()) {
         // Do not spin on a bundle we already refused: only refetch when the server announces a different
         // version, or when the retry interval (15 min) has elapsed.
         constexpr int64_t kRejectedSigRetryMs = 15 * 60 * 1000;
-        std::lock_guard rl(rejected_sig_mu_);
         const int64_t now = now_ms();
-        if (ack->signatures_version != rejected_sig_version_) {
-            policy_dirty_ = true;
+        if (ack.signatures_version != rejected_sig_version_) {
+            uplink_->request_policy();
         } else if (now - rejected_sig_at_ms_ >= kRejectedSigRetryMs) {
             rejected_sig_at_ms_ = now;
-            policy_dirty_ = true;
+            uplink_->request_policy();
         }
     }
-    if (ack->isolated != status_.isolated.load()) apply_isolation(ack->isolated);
-    return included == events.size() || included > 0;
+    if (ack.isolated != isolated_) apply_isolation(ack.isolated);
 }
 
-void Agent::uplink_loop(std::atomic<bool>& stop) {
-    int fail_backoff_s = 1;
-    while (!stop) {
-        int wait_ms = 5000;
-        try {
-        if (!cfg_.enrolled()) {
-            poll_enrollment();
-            wait_ms = 5000;
-        } else {
-            if (policy_dirty_) {
-                // fetch_policy takes api_mu_ itself
-                fetch_policy();
-            }
-            const bool ok = flush_once();
-            if (ok != status_.online.load()) log::info("uplink: CCC {}", ok ? "reachable" : "unreachable (buffering locally)");
-            status_.online = ok;
-            if (ok) {
-                fail_backoff_s = 1;
-                // A new policy announced in the ack is fetched right away (realtime may be unavailable).
-                wait_ms = policy_dirty_ ? 0
-                          : (queue_ && queue_->size() > 0) ? 200 : policy().intervals.heartbeat_s * 1000;
-            } else {
-                wait_ms = fail_backoff_s * 1000;
-                fail_backoff_s = std::min(fail_backoff_s * 2, 30);
-            }
-        }
-        } catch (const std::exception& e) {
-            // Server data must never terminate the root service (I-AGENT-13).
-            log::error("uplink: {}", e.what());
-            status_.online = false;
-        }
-        std::unique_lock lk(flush_mu_);
-        flush_cv_.wait_for(lk, std::chrono::milliseconds(wait_ms),
-                           [&] { return stop.load() || wake_uplink_.exchange(false); });
-    }
-}
-
-void Agent::realtime_loop(std::atomic<bool>& stop) {
-    while (!stop) {
-        if (!cfg_.enrolled() || realtime_cfg_.is_null() || !realtime_cfg_.contains("app_key")) {
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            continue;
-        }
-        net::PusherConfig pc;
-        pc.host = cfg_.ccc_host;
-        // Reverb is served by the same nginx endpoint as the API, so reuse the port the agent already
-        // reaches the CCC on (the server cannot know about NAT / port forwarding in between).
-        pc.port = cfg_.api_port;
-        pc.app_key = jr::str(realtime_cfg_, "app_key");
-        pc.channel = jr::str(realtime_cfg_, "channel", "private-pc." + cfg_.pc_id);
-        pc.auth_path = jr::str(realtime_cfg_, "auth_path", protocol::kBroadcastAuthPath);
-        auto api = make_api_client(true);
-        net::PusherClient client(pc, tls_options(true), *api, [this](const std::string& event, const json& data) {
-            if (event != "command") return;
-            try {
-                std::string err;
-                if (auto cmd = protocol::parse_command(data, &err)) handle_command(*cmd);
-                else log::warn("realtime: rejected command: {}", err);
-            } catch (const std::exception& e) {
-                log::error("realtime: command failed: {}", e.what());
-            }
-        });
-        std::atomic<bool> session_stop{false};
-        std::thread watcher([&] {
-            while (!stop && !session_stop) {
-                status_.realtime_connected = client.connected();
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            }
-        });
-        try {
-            client.run(stop);
-        } catch (const std::exception& e) {
-            log::error("realtime: {}", e.what());
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-        }
-        session_stop = true;
-        watcher.join();
-        status_.realtime_connected = false;
-    }
+void Agent::on_enroll_approved(const msg::EnrollApproved& e) {
+    if (cfg_.enrolled()) return;
+    write_file_atomic(cfg_.cert_file, e.cert_pem);
+    if (!e.ca_pem.empty()) write_file_atomic(cfg_.ca_file, e.ca_pem);
+    cfg_.pc_id = std::to_string(e.pc_id);
+    cfg_.token = e.token;
+    cfg_.poll_token.clear();
+    cfg_.save(config_path_);
+    if (auto h = crypto::sha256_file_hex(config_path_)) file_hashes_[config_path_] = *h;
+    log::info("enrollment approved: this PC is #{}", cfg_.pc_id);
+    publish_view();
+    uplink_->request_policy();
+    push_helper_config();
 }
 
 void Agent::command_result(const std::string& id, const std::string& status, const json& detail) {
@@ -1430,16 +1227,15 @@ void Agent::command_result(const std::string& id, const std::string& status, con
 void Agent::handle_command(const protocol::Command& cmd) {
     log::info("command {} ({})", cmd.type, cmd.id);
     if (cmd.type == "policy_updated") {
-        policy_dirty_ = true;
-        wake_uplink();
+        uplink_->request_policy();
         command_result(cmd.id, "ok", json::object());
     } else if (cmd.type == "message") {
         notify_student(limit(jr::str(cmd.args, "title", "Message from your instructor"), 200),
                        jr::str(cmd.args, "text"), jr::boolean(cmd.args, "urgent"));
-        command_result(cmd.id, "ok", {{"helpers", status_.helpers_connected.load()}});
+        command_result(cmd.id, "ok", {{"helpers", helpers_.size()}});
     } else if (cmd.type == "kill") {
         json killed = json::array();
-        const Policy pol = policy();
+        const Policy& pol = policy_;
         std::vector<int64_t> pids;
         if (cmd.args.contains("pid") && cmd.args["pid"].is_number_integer()) pids.push_back(cmd.args["pid"].get<int64_t>());
         if (cmd.args.contains("exe") && cmd.args["exe"].is_string() && plat_.processes) {
@@ -1449,10 +1245,7 @@ void Agent::handle_command(const protocol::Command& cmd) {
         }
         for (auto pid : pids) {
             std::string exe;
-            {
-                std::lock_guard lk(tracker_mu_);
-                if (auto* p = tracker_.get(pid)) exe = normalize_exe(p->exe_path.empty() ? p->name : p->exe_path);
-            }
+            if (auto* p = tracker_.get(pid)) exe = normalize_exe(p->exe_path.empty() ? p->name : p->exe_path);
             const bool ok = !pol.kill_exempt.contains(exe) && plat_.processes && plat_.processes->kill(pid);
             killed.push_back({{"pid", pid}, {"exe", exe}, {"killed", ok}});
         }
@@ -1466,7 +1259,7 @@ void Agent::handle_command(const protocol::Command& cmd) {
         notify_student("XephyGuard", on ? "Internet access for this PC was paused by the instructor. The local network still works."
                                         : "Internet access for this PC was restored.",
                        true);
-        command_result(cmd.id, "ok", {{"isolated", status_.isolated.load()}});
+        command_result(cmd.id, "ok", {{"isolated", isolated_}});
     } else if (cmd.type == "rescan") {
         const auto what = jr::str(cmd.args, "what", "all");
         if (what == "extensions" || what == "installed" || what == "all") rescan_extensions_ = true;
@@ -1496,37 +1289,41 @@ void Agent::handle_command(const protocol::Command& cmd) {
 }
 
 // --------------------------------------------------------------------------------- artifacts
-void Agent::artifact_loop(std::atomic<bool>& stop) {
-    // Delay the first scan briefly so service startup is not slowed down.
-    int64_t next = steady_ms() + 5000;
-    while (!stop) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        const Policy p = policy();
-        if (!p.collect.artifacts) continue;
-        if (steady_ms() < next && !rescan_artifacts_.exchange(false)) continue;
-        next = steady_ms() + int64_t(p.intervals.artifact_scan_s) * 1000;
-        const auto homes = user_homes();
-        auto res = scan_artifacts(rules_, homes, stop);
-        json found = json::array();
-        for (const auto& a : res.found) {
-            std::string desc = "Local AI model file / store";
-            Severity sev = Severity::medium;
-            for (const auto& r : rules_.artifact_rules()) {
-                if (r.id == a.rule_id) {
-                    desc = r.description;
-                    sev = r.severity;
-                    break;
-                }
+void Agent::maybe_start_artifact_scan(int64_t now) {
+    if (!policy_.collect.artifacts || worker_.busy()) return;
+    if (now < next_artifact_scan_ && !rescan_artifacts_) return;
+    // The walk runs on the worker with its own copies; results come back as a message.
+    auto rules = std::make_shared<const RuleEngine>(rules_);
+    auto homes = user_homes();
+    const bool queued = worker_.submit([this, rules, homes](const std::atomic<bool>& stop) {
+        auto res = scan_artifacts(*rules, homes, stop);
+        if (!stop) post(msg::ArtifactsScanned{std::move(res)});
+    });
+    if (!queued) return;
+    rescan_artifacts_ = false;
+    next_artifact_scan_ = now + int64_t(policy_.intervals.artifact_scan_s) * 1000;
+}
+
+void Agent::on_artifacts_scanned(const ArtifactScanResult& res) {
+    json found = json::array();
+    for (const auto& a : res.found) {
+        std::string desc = "Local AI model file / store";
+        Severity sev = Severity::medium;
+        for (const auto& r : rules_.artifact_rules()) {
+            if (r.id == a.rule_id) {
+                desc = r.description;
+                sev = r.severity;
+                break;
             }
-            const double size_mb = std::round((double(a.size_bytes) / (1024.0 * 1024.0)) * 10.0) / 10.0;
-            found.push_back({{"path", a.path}, {"size_mb", size_mb}, {"rule_id", a.rule_id}, {"description", desc}});
-            handle_rule_hit(RuleHit{a.rule_id, "local_model", desc, sev}, a.path,
-                            json{{"path", a.path}, {"size_mb", size_mb}, {"rule_id", a.rule_id}});
         }
-        sink_->emit(ev::artifact_scan, {{"count", res.found.size()}, {"files_visited", res.files_visited},
-                                        {"truncated", res.truncated}, {"found", found}});
-        wake_uplink();
+        const double size_mb = std::round((double(a.size_bytes) / (1024.0 * 1024.0)) * 10.0) / 10.0;
+        found.push_back({{"path", a.path}, {"size_mb", size_mb}, {"rule_id", a.rule_id}, {"description", desc}});
+        handle_rule_hit(RuleHit{a.rule_id, "local_model", desc, sev}, a.path,
+                        json{{"path", a.path}, {"size_mb", size_mb}, {"rule_id", a.rule_id}});
     }
+    sink_->emit(ev::artifact_scan, {{"count", res.found.size()}, {"files_visited", res.files_visited},
+                                    {"truncated", res.truncated}, {"found", found}});
+    wake_uplink();
 }
 
 // ------------------------------------------------------------------------------------ main loop
@@ -1535,10 +1332,7 @@ void Agent::reevaluate_all() {
     // are evaluated again under the new policy (e.g. an AI tool left open when a Test starts).
     std::vector<ProcessInfo> running;
     if (plat_.processes) running = plat_.processes->snapshot();
-    {
-        std::lock_guard lk(tracker_mu_);
-        tracker_.update(running);
-    }
+    tracker_.update(running);
     for (const auto& p : running) on_process_started(p);
     known_ports_.clear();
     adapters_.clear();
@@ -1552,8 +1346,8 @@ void Agent::reevaluate_all() {
 }
 
 void Agent::run_periodic(int64_t now) {
-    if (reevaluate_.exchange(false)) reevaluate_all();
-    const Policy p = policy();
+    if (std::exchange(reevaluate_, false)) reevaluate_all();
+    const Policy& p = policy_;
     auto due = [&](const char* k, int s) {
         auto& t = next_run_[k];
         if (now >= t) {
@@ -1565,17 +1359,18 @@ void Agent::run_periodic(int64_t now) {
     if (p.collect.processes && due("proc", p.intervals.process_scan_s)) scan_processes();
     if (p.collect.processes && due("snap", p.intervals.snapshot_s)) process_snapshot();
     if (p.collect.ports && due("ports", p.intervals.port_scan_s)) scan_ports();
-    if (p.collect.network && (network_dirty_.exchange(false) || due("net", 30))) scan_network();
+    if (p.collect.network && (std::exchange(network_dirty_, false) || due("net", 30))) scan_network();
     if (p.collect.network && due("ai_net", 4)) scan_ai_traffic();
-    if (p.collect.extensions && (rescan_extensions_.exchange(false) || due("ext", p.intervals.extension_scan_s)))
+    if (p.collect.extensions && (std::exchange(rescan_extensions_, false) || due("ext", p.intervals.extension_scan_s)))
         scan_extensions();
     flush_keystats(now_ms(), false);
     if (due("files", 10)) flush_file_activity();
     if (p.collect.gpu && due("gpu", p.intervals.gpu_sample_s)) sample_gpu();
     if (due("integrity", p.intervals.integrity_check_s)) check_integrity(false);
     if (due("helpers", 2)) check_helpers();
+    if (running_) maybe_start_artifact_scan(now);
     // Anti-tamper: if the isolation rule disappears while the PC is isolated, put it back and report it.
-    if (status_.isolated.load() && plat_.isolator && due("isolation", 20) && !plat_.isolator->active()) {
+    if (isolated_ && plat_.isolator && due("isolation", 20) && !plat_.isolator->active()) {
         log::warn("isolation: block rule missing, re-applying");
         sink_->emit(ev::tamper, {{"kind", "isolation_rule_removed"}, {"user", active_user()},
                                  {"detail", "the network isolation rule was removed locally and has been re-applied"}});
@@ -1583,8 +1378,65 @@ void Agent::run_periodic(int64_t now) {
     }
 }
 
+namespace {
+template <class... F>
+struct overloaded : F... {
+    using F::operator()...;
+};
+template <class... F>
+overloaded(F...) -> overloaded<F...>;
+}  // namespace
+
+void Agent::dispatch(AgentMessage& m) {
+    std::visit(overloaded{
+                   [&](msg::ProcessExec& e) {
+                       if (tracker_.note_started(e.p) && policy_.collect.processes) on_process_started(e.p);
+                   },
+                   [&](msg::NetworkChanged&) { network_dirty_ = true; },
+                   [&](msg::DeviceEvent& e) { on_device_event(e.d); },
+                   [&](msg::HelperLine& e) { on_helper_message(e.peer, e.line); },
+                   [&](msg::HelperConn& e) { on_helper_conn(e.peer, e.connected); },
+                   [&](msg::FileEvent& e) { on_file_activity(e.a); },
+                   [&](msg::KeyEvent& e) { on_key(e.t_ms, e.backspace, e.paste_chord); },
+                   [&](msg::CommandMsg& e) { handle_command(e.cmd); },
+                   [&](msg::PolicyFetched& e) { on_policy_fetched(e.body); },
+                   [&](msg::AckReceived& e) { on_ack(e); },
+                   [&](msg::EnrollApproved& e) { on_enroll_approved(e); },
+                   [&](msg::ArtifactsScanned& e) { on_artifacts_scanned(e.result); },
+               },
+               m);
+}
+
+void Agent::drain() {
+    for (auto& m : mailbox_.take_all()) {
+        try {
+            dispatch(m);
+        } catch (const std::exception& e) {
+            log::error("core: message {} failed: {}", m.index(), e.what());
+        }
+    }
+}
+
+void Agent::publish_view() {
+    UplinkView v;
+    v.ccc_host = cfg_.ccc_host;
+    v.api_port = cfg_.api_port;
+    v.ca_file = cfg_.ca_file;
+    v.cert_file = cfg_.cert_file;
+    v.key_file = cfg_.key_file;
+    v.token = cfg_.token;
+    v.pc_id = cfg_.pc_id;
+    v.enrollment_id = cfg_.enrollment_id;
+    v.poll_token = cfg_.poll_token;
+    v.enrolled = cfg_.enrolled();
+    v.heartbeat_s = policy_.intervals.heartbeat_s;
+    v.heartbeat = build_heartbeat();
+    v.realtime = realtime_cfg_;
+    view_.set(std::move(v));
+}
+
 int Agent::run(std::atomic<bool>& stop) {
-    stop_ = &stop;
+    running_ = true;
     started_steady_ = steady_ms();
     wall_minus_steady_ = now_ms() - steady_ms();
     const bool clean = queue_->kv_get("clean_shutdown").value_or("1") == "1";
@@ -1595,50 +1447,19 @@ int Agent::run(std::atomic<bool>& stop) {
                                     {"hostname", plat_.system ? plat_.system->hostname() : ""}});
     check_integrity(true);
 
+    // Platform callbacks run on platform threads: they only post to the core.
     if (plat_.ipc) {
         const bool ok = plat_.ipc->start(
-            cfg_.ipc_path, [this](const IIpcServer::Peer& peer, const std::string& line) { on_helper_message(peer, line); },
-            [this](const IIpcServer::Peer& peer, bool connected) {
-                {
-                    std::lock_guard lk(helpers_mu_);
-                    if (connected) helpers_[peer.conn_id] = peer;
-                    else helpers_.erase(peer.conn_id);
-                    status_.helpers_connected = int(helpers_.size());
-                }
-                if (!connected) {
-                    sink_->emit(ev::helper_status, {{"connected", false}, {"user", peer.user}, {"pid", peer.pid}});
-                    sink_->emit(ev::tamper, {{"kind", "helper_terminated"}, {"user", peer.user},
-                                             {"detail", "session helper process was disconnected or terminated"}});
-                    wake_uplink();
-                    check_helpers();
-                } else {
-                    push_helper_config();
-                }
-            });
+            cfg_.ipc_path,
+            [this](const IIpcServer::Peer& peer, const std::string& line) { post(msg::HelperLine{peer, line}); },
+            [this](const IIpcServer::Peer& peer, bool connected) { post(msg::HelperConn{peer, connected}); });
         if (!ok) log::error("ipc: cannot listen on {}", cfg_.ipc_path);
     }
-    if (plat_.processes)
-        plat_.processes->watch([this](const ProcessInfo& p) {
-            bool fresh;
-            {
-                std::lock_guard lk(tracker_mu_);
-                fresh = tracker_.note_started(p);
-            }
-            if (fresh && policy().collect.processes) on_process_started(p);
-        });
-    if (plat_.network) plat_.network->watch([this] { network_dirty_ = true; });
+    if (plat_.processes) plat_.processes->watch([this](const ProcessInfo& p) { post(msg::ProcessExec{p}); });
+    if (plat_.network) plat_.network->watch([this] { post(msg::NetworkChanged{}); });
     if (plat_.devices) {
         scan_devices();
-        plat_.devices->start([this](const DeviceInfo& d) {
-            if (!policy().collect.devices) return;
-            auto hit = rules_.match_device(d);
-            sink_->emit(ev::device, {{"action", d.action}, {"subsystem", d.subsystem}, {"class", d.devclass},
-                                     {"vendor", d.vendor_id}, {"product", d.product_id}, {"model", limit(d.model, 128)},
-                                     {"serial_hash", d.serial_hash}, {"rule_id", hit ? hit->rule_id : ""}});
-            if (hit && d.action == "add")
-                handle_rule_hit(*hit, d.vendor_id + ":" + d.product_id + ":" + d.serial_hash,
-                                json{{"class", d.devclass}, {"vendor", d.vendor_id}, {"model", d.model}});
-        });
+        plat_.devices->start([this](const DeviceInfo& d) { post(msg::DeviceEvent{d}); });
     }
     restart_watchers();
     push_helper_config();
@@ -1647,21 +1468,43 @@ int Agent::run(std::atomic<bool>& stop) {
         apply_isolation(true);  // the CCC lifts it with its next ack if the instructor already restored this PC
     }
 
-    threads_.emplace_back([this, &stop] { uplink_loop(stop); });
-    threads_.emplace_back([this, &stop] { realtime_loop(stop); });
-    threads_.emplace_back([this, &stop] { artifact_loop(stop); });
+    publish_view();
+    next_artifact_scan_ = steady_ms() + 5000;  // keep service startup fast
+    worker_.start();
+    threads_.emplace_back([this, &stop] { uplink_->run(stop); });
+    threads_.emplace_back([this, &stop] { realtime_->run(stop); });
     if (plat_.service_host) plat_.service_host->notify_ready();
     log::info("agent {} running (pc {}, mode {})", XG_VERSION, cfg_.pc_id.empty() ? "unenrolled" : cfg_.pc_id,
-              to_string(policy().mode));
+              to_string(policy_.mode));
 
+    int64_t next_tick = 0, next_view = 0;
     while (!stop) {
-        try {
-            run_periodic(steady_ms());
-        } catch (const std::exception& e) {
-            log::error("periodic task failed: {}", e.what());
+        const int64_t wait = std::clamp<int64_t>(next_tick - steady_ms(), 0, 250);
+        for (auto& m : mailbox_.wait_take_all(std::chrono::milliseconds(wait))) {
+            try {
+                dispatch(m);
+            } catch (const std::exception& e) {
+                log::error("core: message {} failed: {}", m.index(), e.what());
+            }
         }
-        if (plat_.service_host) plat_.service_host->watchdog_ping();
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        const int64_t now = steady_ms();
+        if (now >= next_tick) {
+            try {
+                run_periodic(now);
+            } catch (const std::exception& e) {
+                log::error("periodic task failed: {}", e.what());
+            }
+            if (plat_.service_host) plat_.service_host->watchdog_ping();
+            next_tick = now + 250;
+        }
+        if (now >= next_view) {
+            try {
+                publish_view();
+            } catch (const std::exception& e) {
+                log::error("core: publishing state failed: {}", e.what());
+            }
+            next_view = now + 1000;
+        }
     }
 
     // Clean shutdown: announce it so the CCC can distinguish it from a kill or a network cut.
@@ -1670,10 +1513,19 @@ int Agent::run(std::atomic<bool>& stop) {
     sink_->emit(ev::agent_stopping, {{"reason", "service_stop"}, {"uptime_s", (steady_ms() - started_steady_) / 1000}});
     flush_keystats(now_ms(), true);
     flush_file_activity();
+    // Stop producers first, so nothing posts into a core that no longer runs.
+    if (plat_.processes) plat_.processes->stop();
+    if (plat_.network) plat_.network->stop();
+    if (plat_.devices) plat_.devices->stop();
+    if (plat_.files) plat_.files->stop();
+    if (plat_.input) plat_.input->stop();
     wake_uplink();
+    worker_.stop();
     for (auto& t : threads_) t.join();
     threads_.clear();
-    if (cfg_.enrolled()) flush_once();
+    mailbox_.close();
+    publish_view();
+    if (cfg_.enrolled()) uplink_->flush_once();
     queue_->kv_set("clean_shutdown", "1");
     if (plat_.system) {
         plat_.system->set_exam_mode(false);
@@ -1681,15 +1533,11 @@ int Agent::run(std::atomic<bool>& stop) {
         plat_.system->set_browser_proxy_pac({});
         plat_.system->set_lab_dns({});
     }
-    if (plat_.processes) plat_.processes->stop();
-    if (plat_.network) plat_.network->stop();
-    if (plat_.devices) plat_.devices->stop();
-    if (plat_.files) plat_.files->stop();
-    if (plat_.input) plat_.input->stop();
     if (plat_.ipc) {
         plat_.ipc->broadcast(ipc::line({{"t", "clear_proxy_pac"}}));
         plat_.ipc->stop();
     }
+    running_ = false;
     return 0;
 }
 

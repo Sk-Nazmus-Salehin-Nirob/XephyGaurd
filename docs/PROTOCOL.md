@@ -56,6 +56,8 @@ Response: `{ack_seq, server_time_ms, policy_version, signatures_version, isolate
 * Clock: the CCC corrects event times by `server_now - local_time_ms` (the CCC is the time authority)
   and the agent computes its own offset from `server_time_ms` (reported in heartbeats).
 * A changed `policy_version`/`signatures_version` in the ack makes the agent re-fetch the policy.
+* `heartbeat.core_dropped` (diagnostic counter, no personal data): internal messages the agent core dropped
+  because its bounded mailbox was full (DECISIONS #22). Non-zero means some local observations may be missing.
 
 ### Event types
 | type | data (numbers and names only — never typed text, clipboard text or screen content) |

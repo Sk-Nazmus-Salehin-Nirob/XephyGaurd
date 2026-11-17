@@ -24,6 +24,14 @@ class RuleEngine {
 public:
     RuleEngine() = default;
     explicit RuleEngine(SignatureSet set) { load(std::move(set)); }
+    /// Consistent copy (taken under the source's lock), e.g. for a background scan job.
+    RuleEngine(const RuleEngine& o) {
+        std::shared_lock lk(o.mu_);
+        set_ = o.set_;
+        disabled_ = o.disabled_;
+        exe_index_ = o.exe_index_;
+    }
+    RuleEngine& operator=(const RuleEngine&) = delete;
 
     void load(SignatureSet set);
     void set_disabled(std::set<std::string> ids);
