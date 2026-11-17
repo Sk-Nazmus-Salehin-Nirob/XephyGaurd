@@ -50,3 +50,13 @@ def test_evidence_matching_and_tables(tmp_path):
     assert "| agent | 2 | 0 | 1 | 1 | 50% |" in md
     assert "| **overall** | 3 | 1 | 1 | 1 | 33% |" in md
     assert "\\toprule" in redteam.table_latex(rows)
+
+
+def test_ccc_placeholder_is_filled_and_validated():
+    assert redteam.expand_ccc("curl https://@CCC@:8443/x", "192.168.10.2") == "curl https://192.168.10.2:8443/x"
+    for bad in ["a;rm -rf /", "a b", "$(x)", ""]:
+        try:
+            redteam.expand_ccc("@CCC@", bad)
+        except ValueError:
+            continue
+        raise AssertionError(bad)
