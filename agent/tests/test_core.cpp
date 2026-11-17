@@ -167,6 +167,8 @@ TEST_CASE("protocol batch and command validation") {
     CHECK_FALSE(protocol::parse_command({{"id", "c1"}, {"type", "rm -rf"}, {"args", json::object()}}));
     CHECK_FALSE(protocol::parse_command({{"id", "bad id!"}, {"type", "ping"}}));
     CHECK_FALSE(protocol::parse_command({{"id", "c2"}, {"type", "kill"}, {"args", json::object()}}));
+    // The indicator follows the policy (mode + notice); there is no separate command for it.
+    CHECK_FALSE(protocol::parse_command({{"id", "c3"}, {"type", "set_indicator"}, {"args", json::object()}}));
     CHECK(protocol::parse_command({{"id", 42}, {"type", "kill"}, {"args", {{"pid", 5}}}})->id == "42");
 }
 
