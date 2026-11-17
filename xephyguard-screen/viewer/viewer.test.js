@@ -11,7 +11,8 @@ import {
   VERSION,
   MsgType,
   Flags,
-  Codec
+  Codec,
+  ScreenViewer
 } from './viewer.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -134,4 +135,17 @@ test('Viewer Protocol: ACK and KEYFRAME_REQ builders', () => {
   assert.equal(reqMsg.type, MsgType.KeyframeReq);
   assert.equal(reqMsg.streamId, 99);
   assert.equal(reqMsg.monitorId, 2);
+});
+
+test('Viewer: renewLease sends one renew message on an open socket only', () => {
+  const viewer = new ScreenViewer({});
+  assert.equal(viewer.renewLease('tok'), false); // no socket
+
+  const sent = [];
+  viewer.ws = { readyState: 0, send: (m) => sent.push(m) };
+  assert.equal(viewer.renewLease('tok'), false); // still connecting
+  viewer.ws.readyState = 1;
+  assert.equal(viewer.renewLease(''), false); // no token
+  assert.equal(viewer.renewLease('tok'), true);
+  assert.deepEqual(sent.map((m) => JSON.parse(m)), [{ type: 'renew', token: 'tok' }]);
 });

@@ -367,6 +367,21 @@ export class ScreenViewer {
     }
   }
 
+  /**
+   * Hands a renewed lease token (from POST /api/screen/{audit}/renew) to the gateway on the open
+   * socket, before the current lease ends; otherwise the gateway closes the view (code 4001).
+   * The gateway answers with a control message {type: 'lease', expires_at}.
+   * @param {string} token
+   * @returns {boolean} false when there is no open socket or no token
+   */
+  renewLease(token) {
+    if (!token || !this.ws || this.ws.readyState !== 1 /* OPEN */) {
+      return false;
+    }
+    this.ws.send(JSON.stringify({ type: 'renew', token }));
+    return true;
+  }
+
   disconnect() {
     if (this.ws) {
       this.ws.close();
