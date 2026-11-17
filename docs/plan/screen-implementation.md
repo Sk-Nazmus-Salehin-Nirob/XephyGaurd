@@ -84,7 +84,9 @@ Done as part of M0-4, docs only:
 - [x] M4-1b Step 50 [agent]: `ScreenRelay` uses it (receive loop, `wait_ms`, `send_loop` wait on the condition variable, `set_source`/shutdown interrupt the link) so a connected idle relay costs no polling
 - [x] M4-2a Step 31: X11 capture reads Damage events (rectangles), skips the screen read when none (safety re-read every 1 s), copies only damaged rectangles into a shadow frame with opaque alpha, reports `dirty` rectangles; `ScreenCapture::wait_for_change` / `interrupt_wait` (X11: poll on the X connection + eventfd). Bench x11/Xvfb static: 21 % -> 3.4 % of a core (capture still polled every 20 ms)
 - [x] M4-2b Step 51: `agent_state` capture loop blocks in `capture_->wait_for_change(250)` instead of `sleep_for(20 ms)` on NoChange; stop and keyframe requests interrupt the wait; a viewer that needs a picture of a static screen gets it through `request_full()`. Bench static (Xvfb): 21 % / 138 wake-ups/s -> 2.7 % / 7.4
-- [ ] M4-3 Step 55: static screen nearly free; wall thumbnail only when changed; pause when locked/blanked
+- [x] M4-3a Step 55: wall thumbnail encoded and sent only when the downscaled image changed, else a 28-byte "unchanged" frame (PROTOCOL.md); the wall pause is one condition-variable wait (stop and `KeyframeReq` end it) instead of 50 x 100 ms sleeps
+- [ ] M4-3b Step 55: static screen nearly free: cheaper 1 s safety re-read (the 2.7 % left after M4-2b)
+- [ ] M4-3c Step 55: pause while the session is locked or the display is blanked
 - [ ] M4-4 Step 53 [agent]: idle priority for capture/encode threads
 - [ ] M4-5 Step 54: codec choice by measurement (libjpeg-turbo default, WebP low effort); config values
 - [ ] M4-6 Step 52: CPU governor (budget 8 %, floor 2 fps); server setting + PROTOCOL.md policy field

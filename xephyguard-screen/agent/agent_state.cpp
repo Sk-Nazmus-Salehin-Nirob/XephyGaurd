@@ -60,6 +60,28 @@ bool AgentStateMachine::is_thread_running() const {
   return running_.load();
 }
 
+void AgentStateMachine::set_wall_interval_ms(int ms) {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  wall_interval_ms_ = ms > 0 ? ms : 1;
+}
+
+void AgentStateMachine::wall_pause() {
+  std::unique_lock<std::recursive_mutex> lock(mutex_);
+  wake_cv_.wait_for(lock, std::chrono::milliseconds(wall_interval_ms_),
+                    [&] { return !running_.load() || wall_wake_; });
+  wall_wake_ = false;
+}
+
+std::vector<uint8_t> AgentStateMachine::wall_unchanged_locked() const {
+  // A frame header without KEY/FULL/DELTA and without tiles: "the thumbnail you have is still current".
+  Message same{};
+  same.type = MsgType::Frame;
+  same.stream_id = stream_id_;
+  same.seq = last_sent_seq_;
+  same.base_seq = last_sent_seq_;
+  return encode(same);
+}
+
 bool AgentStateMachine::on_view_start(uint32_t stream_id, const std::string& mode) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   if (running_.load()) {
@@ -70,6 +92,9 @@ bool AgentStateMachine::on_view_start(uint32_t stream_id, const std::string& mod
   mode_ = mode;
   seq_ = 0;
   last_sent_seq_ = 0;
+  wall_sent_ = false;
+  wall_wake_ = false;
+  wall_last_.clear();
 
   if (!capture_ || !capture_->initialize() || !capture_->start()) {
     return false;
@@ -95,6 +120,8 @@ bool AgentStateMachine::on_view_start(uint32_t stream_id, const std::string& mod
 bool AgentStateMachine::on_view_stop() {
   running_.store(false);
   if (capture_) capture_->interrupt_wait();  // the capture thread may be blocked waiting for a screen change
+  { std::lock_guard<std::recursive_mutex> lock(mutex_); }  // a wall_pause() between its check and its wait sees it
+  wake_cv_.notify_all();
 
   if (capture_thread_.joinable()) {
     capture_thread_.join();
@@ -131,6 +158,7 @@ void AgentStateMachine::on_network_connected() {
     if (tracker_) {
       tracker_->force_all_pending();
     }
+    wall_sent_ = false;
   }
 }
 
@@ -156,6 +184,7 @@ void AgentStateMachine::on_privacy_mask_changed(bool masked) {
       if (tracker_) {
         tracker_->force_all_pending();
       }
+      wall_sent_ = false;
     }
   }
 }
@@ -201,6 +230,9 @@ void AgentStateMachine::on_incoming_message(const uint8_t* data, size_t len) {
     if (tracker_) {
       tracker_->force_all_pending();
     }
+    wall_sent_ = false;
+    wall_wake_ = true;
+    wake_cv_.notify_all();
     if (capture_) capture_->interrupt_wait();  // answer a new viewer now, not at the next wait timeout
   }
 }
@@ -246,6 +278,7 @@ void AgentStateMachine::capture_loop() {
             state_ = AgentState::Streaming;
             if (flow_) flow_->reset();
             if (tracker_) tracker_->force_all_pending();
+            wall_sent_ = false;
           }
           if (mode_ != "wall" && flow_ && !flow_->can_send(now_ms)) pause_ms = 10;
         }
@@ -267,6 +300,7 @@ void AgentStateMachine::capture_loop() {
         capture_->start();
         if (flow_) flow_->reset();
         if (tracker_) tracker_->force_all_pending();
+        wall_sent_ = false;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
       continue;
@@ -276,6 +310,7 @@ void AgentStateMachine::capture_loop() {
       {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         state_ = AgentState::PausedSecure;
+        wall_sent_ = false;
         if (sender_) {
           Message placeholder{};
           placeholder.type = MsgType::Frame;
@@ -293,9 +328,20 @@ void AgentStateMachine::capture_loop() {
       // gets one by asking the capture for the whole screen; otherwise block until the screen changes. The wait
       // is bounded so the privacy check at the top of the loop keeps running a few times per second.
       bool need_picture = false;
+      std::vector<uint8_t> unchanged;
       {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        need_picture = !tracker_ || (flow_ && flow_->needs_keyframe()) || !tracker_->pending().empty();
+        if (mode_ == "wall") {
+          need_picture = !wall_sent_;
+          if (wall_sent_) unchanged = wall_unchanged_locked();
+        } else {
+          need_picture = !tracker_ || (flow_ && flow_->needs_keyframe()) || !tracker_->pending().empty();
+        }
+      }
+      if (!unchanged.empty()) {  // wall: nothing changed since the last thumbnail, send 28 bytes and wait
+        if (sender_) sender_(unchanged);
+        wall_pause();
+        continue;
       }
       if (need_picture && !asked_full) {
         asked_full = true;
@@ -323,21 +369,27 @@ void AgentStateMachine::capture_loop() {
           int out_h = 0;
           auto downscaled = downscale_box(frame, 320, &out_h);
 
-          Frame wall_frame;
-          wall_frame.width = 320;
-          wall_frame.height = out_h;
-          wall_frame.stride = 320 * 4;
-          wall_frame.bgra = std::move(downscaled);
-          wall_frame.full_dirty = true;
+          if (wall_sent_ && downscaled == wall_last_) {
+            wire_data = wall_unchanged_locked();  // the screen changed but not the thumbnail: no encode
+          } else {
+            Frame wall_frame;
+            wall_frame.width = 320;
+            wall_frame.height = out_h;
+            wall_frame.stride = 320 * 4;
+            wall_frame.bgra = std::move(downscaled);
+            wall_frame.full_dirty = true;
 
-          TileTracker wall_tracker(wall_frame.width, wall_frame.height);
-          wall_tracker.update(wall_frame);
+            TileTracker wall_tracker(wall_frame.width, wall_frame.height);
+            wall_tracker.update(wall_frame);
 
-          ++seq_;
-          // Wall mode: always full keyframes, never deltas
-          auto msg = encoder_->build(wall_frame, wall_tracker.pending(), stream_id_, seq_, 0, true);
-          wire_data = encode(msg);
-          last_sent_seq_ = seq_;
+            ++seq_;
+            // Wall mode: always full keyframes, never deltas
+            auto msg = encoder_->build(wall_frame, wall_tracker.pending(), stream_id_, seq_, 0, true);
+            wire_data = encode(msg);
+            last_sent_seq_ = seq_;
+            wall_last_ = std::move(wall_frame.bgra);
+            wall_sent_ = true;
+          }
         } else {
           if (!tracker_) {
             tracker_ = std::make_unique<TileTracker>(frame.width, frame.height);
@@ -384,10 +436,7 @@ void AgentStateMachine::capture_loop() {
       }
 
       if (is_wall) {
-        // Wall mode: pace between 5 to 10 seconds (default 5s)
-        for (int i = 0; i < 50 && running_.load(); ++i) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
+        wall_pause();  // one wait per thumbnail period (was 50 wake-ups of 100 ms)
         continue;
       }
     }

@@ -8,6 +8,7 @@
 #include "privacy.h"
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -60,8 +61,13 @@ public:
   uint32_t current_seq() const;
   bool is_thread_running() const;
 
+  // Wall mode: time between thumbnails (default 5 s). Tests use a short one.
+  void set_wall_interval_ms(int ms);
+
 private:
   void capture_loop();
+  void wall_pause();  // waits wall_interval_ms_ unless stopped or a keyframe request arrives
+  std::vector<uint8_t> wall_unchanged_locked() const;
 
   std::shared_ptr<ScreenCapture> capture_;
   EncoderConfig enc_cfg_;
@@ -81,6 +87,13 @@ private:
 
   uint32_t seq_ = 0;
   uint32_t last_sent_seq_ = 0;
+
+  // Wall mode: the last thumbnail sent, so an unchanged one is answered with a 28-byte header only.
+  std::vector<uint8_t> wall_last_;
+  bool wall_sent_ = false;  // false = the next thumbnail is sent in full (new viewer, unmask, reconnect)
+  bool wall_wake_ = false;
+  int wall_interval_ms_ = 5000;
+  std::condition_variable_any wake_cv_;
 
   std::atomic<bool> running_{false};
   std::thread capture_thread_;

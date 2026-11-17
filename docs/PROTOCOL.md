@@ -164,6 +164,11 @@ reserved header field at bytes 26-27 (u16 LE) = the view mode the agent must ser
 `2` snapshot, `3` wall. With several viewers the most demanding mode wins (live > snapshot > wall). A viewer count above
 0 with mode `0` means live. Agents that do not read the field behave as before.
 
+Wall mode (agent → viewer): one 320 px wide keyframe thumbnail per period (5 s), sent only when the downscaled
+image changed. Otherwise the agent sends an "unchanged" Frame: the 28-byte header alone, `flags` 0, no tiles,
+`seq` = `base_seq` = the last thumbnail's `seq`. Viewers draw nothing for it; the gateway forwards it and does not cache it.
+A `KeyframeReq`, a lifted mask, a secure-desktop pause or a reconnect makes the next thumbnail a full one.
+
 Server → gateway revoke (CCC-internal, loopback only, never proxied by nginx): `POST http://127.0.0.1:8082/internal/revoke`
 with `Authorization: Bearer $XG_INTERNAL_TOKEN` and JSON `{"audit_id":N}`, `{"user_id":N}` and/or `{"lab_session_id":N}`
 (any non-zero field matches the lease's `audit_id`, `sub`, `lab_session_id`). Matching viewers are closed (4003 "lease

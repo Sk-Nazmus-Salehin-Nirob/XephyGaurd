@@ -270,3 +270,35 @@ TEST_CASE("AgentStateMachine: a static screen blocks in wait_for_change and a ke
   REQUIRE(agent.on_view_stop());      // interrupt_wait ends the blocked wait at once
   CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(200));
 }
+
+TEST_CASE("AgentStateMachine: wall mode sends a static screen's thumbnail once, then 28-byte unchanged messages") {
+  auto capture = std::make_shared<StaticScreenCapture>();
+  std::atomic<int> keyframes{0}, unchanged{0}, other{0};
+  xg::AgentStateMachine agent(capture, xg::EncoderConfig{}, nullptr);
+  agent.set_wall_interval_ms(50);
+  agent.set_frame_sender([&](const std::vector<uint8_t>& data) {
+    auto msg = xg::decode(data.data(), data.size());
+    if (!msg.has_value() || msg->type != xg::MsgType::Frame) return;
+    if (msg->flags & xg::Flags::KEY) ++keyframes;
+    else if (msg->flags == 0 && msg->tiles.empty() && data.size() == xg::kHeaderSize) ++unchanged;
+    else ++other;
+  });
+  REQUIRE(agent.on_view_start(6, "wall"));
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  CHECK(keyframes.load() == 1);
+  CHECK(unchanged.load() >= 3);
+  CHECK(other.load() == 0);
+
+  xg::Message req{};
+  req.type = xg::MsgType::KeyframeReq; req.stream_id = 6;
+  auto rb = xg::encode(req);
+  agent.on_incoming_message(rb.data(), rb.size());  // a new wall viewer needs the picture again
+  for (int i = 0; i < 100 && keyframes.load() < 2; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  CHECK(keyframes.load() == 2);
+
+  agent.set_wall_interval_ms(60000);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));  // now inside a long pause
+  const auto t0 = std::chrono::steady_clock::now();
+  REQUIRE(agent.on_view_stop());  // the pause ends at once
+  CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(200));
+}
