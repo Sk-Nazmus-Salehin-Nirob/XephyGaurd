@@ -7,6 +7,7 @@ struct EncoderConfig {
   int quality_text = 85;     // 1..100
   int quality_video = 60;
   Codec codec = Codec::Webp;
+  int webp_method = 4;       // 0 (fastest) .. 6 (smallest); 4 is libwebp's default
   double full_frame_threshold = 0.6;  // fraction of tiles that triggers FULL
 };
 

@@ -81,4 +81,18 @@ Same setup as the baseline above (Release, `taskset -c 0`, Xvfb profile = real X
 | M4-3b safety re-read compares with the shadow, reports only changed rows (none: NoChange, no copy, no hash) | 0.9 (30 s run; 1.2 before) | 5.5 (6.5 before) | 5.3 | - | 10 s rows include the one first keyframe (140 ms = 1.4 % of 10 s); 30 s run without it: about 0.7 % -> 0.45 % |
 | M4-4 capture/encode thread at `SCHED_IDLE` | - | - | 4.4 | - | typing 5 s on core 0: 4.8 fps alone; with a busy loop on the same core 0.2 fps (the stream yields to student work; Windows background mode not run) |
 
+#### M4-5 codec by measurement
+Synthetic 1080p capture, Release, `taskset -c 0`, 5 s per workload, `xgstreambench --codec ... [--quality N] [--webp-method N]`, 2026-11-18. All rows run at the 5 fps pacing cap (200 ms floor, M5-1), so CPU compares the codecs at the same frame rate. ms/MP = build p50 / 2.07 MP (scrolling and video change nearly every tile).
+
+| codec | typing CPU % / B/s | scrolling CPU % / B/s | video CPU % / B/s | ms per MP (scroll, video) |
+|---|---|---|---|---|
+| WebP q85 method 4 (old default) | 4.7 / 38 k | 48.2 / 583 k (3.6 fps) | 45.6 / 1.57 M (3.8 fps) | 65, 57 |
+| WebP q85 method 1 | 3.5 / 60 k | 43.1 / 1.22 M | 35.2 / 2.07 M | 40, 33 |
+| WebP q85 method 0 | 3.5 / 60 k | 45.2 / 1.18 M | 38.1 / 2.07 M | 44, 36 |
+| JPEG q85 (libjpeg-turbo, 4:2:0, fast DCT) | 2.1 / 190 k | 10.6 / 4.26 M | 10.9 / 2.74 M | 9.0, 10.0 |
+| JPEG q70 | 2.0 / 164 k | 9.1 / 3.78 M | 8.9 / 1.95 M | 8.3, 8.0 |
+| JPEG q60 | 2.0 / 154 k | 9.6 / 3.57 M | 9.1 / 1.70 M | 8.7, 7.9 |
+
+JPEG costs 4-6x less CPU than WebP on moving content; WebP at low effort saves about 25 % CPU over method 4 but doubles the bytes and stays 3-4x JPEG. The synthetic scrolling pattern is noise-like, so its byte counts are a worst case. Not measured: real desktop content, integrated-GPU PC, Windows.
+
 Moving content is unchanged (scrolling, video-like stay near 44 %): its cost is the encoder, not the capture (M4-5, M5-3, M5-4).

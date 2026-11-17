@@ -96,12 +96,23 @@ Message FrameEncoder::build(const Frame& f, const std::vector<uint32_t>& tile_in
     rec.codec = cfg_.codec;
 
     if (cfg_.codec == Codec::Webp) {
-      uint8_t* out = nullptr;
-      size_t out_len = WebPEncodeBGRA(tile_bgra.data(), tile_w, tile_h, tile_w * 4,
-                                      static_cast<float>(eff_q), &out);
-      if (out_len > 0 && out != nullptr) {
-        rec.payload.assign(out, out + out_len);
-        WebPFree(out);
+      // Advanced API: same as WebPEncodeBGRA (default preset) but with a configurable method (speed/size trade).
+      WebPConfig wc;
+      WebPPicture pic;
+      if (WebPConfigInit(&wc) && WebPPictureInit(&pic)) {
+        wc.quality = static_cast<float>(eff_q);
+        wc.method = std::clamp(cfg_.webp_method, 0, 6);
+        pic.width = tile_w;
+        pic.height = tile_h;
+        WebPMemoryWriter wr;
+        WebPMemoryWriterInit(&wr);
+        pic.writer = WebPMemoryWrite;
+        pic.custom_ptr = &wr;
+        if (WebPPictureImportBGRA(&pic, tile_bgra.data(), tile_w * 4) && WebPEncode(&wc, &pic) && wr.size > 0) {
+          rec.payload.assign(wr.mem, wr.mem + wr.size);
+        }
+        WebPMemoryWriterClear(&wr);
+        WebPPictureFree(&pic);
       }
     } else if (cfg_.codec == Codec::Jpeg && tj != nullptr) {
       unsigned char* jpeg_buf = nullptr;

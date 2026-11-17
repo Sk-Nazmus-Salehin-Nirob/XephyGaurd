@@ -161,6 +161,8 @@ pid_t start_painter(const std::string& workload) {
 }
 #endif
 
+xg::EncoderConfig g_enc;  // --codec, --quality, --webp-method
+
 double pct(std::vector<double>& v, double p) {
   if (v.empty()) return 0;
   std::sort(v.begin(), v.end());
@@ -206,7 +208,7 @@ void run_phase(const std::string& workload, int seconds, bool json, bool use_std
   uint64_t frames = 0, bytes = 0, keys = 0;
   std::mutex m;
   xg::AgentStateMachine* sm_ptr = nullptr;
-  xg::AgentStateMachine sm(cap, xg::EncoderConfig{}, [&](const std::vector<uint8_t>& wire) {
+  xg::AgentStateMachine sm(cap, g_enc, [&](const std::vector<uint8_t>& wire) {
     const double ms = ms_since(cap->captured_at());
     std::lock_guard<std::mutex> lk(m);
     ++frames; bytes += wire.size();
@@ -291,13 +293,21 @@ int main(int argc, char** argv) {
     if (a == "--seconds" && i + 1 < argc) seconds = std::max(1, std::atoi(argv[++i]));
     else if (a == "--workload" && i + 1 < argc) phases.push_back(argv[++i]);
     else if (a == "--json") json = true;
+    else if (a == "--codec" && i + 1 < argc) {
+      const std::string c = argv[++i];
+      if (c == "jpeg") g_enc.codec = xg::Codec::Jpeg;
+      else if (c == "webp") g_enc.codec = xg::Codec::Webp;
+      else { std::cerr << "--codec webp|jpeg\n"; return 2; }
+    }
+    else if (a == "--quality" && i + 1 < argc) g_enc.quality_text = std::clamp(std::atoi(argv[++i]), 1, 100);
+    else if (a == "--webp-method" && i + 1 < argc) g_enc.webp_method = std::clamp(std::atoi(argv[++i]), 0, 6);
     else if (a == "--stdio") use_stdio = true;
     else if (a == "--capture" && i + 1 < argc) {
       const std::string c = argv[++i];
       if (c == "x11") use_x11 = true;
       else if (c != "synthetic") { std::cerr << "--capture synthetic|x11\n"; return 2; }
     }
-    else { std::cerr << "usage: xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json] [--stdio] [--capture synthetic|x11]\n"; return 2; }
+    else { std::cerr << "usage: xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json] [--stdio] [--capture synthetic|x11] [--codec webp|jpeg] [--quality N] [--webp-method 0-6]\n"; return 2; }
   }
   if (use_stdio && phases.size() != 1) { std::cerr << "--stdio needs exactly one --workload\n"; return 2; }
   if (phases.empty()) phases = {"idle", "static", "typing", "scrolling", "drag", "video"};

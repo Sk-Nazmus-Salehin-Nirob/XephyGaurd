@@ -17,10 +17,13 @@ static double calculate_psnr(const uint8_t* src, const uint8_t* dst, int w, int 
   return 10.0 * std::log10((255.0 * 255.0) / mse);
 }
 
-TEST_CASE("FrameEncoder: WebP encode/decode PSNR > 30 dB") {
+TEST_CASE("FrameEncoder: WebP encode/decode PSNR > 30 dB at every tested method") {
   xg::EncoderConfig cfg;
   cfg.codec = xg::Codec::Webp;
   cfg.quality_text = 85;
+  SUBCASE("method 4 (default)") { cfg.webp_method = 4; }
+  SUBCASE("method 0 (fastest)") { cfg.webp_method = 0; }
+  SUBCASE("method 1") { cfg.webp_method = 1; }
   xg::FrameEncoder encoder(cfg);
 
   xg::Frame f;
