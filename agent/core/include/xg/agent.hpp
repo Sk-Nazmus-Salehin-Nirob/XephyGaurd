@@ -69,6 +69,8 @@ public:
     /// What the I/O threads currently see (tests).
     std::shared_ptr<const UplinkView> view() const { return view_.get(); }
     void publish_view();
+    void check_helpers();
+    void set_helper_grace_for_tests(int64_t ms) { helper_grace_ms_ = ms; }
 
 private:
     void dispatch(AgentMessage& m);
@@ -88,7 +90,6 @@ private:
     // periodic tasks
     void run_periodic(int64_t now_steady);
     void check_integrity(bool initial);
-    void check_helpers();
     /// Turns network isolation on/off (Internet cut, LAN + CCC kept), persists it and re-evaluates running apps.
     void apply_isolation(bool on);
     void sample_gpu();
@@ -153,6 +154,9 @@ private:
     struct PeerBudget { double tokens = 0; int64_t last_ms = 0; uint64_t dropped = 0; int64_t last_warn_ms = 0; };
     std::map<uint64_t, PeerBudget> peer_budget_;
     bool allow_helper_message(const IIpcServer::Peer& peer);
+    struct LostHelper { int64_t since = 0; std::string user; };
+    std::map<uint32_t, LostHelper> lost_helpers_;  // uid -> helper disconnect, pending the grace period
+    int64_t helper_grace_ms_ = 90000;
     int64_t helper_missing_since_ = 0;
     bool helper_missing_reported_ = false;
     std::map<std::string, std::string> file_hashes_;

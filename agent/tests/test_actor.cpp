@@ -210,3 +210,32 @@ TEST_CASE("agent run loop serves messages from many threads and stops cleanly") 
     CHECK(c.count(ev::command_result) == 4);
     CHECK(c.count(ev::agent_stopping) == 1);
 }
+
+TEST_CASE("helper disconnect is tamper only if the session stays without a helper (I-AGENT-17)") {
+    Core c;
+    c.agent->set_helper_grace_for_tests(30);
+    auto tampers = [&] {
+        size_t n = 0;
+        for (const auto& e : c.sink.events) n += e.type == ev::tamper && e.data["kind"] == "helper_terminated";
+        return n;
+    };
+    IIpcServer::Peer peer{7, 1000, 555, "alice"};  // FakeSystem: alice uid 1000, x11, active
+    c.agent->post(msg::HelperConn{peer, true});
+    c.agent->post(msg::HelperConn{peer, false});
+    c.agent->drain();
+    CHECK(tampers() == 0);  // not immediately
+    // Helper comes back within the grace period: nothing reported.
+    c.agent->post(msg::HelperConn{IIpcServer::Peer{8, 1000, 556, "alice"}, true});
+    c.agent->drain();
+    std::this_thread::sleep_for(50ms);
+    c.agent->check_helpers();
+    CHECK(tampers() == 0);
+    // Killed and not back while the session is still active: reported after the grace period.
+    c.agent->post(msg::HelperConn{IIpcServer::Peer{8, 1000, 556, "alice"}, false});
+    c.agent->drain();
+    c.agent->check_helpers();
+    CHECK(tampers() == 0);
+    std::this_thread::sleep_for(50ms);
+    c.agent->check_helpers();
+    CHECK(tampers() == 1);
+}

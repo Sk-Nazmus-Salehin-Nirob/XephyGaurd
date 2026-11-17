@@ -733,8 +733,9 @@ void Agent::on_helper_conn(const IIpcServer::Peer& peer, bool connected) {
     }
     if (!connected) {
         sink_->emit(ev::helper_status, {{"connected", false}, {"user", peer.user}, {"pid", peer.pid}});
-        sink_->emit(ev::tamper, {{"kind", "helper_terminated"}, {"user", peer.user},
-                                 {"detail", "session helper process was disconnected or terminated"}});
+        // Logoff also disconnects the helper: only a session that is still there after the grace period
+        // without a helper counts as tampering (I-AGENT-17). check_helpers() decides.
+        lost_helpers_.try_emplace(peer.uid, LostHelper{steady_ms(), peer.user});
         wake_uplink();
         check_helpers();
     } else {
@@ -906,9 +907,27 @@ void Agent::check_helpers() {
                s.session_type == "rdp";
     });
     const int64_t now = steady_ms();
+    for (auto it = lost_helpers_.begin(); it != lost_helpers_.end();) {
+        const uint32_t uid = it->first;
+        const bool back = std::find(connected.begin(), connected.end(), uid) != connected.end();
+        const bool session_left = std::none_of(sessions.begin(), sessions.end(), [&](const UserSession& s) {
+            return s.uid == uid && (s.session_type == "x11" || s.session_type == "wayland" ||
+                                    s.session_type == "console" || s.session_type == "rdp");
+        });
+        if (back || session_left) {
+            it = lost_helpers_.erase(it);
+        } else if (now - it->second.since >= helper_grace_ms_) {
+            sink_->emit(ev::tamper, {{"kind", "helper_terminated"}, {"user", it->second.user},
+                                     {"detail", "session helper process was disconnected or terminated"}});
+            wake_uplink();
+            it = lost_helpers_.erase(it);
+        } else {
+            ++it;
+        }
+    }
     if (graphical && connected.empty()) {
         if (helper_missing_since_ == 0) helper_missing_since_ = now;
-        if (!helper_missing_reported_ && now - helper_missing_since_ > 90000) {
+        if (!helper_missing_reported_ && now - helper_missing_since_ > helper_grace_ms_) {
             helper_missing_reported_ = true;
             sink_->emit(ev::tamper, {{"kind", "helper_missing"}, {"user", active_user()},
                                      {"detail", "a user is logged in but the session helper is not running"}});
