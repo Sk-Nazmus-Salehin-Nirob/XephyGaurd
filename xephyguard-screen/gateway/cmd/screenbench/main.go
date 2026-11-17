@@ -89,14 +89,16 @@ func main() {
 	bench := flag.String("bench", "build/xgstreambench", "path of xgstreambench")
 	workload := flag.String("workload", "typing", "idle|static|typing|scrolling|drag|video")
 	seconds := flag.Int("seconds", 10, "seconds to stream")
+	capture := flag.String("capture", "synthetic", "synthetic|x11 (x11 needs $DISPLAY, e.g. Xvfb)")
+	cpu := flag.String("cpu", "", "pin xgstreambench to this CPU list with taskset -c (the bridge itself stays unpinned)")
 	flag.Parse()
-	if err := run(*gw, uint32(*stream), *bench, *workload, *seconds); err != nil {
+	if err := run(*gw, uint32(*stream), *bench, *workload, *seconds, *capture, *cpu); err != nil {
 		fmt.Fprintln(os.Stderr, "screenbench:", err)
 		os.Exit(1)
 	}
 }
 
-func run(gw string, stream uint32, bench, workload string, seconds int) error {
+func run(gw string, stream uint32, bench, workload string, seconds int, capture, cpu string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds+30)*time.Second)
 	defer cancel()
 	q := "?stream_id=" + strconv.Itoa(int(stream))
@@ -113,7 +115,11 @@ func run(gw string, stream uint32, bench, workload string, seconds int) error {
 	agent.SetReadLimit(4096)
 	viewer.SetReadLimit(16 << 20)
 
-	cmd := exec.CommandContext(ctx, bench, "--stdio", "--json", "--workload", workload, "--seconds", strconv.Itoa(seconds))
+	args := []string{bench, "--stdio", "--json", "--capture", capture, "--workload", workload, "--seconds", strconv.Itoa(seconds)}
+	if cpu != "" {
+		args = append([]string{"taskset", "-c", cpu}, args...)
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	toBench, _ := cmd.StdinPipe()
 	fromBench, _ := cmd.StdoutPipe()
 	var row []byte
