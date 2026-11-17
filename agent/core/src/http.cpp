@@ -7,9 +7,14 @@
 
 #include "xg/util.hpp"
 
+#include <algorithm>
+#include <cerrno>
+#include <chrono>
+
 #ifdef _WIN32
 #include <winsock2.h>
 #else
+#include <poll.h>
 #include <unistd.h>
 #endif
 
@@ -185,8 +190,32 @@ HttpResponse HttpsClient::do_request(const std::string& method, const std::strin
     return resp;
 }
 
-HttpResponse http_get_plain(const std::string& host, uint16_t port, const std::string& path, int timeout_ms) {
+namespace {
+// Waits until `s` is readable or `ms` passed. Returns false on timeout or error.
+bool wait_readable(long long s, int ms) {
+#ifdef _WIN32
+    WSAPOLLFD p{static_cast<SOCKET>(s), POLLRDNORM, 0};
+    return WSAPoll(&p, 1, ms) > 0;
+#else
+    pollfd p{int(s), POLLIN, 0};
+    int r;
+    do r = ::poll(&p, 1, ms);
+    while (r < 0 && errno == EINTR);
+    return r > 0;
+#endif
+}
+}  // namespace
+
+HttpResponse http_get_plain(const std::string& host, uint16_t port, const std::string& path, int timeout_ms,
+                            const PlainGetLimits& lim) {
     HttpResponse resp;
+    const auto started = std::chrono::steady_clock::now();
+    auto remaining_ms = [&]() -> int {
+        if (lim.total_ms <= 0) return timeout_ms;
+        const auto used = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
+        const long long left = lim.total_ms - used.count();
+        return left <= 0 ? 0 : int(std::min<long long>(left, timeout_ms));
+    };
     long long s = tcp_connect(host, port, timeout_ms, &resp.error);
     if (s < 0) return resp;
     std::string req = "GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\nConnection: close\r\nUser-Agent: xephyguard-agent\r\n\r\n";
@@ -198,14 +227,29 @@ HttpResponse http_get_plain(const std::string& host, uint16_t port, const std::s
     std::string raw;
     char buf[8192];
     while (true) {
+        // A local server that drips bytes must not hold the caller past the total deadline (I-AGENT-12).
+        const int wait = remaining_ms();
+        if (wait <= 0 || !wait_readable(s, wait)) {
+            socket_close(s);
+            resp = HttpResponse{};
+            resp.error = "timeout";
+            return resp;
+        }
+        const size_t room = lim.max_bytes > raw.size() ? lim.max_bytes - raw.size() : 0;
+        const size_t want = std::min(sizeof buf, room);
+        if (want == 0) {
+            socket_close(s);
+            resp = HttpResponse{};
+            resp.error = "response too large";
+            return resp;
+        }
 #ifdef _WIN32
-        int n = ::recv(static_cast<SOCKET>(s), buf, sizeof buf, 0);
+        int n = ::recv(static_cast<SOCKET>(s), buf, int(want), 0);
 #else
-        long n = ::read(int(s), buf, sizeof buf);
+        long n = ::read(int(s), buf, want);
 #endif
         if (n <= 0) break;
         raw.append(buf, size_t(n));
-        if (raw.size() > 4 * 1024 * 1024) break;
         size_t consumed;
         bool malformed = false;
         if (parse_http_response(raw, resp, &consumed, &malformed)) { socket_close(s); return resp; }

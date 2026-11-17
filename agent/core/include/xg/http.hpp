@@ -42,7 +42,15 @@ inline constexpr size_t kMaxBodyBytes = 32 * 1024 * 1024;
 /// `malformed` (optional) is set when more bytes cannot help (bad status, non-numeric or oversized lengths).
 /// Never throws: the input may come from any local process (LLM port probes).
 bool parse_http_response(const std::string& raw, HttpResponse& out, size_t* consumed, bool* malformed = nullptr);
-/// Plain-HTTP GET (used once, to fetch the CA certificate before it is trusted; result is pinned).
-HttpResponse http_get_plain(const std::string& host, uint16_t port, const std::string& path, int timeout_ms = 5000);
+struct PlainGetLimits {
+    size_t max_bytes = 4 * 1024 * 1024;  // whole response, headers included
+    int total_ms = 0;                    // overall deadline for connect-to-last-byte reads; 0 = per-read timeout only
+};
+/// Limits for LLM port probes against local, untrusted servers.
+inline constexpr PlainGetLimits kProbeLimits{64 * 1024, 1000};
+
+/// Plain-HTTP GET (CA download before it is trusted, then pinned; local LLM port probes with kProbeLimits).
+HttpResponse http_get_plain(const std::string& host, uint16_t port, const std::string& path, int timeout_ms = 5000,
+                            const PlainGetLimits& limits = {});
 
 }  // namespace xg::net

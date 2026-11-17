@@ -8,6 +8,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <atomic>
+#include <chrono>
 #include <thread>
 #endif
 
@@ -149,6 +151,78 @@ TEST_CASE("discovery reply parsing") {
 }
 
 #ifndef _WIN32
+namespace {
+// Local TCP server on 127.0.0.1 that runs `serve(fd)` for one connection.
+struct OneShotServer {
+    int lfd = -1;
+    uint16_t port = 0;
+    std::thread th;
+    template <class F>
+    explicit OneShotServer(F serve) {
+        lfd = ::socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in a{};
+        a.sin_family = AF_INET;
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        ::bind(lfd, reinterpret_cast<sockaddr*>(&a), sizeof a);
+        ::listen(lfd, 1);
+        socklen_t al = sizeof a;
+        ::getsockname(lfd, reinterpret_cast<sockaddr*>(&a), &al);
+        port = ntohs(a.sin_port);
+        th = std::thread([this, serve] {
+            int c = ::accept(lfd, nullptr, nullptr);
+            if (c < 0) return;
+            char b[1024];
+            (void)::recv(c, b, sizeof b, 0);
+            serve(c);
+            ::close(c);
+        });
+    }
+    ~OneShotServer() {
+        ::shutdown(lfd, SHUT_RDWR);
+        th.join();
+        ::close(lfd);
+    }
+};
+}  // namespace
+
+TEST_CASE("plain GET probe has a total deadline and a size cap") {
+    SECTION("drip-feeding server is cut off after the total deadline (I-AGENT-12)") {
+        std::atomic<bool> done{false};
+        OneShotServer srv([&](int c) {
+            const char hdr[] = "HTTP/1.1 200 OK\r\nX: ";
+            ::send(c, hdr, sizeof hdr - 1, MSG_NOSIGNAL);
+            for (int i = 0; i < 60 && !done; ++i) {
+                ::send(c, "a", 1, MSG_NOSIGNAL);
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        });
+        const auto t0 = std::chrono::steady_clock::now();
+        auto r = net::http_get_plain("127.0.0.1", srv.port, "/v1/models", 400, net::kProbeLimits);
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        done = true;
+        CHECK(r.status == 0);
+        CHECK(ms < 1500);
+    }
+    SECTION("oversized response is refused") {
+        OneShotServer srv([](int c) {
+            std::string big = "HTTP/1.1 200 OK\r\nContent-Length: 200000\r\n\r\n" + std::string(200000, 'x');
+            ::send(c, big.data(), big.size(), MSG_NOSIGNAL);
+        });
+        auto r = net::http_get_plain("127.0.0.1", srv.port, "/", 400, net::kProbeLimits);
+        CHECK(r.status == 0);
+        CHECK(r.error == "response too large");
+    }
+    SECTION("normal small reply still parses") {
+        OneShotServer srv([](int c) {
+            const char ok[] = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}";
+            ::send(c, ok, sizeof ok - 1, MSG_NOSIGNAL);
+        });
+        auto r = net::http_get_plain("127.0.0.1", srv.port, "/", 400, net::kProbeLimits);
+        CHECK(r.status == 200);
+        CHECK(r.body == "{}");
+    }
+}
+
 TEST_CASE("WebSocketClient supports plain TCP binary duplex frames and extra headers") {
     int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
     REQUIRE(lfd >= 0);

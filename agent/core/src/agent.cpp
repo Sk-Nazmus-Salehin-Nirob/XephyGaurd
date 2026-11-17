@@ -345,8 +345,9 @@ void Agent::scan_ports() {
                 // The answering process is any local user's: one bad reply must not abort the whole scan.
                 net::HttpResponse r;
                 try {
-                    r = net::http_get_plain(primary_host, s.port, path, 400);
-                    if (r.status == 0 && s.address == "::") r = net::http_get_plain("::1", s.port, path, 400);
+                    r = net::http_get_plain(primary_host, s.port, path, 400, net::kProbeLimits);
+                    if (r.status == 0 && s.address == "::")
+                        r = net::http_get_plain("::1", s.port, path, 400, net::kProbeLimits);
                 } catch (const std::exception& e) {
                     log::debug("ports: probe of {} failed: {}", s.port, e.what());
                     continue;
