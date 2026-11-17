@@ -204,75 +204,82 @@ void AgentStateMachine::on_incoming_message(const uint8_t* data, size_t len) {
 }
 
 void AgentStateMachine::capture_loop() {
+  // Never sleep while holding mutex_: std::recursive_mutex is not fair, so the loop would re-take it at once and
+  // starve state(), on_incoming_message() and set_privacy_filter() for seconds while masked or paused.
   while (running_.load()) {
     uint64_t now_ms = get_now_ms();
+    int pause_ms = 0;
 
     {
       std::lock_guard<std::recursive_mutex> lock(mutex_);
       if (state_ == AgentState::PausedDisconnected) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        continue;
-      }
-
-      bool masked = false;
-      if (privacy_filter_) {
-        masked = privacy_filter_->check_masked(now_ms);
-      } else if (privacy_checker_) {
-        try {
-          masked = privacy_checker_();
-        } catch (...) {
-          masked = true;
-        }
-      }
-
-      if (masked) {
-        if (state_ != AgentState::PausedMasked) {
-          state_ = AgentState::PausedMasked;
-          if (sender_) {
-            Message placeholder{};
-            placeholder.type = MsgType::Frame;
-            placeholder.flags = Flags::MASKED;
-            placeholder.stream_id = stream_id_;
-            sender_(encode(placeholder));
+        pause_ms = 50;
+      } else {
+        bool masked = false;
+        if (privacy_filter_) {
+          masked = privacy_filter_->check_masked(now_ms);
+        } else if (privacy_checker_) {
+          try {
+            masked = privacy_checker_();
+          } catch (...) {
+            masked = true;
           }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        continue;
-      } else if (state_ == AgentState::PausedMasked) {
-        state_ = AgentState::Streaming;
-        if (flow_) flow_->reset();
-        if (tracker_) tracker_->force_all_pending();
-      }
 
-      if (mode_ != "wall" && flow_ && !flow_->can_send(now_ms)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        continue;
+        if (masked) {
+          if (state_ != AgentState::PausedMasked) {
+            state_ = AgentState::PausedMasked;
+            if (sender_) {
+              Message placeholder{};
+              placeholder.type = MsgType::Frame;
+              placeholder.flags = Flags::MASKED;
+              placeholder.stream_id = stream_id_;
+              sender_(encode(placeholder));
+            }
+          }
+          pause_ms = 50;
+        } else {
+          if (state_ == AgentState::PausedMasked) {
+            state_ = AgentState::Streaming;
+            if (flow_) flow_->reset();
+            if (tracker_) tracker_->force_all_pending();
+          }
+          if (mode_ != "wall" && flow_ && !flow_->can_send(now_ms)) pause_ms = 10;
+        }
       }
+    }
+    if (pause_ms > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(pause_ms));
+      continue;
     }
 
     Frame frame;
     CaptureStatus status = capture_->capture(frame);
 
     if (status == CaptureStatus::Lost) {
-      std::lock_guard<std::recursive_mutex> lock(mutex_);
-      capture_->stop();
-      capture_->initialize();
-      capture_->start();
-      if (flow_) flow_->reset();
-      if (tracker_) tracker_->force_all_pending();
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        capture_->stop();
+        capture_->initialize();
+        capture_->start();
+        if (flow_) flow_->reset();
+        if (tracker_) tracker_->force_all_pending();
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
       continue;
     }
 
     if (status == CaptureStatus::SecureDesktop) {
-      std::lock_guard<std::recursive_mutex> lock(mutex_);
-      state_ = AgentState::PausedSecure;
-      if (sender_) {
-        Message placeholder{};
-        placeholder.type = MsgType::Frame;
-        placeholder.flags = Flags::SECURE;
-        placeholder.stream_id = stream_id_;
-        sender_(encode(placeholder));
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        state_ = AgentState::PausedSecure;
+        if (sender_) {
+          Message placeholder{};
+          placeholder.type = MsgType::Frame;
+          placeholder.flags = Flags::SECURE;
+          placeholder.stream_id = stream_id_;
+          sender_(encode(placeholder));
+        }
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;

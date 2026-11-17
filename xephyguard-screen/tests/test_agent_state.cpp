@@ -124,22 +124,27 @@ TEST_CASE("AgentStateMachine: Privacy mask and Secure Desktop state transitions"
   REQUIRE(agent.on_view_start(303, "live"));
   CHECK(agent.state() == xg::AgentState::Streaming);
 
+  // Poll instead of a fixed sleep: under load the capture thread can take longer than 100 ms to notice.
+  auto wait_state = [&](xg::AgentState want) {
+    for (int i = 0; i < 200 && agent.state() != want; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  };
+
   // Trigger privacy mask
   is_masked.store(true);
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  wait_state(xg::AgentState::PausedMasked);
 
   CHECK(agent.state() == xg::AgentState::PausedMasked);
   CHECK(masked_placeholders.load() > 0);
 
   // Unmask
   is_masked.store(false);
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  wait_state(xg::AgentState::Streaming);
 
   CHECK(agent.state() == xg::AgentState::Streaming);
 
   // Trigger Secure Desktop
   capture->trigger_desktop_switch(true);
-  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  wait_state(xg::AgentState::PausedSecure);
 
   CHECK(agent.state() == xg::AgentState::PausedSecure);
   CHECK(secure_placeholders.load() > 0);
@@ -169,5 +174,26 @@ TEST_CASE("AgentStateMachine: Network disconnection and reconnection") {
   agent.on_network_connected();
   CHECK(agent.state() == xg::AgentState::Streaming);
 
+  agent.on_view_stop();
+}
+
+TEST_CASE("AgentStateMachine: callers are not starved while the screen is masked") {
+  auto capture = std::make_shared<xg::FakeCapture>(640, 480);
+  xg::AgentStateMachine agent(capture, xg::EncoderConfig{}, nullptr);
+  agent.set_privacy_checker([] { return true; });
+  REQUIRE(agent.on_view_start(505, "live"));
+  for (int i = 0; i < 200 && agent.state() != xg::AgentState::PausedMasked; ++i)
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  REQUIRE(agent.state() == xg::AgentState::PausedMasked);
+
+  // The capture loop used to sleep while holding the state mutex, so these could wait many seconds.
+  const auto t0 = std::chrono::steady_clock::now();
+  for (int i = 0; i < 20; ++i) {
+    agent.set_privacy_filter(nullptr);
+    agent.set_privacy_checker([] { return true; });
+    (void)agent.state();
+  }
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+  CHECK(ms < 1500);
   agent.on_view_stop();
 }
