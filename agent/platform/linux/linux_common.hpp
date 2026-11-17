@@ -12,6 +12,10 @@
 
 namespace xg::lnx {
 
+/// Runs `argv[0]` (an absolute path, no PATH lookup, no shell) with `argv` as arguments, feeding `stdin_text`
+/// on stdin; stdout/stderr go to /dev/null. Returns the exit status, 127 if it could not be executed, or -1.
+int run_program(const std::vector<std::string>& argv, const std::string& stdin_text = {});
+
 /// Reaps only the children it was given (waitpid(pid, WNOHANG)), never `waitpid(-1)`, which would steal
 /// the exit status of children owned by other code (e.g. the nft child of the isolator, I-AGENT-15).
 class ChildReaper {

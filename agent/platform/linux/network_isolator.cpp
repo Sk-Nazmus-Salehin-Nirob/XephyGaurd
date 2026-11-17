@@ -6,7 +6,8 @@
 #include <sys/wait.h>
 #include <arpa/inet.h>
 
-#include <cstdio>
+#include <unistd.h>
+
 #include <map>
 #include <mutex>
 #include <set>
@@ -20,13 +21,15 @@ namespace {
 
 constexpr const char* kTable = "xephyguard_isolate";
 
-int run(const std::string& cmd, const std::string& stdin_text = {}) {
-    const std::string full = cmd + " >/dev/null 2>&1";
-    FILE* p = popen(full.c_str(), stdin_text.empty() ? "r" : "w");
-    if (!p) return -1;
-    if (!stdin_text.empty()) fwrite(stdin_text.data(), 1, stdin_text.size(), p);
-    const int st = pclose(p);
-    return WIFEXITED(st) ? WEXITSTATUS(st) : -1;
+// nft by absolute path with an argv array: no shell, no PATH lookup (I-AGENT-25).
+const std::string& nft_path() {
+    static const std::string p = ::access("/usr/sbin/nft", X_OK) == 0 ? "/usr/sbin/nft" : "/sbin/nft";
+    return p;
+}
+
+int nft(std::vector<std::string> args, const std::string& stdin_text = {}) {
+    args.insert(args.begin(), nft_path());
+    return run_program(args, stdin_text);
 }
 
 class NetworkIsolator final : public INetworkIsolator {
@@ -48,8 +51,8 @@ public:
         }
         std::string rules = std::string("table inet ") + kTable + " {\n  chain out {\n    type filter hook output priority 0; policy accept;\n" +
                             "    ip daddr { " + v4 + " } drop\n    ip6 daddr " + isolation::blocked_ipv6_prefix() + " drop\n  }\n}\n";
-        run(std::string("nft delete table inet ") + kTable);
-        const int rc = run("nft -f -", rules);
+        nft({"delete", "table", "inet", kTable});
+        const int rc = nft({"-f", "-"}, rules);
         if (rc != 0) log::error("isolate: nft failed (exit {})", rc);
         else log::info("isolate: outbound Internet blocked (LAN + {} exempt address(es) still reachable)", exempt.size());
         return rc == 0;
@@ -57,14 +60,14 @@ public:
 
     bool restore() override {
         std::lock_guard lk(mu_);
-        run(std::string("nft delete table inet ") + kTable);
+        nft({"delete", "table", "inet", kTable});
         log::info("isolate: outbound Internet restored");
         return true;
     }
 
     bool active() override {
         std::lock_guard lk(mu_);
-        return run(std::string("nft list table inet ") + kTable) == 0;
+        return nft({"list", "table", "inet", kTable}) == 0;
     }
 
 private:

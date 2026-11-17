@@ -435,4 +435,18 @@ TEST_CASE("ChildReaper reaps only its own children (I-AGENT-15)", "[linux]") {
     CHECK(WEXITSTATUS(status) == 7);
 }
 
+TEST_CASE("run_program executes by absolute path without a shell and feeds stdin (I-AGENT-25)", "[linux]") {
+    using xg::lnx::run_program;
+    CHECK(run_program({"/bin/true"}) == 0);
+    CHECK(run_program({"/bin/false"}) == 1);
+    CHECK(run_program({"/nonexistent/prog"}) == 127);
+    CHECK(run_program({"true"}) == -1);  // no PATH lookup
+    // stdin reaches the child; shell metacharacters are plain argument bytes.
+    CHECK(run_program({"/usr/bin/grep", "-q", "table inet"}, "table inet x {}\n") == 0);
+    CHECK(run_program({"/usr/bin/grep", "-q", "; touch /tmp/xg-should-not-exist"}, "nothing\n") == 1);
+    CHECK_FALSE(std::filesystem::exists("/tmp/xg-should-not-exist"));
+    // A child that ignores a large stdin must not kill us with SIGPIPE.
+    CHECK(run_program({"/bin/true"}, std::string(1 << 20, 'x')) == 0);
+}
+
 #endif  // _WIN32
