@@ -1,3 +1,5 @@
+#include <sys/wait.h>
+#include <cerrno>
 #include <dirent.h>
 #include <pwd.h>
 #include <sys/stat.h>
@@ -10,6 +12,22 @@
 #include "linux_common.hpp"
 
 namespace xg::lnx {
+
+void ChildReaper::add(pid_t pid) {
+    if (pid <= 0) return;
+    std::lock_guard lk(mu_);
+    pids_.push_back(pid);
+}
+
+size_t ChildReaper::reap() {
+    std::lock_guard lk(mu_);
+    std::erase_if(pids_, [](pid_t p) {
+        const pid_t r = ::waitpid(p, nullptr, WNOHANG);
+        return r == p || (r < 0 && errno == ECHILD);
+    });
+    return pids_.size();
+}
+
 
 std::string read_small(const std::string& path) {
     std::ifstream f(path, std::ios::binary);

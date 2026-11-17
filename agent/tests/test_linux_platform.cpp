@@ -420,4 +420,19 @@ TEST_CASE("Linux system info reports screen caps by session type until a helper 
     CHECK(sys->fallback_screen_caps({S{"a", "/home/a", 1000, ":0", "x11", true}}, false)["live"] == false);
 }
 
+TEST_CASE("ChildReaper reaps only its own children (I-AGENT-15)", "[linux]") {
+    xg::lnx::ChildReaper r;
+    const pid_t mine = ::fork();
+    if (mine == 0) _exit(0);
+    const pid_t other = ::fork();
+    if (other == 0) _exit(7);
+    r.add(mine);
+    for (int i = 0; i < 200 && r.reap() > 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    CHECK(r.reap() == 0);
+    // The child we did not register still has its exit status for its real owner.
+    int status = 0;
+    REQUIRE(::waitpid(other, &status, 0) == other);
+    CHECK(WEXITSTATUS(status) == 7);
+}
+
 #endif  // _WIN32

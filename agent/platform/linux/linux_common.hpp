@@ -1,6 +1,9 @@
 #pragma once
+#include <sys/types.h>
+
 #include <functional>
 #include <map>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -8,6 +11,19 @@
 #include "xg/interfaces.hpp"
 
 namespace xg::lnx {
+
+/// Reaps only the children it was given (waitpid(pid, WNOHANG)), never `waitpid(-1)`, which would steal
+/// the exit status of children owned by other code (e.g. the nft child of the isolator, I-AGENT-15).
+class ChildReaper {
+public:
+    void add(pid_t pid);
+    /// Non-blocking: collects exited children. Returns how many are still running.
+    size_t reap();
+
+private:
+    std::mutex mu_;
+    std::vector<pid_t> pids_;
+};
 
 struct TcpSocketStat {
     uint64_t inode = 0;
