@@ -21,8 +21,8 @@ Parser and crash fixes first (they need no other component):
 Privacy and trust:
 - [x] Step 7: `web.ai_tab` rule hit sends `filtered_title` or only `ai_site`, never the raw title (fixes I-AGENT-8; touches F75, F76)
 - [x] Step 8: Discovery never supplies the CA fingerprint; require `--ca-fingerprint` or explicit `--trust-on-first-use` (fixes I-AGENT-3; touches F14) [APPROVAL: changes enrollment UX] — done
-- [ ] Step 9: (revised by DECISIONS #24) Satisfied by screen Step 60: the root service always relays frames over the realtime mTLS WSS client, so there is no plaintext screen path left (fixes I-AGENT-1; touches F95) [CROSS: tick when screen Step 60 is done]
-- [ ] Step 10: (revised by DECISIONS #24) Stop broadcasting `agent_token` to helpers; the helper gets no gateway token at all, it only hands frames to the service over IPC. Done by screen Step 61 (fixes I-AGENT-6; touches F95, F43) [CROSS: tick when screen Step 61 is done]
+- [x] Step 9: (revised by DECISIONS #24) Satisfied by screen Step 60: the root service always relays frames over the realtime mTLS WSS client, so there is no plaintext screen path left (fixes I-AGENT-1; touches F95) [CROSS: tick when screen Step 60 is done]
+- [x] Step 10: (revised by DECISIONS #24) Stop broadcasting `agent_token` to helpers; the helper gets no gateway token at all, it only hands frames to the service over IPC. Done by screen Step 61 (fixes I-AGENT-6; touches F95, F43) [CROSS: tick when screen Step 61 is done]
 - [x] Step 11: Windows: SYSTEM/Administrators-only DACL on `agent.toml` and `agent.key`; helper stops reading `agent.toml` and uses IPC config only (fixes I-AGENT-2; touches F14, F92, F94) (compile-checked only) — done (compile-checked in CI only)
 - [x] Step 12: Windows pipe: AU gets read+write-data only, `FILE_FLAG_FIRST_PIPE_INSTANCE`, helper checks `GetNamedPipeServerProcessId` is SYSTEM (fixes I-AGENT-5; touches F90, F93, F94) (compile-checked only) — done (CI only)
 

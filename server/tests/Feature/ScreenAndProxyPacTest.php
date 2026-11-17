@@ -25,13 +25,12 @@ class ScreenAndProxyPacTest extends TestCase
             'services.screen_gateway.url' => '',
             'services.screen_gateway.port' => 8082,
             'services.screen_gateway.path' => '/screen-gw',
-            'services.screen_gateway.agent_secret' => 'sec-123',
         ]);
         $direct = app(PolicyBuilder::class)->response($pc);
         $this->assertSame(8082, $direct['screen']['port']);
         $this->assertSame('/agent', $direct['screen']['path']);
         $this->assertFalse($direct['screen']['tls']);
-        $this->assertSame('sec-123', $direct['screen']['agent_token']);
+        $this->assertArrayNotHasKey('agent_token', $direct['screen']);
 
         config([
             'services.screen_gateway.url' => 'https://lab.example.edu/screen-gw',
@@ -42,6 +41,7 @@ class ScreenAndProxyPacTest extends TestCase
         $this->assertSame(443, $proxied['screen']['port']);
         $this->assertSame('/screen-gw/agent', $proxied['screen']['path']);
         $this->assertTrue($proxied['screen']['tls']);
+        $this->assertArrayNotHasKey('agent_token', $proxied['screen']);
     }
 
     public function test_proxy_pac_reflects_network_mode_and_policy_carries_pac_url(): void

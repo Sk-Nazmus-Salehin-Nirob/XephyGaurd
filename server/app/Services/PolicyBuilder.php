@@ -132,7 +132,6 @@ class PolicyBuilder
             'port' => $port,
             'path' => $agentPath,
             'tls' => $tls,
-            'agent_token' => (string) config('services.screen_gateway.agent_secret', ''),
         ];
     }
 }
