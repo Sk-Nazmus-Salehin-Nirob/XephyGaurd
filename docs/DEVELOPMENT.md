@@ -22,6 +22,22 @@ kernels ThreadSanitizer can abort with "unexpected memory mapping" (also during 
 time); run both the build and the tests under `setarch -R`. Last run (2026-11-17, actor core): both clean,
 67/67 tests, 0 TSAN warnings.
 
+## Screen streaming (xephyguard-screen)
+Run each from the repo root:
+* Gateway (Go): `(cd xephyguard-screen/gateway && go mod tidy && go vet ./... && go test -race ./...)`
+* Core/capture (C++): `cmake -S xephyguard-screen -B xephyguard-screen/build -DCMAKE_INSTALL_DOCDIR=doc && systemd-run --user --scope -q -p MemoryMax=5G -p MemorySwapMax=0 nice cmake --build xephyguard-screen/build -j6 && ctest --test-dir xephyguard-screen/build --output-on-failure`
+* Viewer (JS): `(cd xephyguard-screen && node --test viewer)`
+
+Notes: without `-DCMAKE_INSTALL_DOCDIR=doc` a standalone configure fails inside the fetched libjpeg-turbo
+(`set_property could not find CACHE variable CMAKE_INSTALL_DOCDIR`).
+The build dir must sit inside `xephyguard-screen/`: the fixture test writes `../tests/fixtures/*.bin`
+relative to the ctest working dir. `xgtests` takes ~2.5 min. `go.mod` asks for Go 1.27.4; an older `go`
+downloads it once (`GOTOOLCHAIN=auto`).
+
+Baseline (2026-11-17, Linux, Go 1.27.4, Node 20, CMake 3.28): gateway vet clean, `go test -race` ok;
+core configure fails without the flag above; with it, `xgtests` 34/35 from a build dir outside the tree, and
+the remaining fixture case passes when run from `xephyguard-screen/` (fixtures unchanged); viewer 5/5.
+
 ## Running the agent against a local CCC (no Docker)
 1. In `server/`: `php artisan serve --port=8000` and `php artisan reverb:start --port=8081`
    (set `REVERB_PORT=8081`).
