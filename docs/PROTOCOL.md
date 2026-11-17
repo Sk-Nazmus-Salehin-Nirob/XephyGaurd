@@ -137,7 +137,9 @@ then the gateway closes the socket (1000 "snapshot delivered").
 The socket closes at the lease `exp` (4001 "lease expired") unless the viewer renews in band: it sends the text
 message `{"type":"renew","token":"<jwt from /renew>"}` (≤ 4 KiB); the new token must be valid, unused and grant the same
 `stream_id`, `pc_id` and `mode`; the gateway extends the lease and answers `{"type":"lease","expires_at":<unix>}`.
-Any other text message, or a refused renewal, closes the socket (1008). The renewal must also keep `sub` and `audit_id`.
+Any other text message, or a refused renewal, closes the socket (1008). Binary viewer messages reach the agent only
+if they are exactly 28 bytes with the screen magic and version and type `Ack` (3) or `KeyframeReq` (4); the gateway
+sets their `stream_id` to the viewer's stream and drops everything else. A viewer message over 4 KiB closes the socket (1009). The renewal must also keep `sub` and `audit_id`.
 
 Server → gateway revoke (CCC-internal, loopback only, never proxied by nginx): `POST http://127.0.0.1:8082/internal/revoke`
 with `Authorization: Bearer $XG_INTERNAL_TOKEN` and JSON `{"audit_id":N}`, `{"user_id":N}` and/or `{"lab_session_id":N}`

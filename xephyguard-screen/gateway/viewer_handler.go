@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -79,7 +80,7 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 		stream.mu.Unlock()
 		return
 	}
-	c.SetReadLimit(16 * 1024 * 1024)
+	c.SetReadLimit(kViewerReadLimit) // viewers send only 28-byte controls and a small renew message
 	stream.mu.Lock()
 	v.conn = c // read under stream.mu by closeViewers
 	stream.mu.Unlock()
@@ -180,9 +181,13 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if msgType == websocket.MessageBinary && len(data) >= kHeaderSize {
+		if msgType == websocket.MessageBinary {
+			out, ok := viewerControlForAgent(data, stream.streamID)
+			if !ok {
+				continue // only Ack and KeyframeReq reach the agent (screen Step 6)
+			}
 			select {
-			case stream.agentOut <- data:
+			case stream.agentOut <- out:
 			case <-ctx.Done():
 				break
 			case <-stream.ctx.Done():
@@ -239,4 +244,22 @@ func (s *RelayServer) renewViewerLease(v *Viewer, orig ViewerGrant, data []byte)
 		}
 	}
 	return true
+}
+
+// kViewerReadLimit caps one viewer message (binary control or text renew).
+const kViewerReadLimit = 4096
+
+// viewerControlForAgent allows only Ack and KeyframeReq messages of exactly kHeaderSize bytes with
+// the right magic and version, and returns a copy whose stream_id is the viewer's own stream.
+func viewerControlForAgent(data []byte, streamID uint32) ([]byte, bool) {
+	if len(data) != kHeaderSize || binary.LittleEndian.Uint16(data[0:2]) != kMagic || data[2] != kVersion {
+		return nil, false
+	}
+	if data[3] != kMsgTypeAck && data[3] != kMsgTypeKeyReq {
+		return nil, false
+	}
+	out := make([]byte, kHeaderSize)
+	copy(out, data)
+	binary.LittleEndian.PutUint32(out[8:12], streamID)
+	return out, true
 }

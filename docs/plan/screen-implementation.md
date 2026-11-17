@@ -56,7 +56,7 @@ Done as part of M0-4, docs only:
 - [x] M2-3 Step 4: `AuthViewer` returns `{stream_id, mode, exp, pc_id}`, no `student_id` fallback, enforce `mode`
 - [x] M2-4 Step 5: close viewers at lease expiry; loopback `POST /internal/revoke`
 - [x] M2-5 server: call revoke on stop, logout, session end (server plan cross of Step 5)
-- [ ] M2-6 Step 6: viewer→agent allow-list (`Ack`, `KeyframeReq`, 28 bytes), 4 KB read limit
+- [x] M2-6 Step 6: viewer→agent allow-list (`Ack`, `KeyframeReq`, 28 bytes), 4 KB read limit
 - [ ] M2-7 Step 7: Origin check, remove `InsecureSkipVerify`
 - [x] M2-8 Step 8: `HandleAgent` data race (done in M2-2)
 - [ ] M2-9 Step 9: keyframe cache TTL 5 s, cleared on MASKED/SECURE

@@ -18,6 +18,7 @@ const (
 	kMaxViewers      = 2
 	kViewerQueueSize = 8
 	kMsgTypeFrame    = uint8(1)
+	kMsgTypeAck      = uint8(3)
 	kMsgTypeKeyReq   = uint8(4)
 	kMsgTypeStatus   = uint8(5)
 )
