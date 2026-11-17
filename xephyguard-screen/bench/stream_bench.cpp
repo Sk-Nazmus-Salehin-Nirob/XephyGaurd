@@ -8,6 +8,12 @@
 // CPU seconds per second and per frame, thread wake-ups per second. Pin it with `taskset -c 0`.
 #include "../agent/agent_state.h"
 #include "../capture/capture.h"
+#if defined(__linux__)
+#include "../capture/x11_capture.h"
+#include <signal.h>
+#include <sys/prctl.h>
+#include <sys/wait.h>
+#endif
 
 #include <sys/resource.h>
 #include <poll.h>
@@ -37,8 +43,20 @@ struct Rng {
 
 double ms_since(Clock::time_point t) { return std::chrono::duration<double, std::milli>(Clock::now() - t).count(); }
 
+// Records when each capture returned, so the sent time minus this is the tile diff + encode cost.
+class TimedCapture : public xg::ScreenCapture {
+public:
+  std::atomic<uint64_t> captures{0};
+  Clock::time_point captured_at() { std::lock_guard<std::mutex> lk(tm_); return captured_at_; }
+protected:
+  void mark() { { std::lock_guard<std::mutex> lk(tm_); captured_at_ = Clock::now(); } captures.fetch_add(1); }
+private:
+  std::mutex tm_;
+  Clock::time_point captured_at_;
+};
+
 // Mutates a 1080p BGRA buffer according to the workload, by wall-clock time.
-class SyntheticCapture : public xg::ScreenCapture {
+class SyntheticCapture : public TimedCapture {
 public:
   explicit SyntheticCapture(std::string workload) : workload_(std::move(workload)), buf_(size_t(kW) * kH * 4, 0xFF) {
     Rng r;  // text-like page: dark dashes on white, so the encoder sees realistic detail
@@ -51,11 +69,7 @@ public:
   bool start() override { t0_ = next_ = Clock::now(); return true; }
   void stop() override {}
   xg::CaptureStatus capture(xg::Frame& out) override {
-    {
-      std::lock_guard<std::mutex> lk(m_);
-      captured_at_ = Clock::now();
-    }
-    captures.fetch_add(1);
+    mark();
     advance();
     out.width = kW; out.height = kH; out.stride = kW * 4;
     out.bgra.assign(buf_.begin(), buf_.end());
@@ -64,16 +78,12 @@ public:
     out.secure_desktop = false;
     return xg::CaptureStatus::Ok;
   }
-  std::atomic<uint64_t> captures{0};
-  Clock::time_point captured_at() { std::lock_guard<std::mutex> lk(m_); return captured_at_; }
-
-private:
-  void fill(int x, int y, int w, int h, uint8_t v) {
-    for (int j = y; j < y + h && j < kH; ++j) std::memset(&buf_[(size_t(j) * kW + x) * 4], v, size_t(std::min(w, kW - x)) * 4);
-  }
-  void advance() {
+  const uint8_t* pixels() const { return buf_.data(); }
+  /// Moves the workload on; true when the picture changed.
+  bool advance() {
     const auto now = Clock::now();
-    auto due = [&](int period_ms) { if (now < next_) return false; next_ = now + std::chrono::milliseconds(period_ms); return true; };
+    bool changed = false;
+    auto due = [&](int period_ms) { if (now < next_) return false; next_ = now + std::chrono::milliseconds(period_ms); return changed = true; };
     ++tick_;
     if (workload_ == "typing") {          // one 16x24 glyph every 120 ms
       if (due(120)) fill(100 + (tick_ * 16) % 1200, 200, 16, 24, uint8_t(tick_ * 37));
@@ -96,13 +106,57 @@ private:
         }
       }
     }  // "static" and "idle": nothing changes
+    return changed;
+  }
+
+private:
+  void fill(int x, int y, int w, int h, uint8_t v) {
+    for (int j = y; j < y + h && j < kH; ++j) std::memset(&buf_[(size_t(j) * kW + x) * 4], v, size_t(std::min(w, kW - x)) * 4);
   }
   std::string workload_;
   std::vector<uint8_t> buf_;
-  Clock::time_point t0_, next_, captured_at_;
+  Clock::time_point t0_, next_;
   int tick_ = 0;
-  std::mutex m_;
 };
+
+#if defined(__linux__)
+// The real X11 capture (SHM + Damage) on the display in $DISPLAY, timed like the synthetic one.
+class TimedX11Capture : public TimedCapture {
+public:
+  bool initialize() override { return inner_.initialize(); }
+  bool start() override { return inner_.start(); }
+  void stop() override { inner_.stop(); }
+  xg::CaptureStatus capture(xg::Frame& out) override { mark(); return inner_.capture(out); }
+private:
+  xg::X11Capture inner_;
+};
+
+// Forked painter: draws the workload onto the root window of $DISPLAY from another process, so its CPU does
+// not count in the streamer's numbers (getrusage RUSAGE_SELF). Dies with the bench.
+pid_t start_painter(const std::string& workload) {
+  const pid_t pid = fork();
+  if (pid != 0) return pid;
+  prctl(PR_SET_PDEATHSIG, SIGKILL);
+  Display* d = XOpenDisplay(nullptr);
+  if (!d) _exit(1);
+  const int scr = DefaultScreen(d);
+  Window root = RootWindow(d, scr);
+  GC gc = XCreateGC(d, root, 0, nullptr);
+  SyntheticCapture src(workload);
+  std::vector<uint8_t> px(size_t(kW) * kH * 4);
+  XImage* img = XCreateImage(d, DefaultVisual(d, scr), unsigned(DefaultDepth(d, scr)), ZPixmap, 0,
+                             reinterpret_cast<char*>(px.data()), kW, kH, 32, 0);
+  if (!img) _exit(1);
+  for (bool first = true;; first = false) {
+    if (src.advance() || first) {
+      std::memcpy(px.data(), src.pixels(), px.size());
+      XPutImage(d, root, gc, img, 0, 0, 0, 0, kW, kH);
+      XFlush(d);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(4));
+  }
+}
+#endif
 
 double pct(std::vector<double>& v, double p) {
   if (v.empty()) return 0;
@@ -134,9 +188,17 @@ bool read_full(int fd, void* buf, size_t n, const std::atomic<bool>& keep) {
   return true;
 }
 
-void run_phase(const std::string& workload, int seconds, bool json, bool use_stdio) {
+void run_phase(const std::string& workload, int seconds, bool json, bool use_stdio, bool use_x11) {
   FILE* res = use_stdio ? stderr : stdout;
-  auto cap = std::make_shared<SyntheticCapture>(workload);
+  std::shared_ptr<TimedCapture> cap;
+#if defined(__linux__)
+  pid_t painter = -1;
+  if (use_x11) {
+    cap = std::make_shared<TimedX11Capture>();
+    if (workload != "idle") painter = start_painter(workload);
+  }
+#endif
+  if (!cap) cap = std::make_shared<SyntheticCapture>(workload);
   std::vector<double> lat;
   uint64_t frames = 0, bytes = 0, keys = 0;
   std::mutex m;
@@ -193,6 +255,9 @@ void run_phase(const std::string& workload, int seconds, bool json, bool use_std
   const Usage u1 = usage();
   const double caps = double(cap->captures.load() - c0);
   sm.on_view_stop();
+#if defined(__linux__)
+  if (painter > 0) { kill(painter, SIGKILL); waitpid(painter, nullptr, 0); }
+#endif
   reading = false;
   if (reader.joinable()) reader.join();
 
@@ -216,7 +281,7 @@ void run_phase(const std::string& workload, int seconds, bool json, bool use_std
 
 int main(int argc, char** argv) {
   int seconds = 10;
-  bool json = false, use_stdio = false;
+  bool json = false, use_stdio = false, use_x11 = false;
   std::vector<std::string> phases;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -224,10 +289,15 @@ int main(int argc, char** argv) {
     else if (a == "--workload" && i + 1 < argc) phases.push_back(argv[++i]);
     else if (a == "--json") json = true;
     else if (a == "--stdio") use_stdio = true;
-    else { std::cerr << "usage: xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json] [--stdio]\n"; return 2; }
+    else if (a == "--capture" && i + 1 < argc) {
+      const std::string c = argv[++i];
+      if (c == "x11") use_x11 = true;
+      else if (c != "synthetic") { std::cerr << "--capture synthetic|x11\n"; return 2; }
+    }
+    else { std::cerr << "usage: xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json] [--stdio] [--capture synthetic|x11]\n"; return 2; }
   }
   if (use_stdio && phases.size() != 1) { std::cerr << "--stdio needs exactly one --workload\n"; return 2; }
   if (phases.empty()) phases = {"idle", "static", "typing", "scrolling", "drag", "video"};
-  for (const auto& p : phases) run_phase(p, seconds, json, use_stdio);
+  for (const auto& p : phases) run_phase(p, seconds, json, use_stdio, use_x11);
   return 0;
 }
