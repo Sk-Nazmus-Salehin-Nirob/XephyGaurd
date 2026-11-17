@@ -413,3 +413,25 @@ TEST_CASE("web.ai_tab hits carry the filtered title, never the raw one (I-AGENT-
         h.agent->apply_signatures({{"version", "test-2"}, {"bundle", test::sample_signatures().dump()}}, false);  // reset dedup
     }
 }
+
+TEST_CASE("helper key stats keep only allow-listed numeric fields, clamped (I-AGENT-10)") {
+    Harness h;
+    auto p = Policy::default_for(Mode::practice);
+    p.collect.keys = true;
+    h.agent->apply_policy(p);
+    IIpcServer::Peer peer{7, 1000, 555, "alice"};
+    h.agent->on_helper_message(peer, json({{"t", "keys"}, {"keys", 40}, {"backspaces", -5}, {"iki_mean", 110.5},
+                                           {"backspace_ratio", 7}, {"typed", "my password"}, {"bursts", "x"},
+                                           {"window_s", 5}}).dump());
+    auto ks = h.of(ev::key_stats);
+    REQUIRE(ks.size() == 1);
+    const auto& d = ks[0].data;
+    CHECK(d["keys"] == 40);
+    CHECK(d["backspaces"] == 0);
+    CHECK(d["backspace_ratio"] == 1.0);
+    CHECK(d["iki_mean"] == 110.5);
+    CHECK_FALSE(d.contains("typed"));
+    CHECK_FALSE(d.contains("bursts"));
+    CHECK(d["user"] == "alice");
+    CHECK(d.dump().find("password") == std::string::npos);
+}

@@ -811,8 +811,8 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
         wake_uplink();
     } else if (t == "keys") {
         if (!pol.collect.keys) return;
-        json k = j;
-        k.erase("t");
+        // Rebuilt from a numeric allow-list: a user-level peer cannot smuggle other fields to the CCC (I-AGENT-10).
+        json k = keystats_from_helper(j);
         k["user"] = user;
         k["source"] = "helper";
         sink_->emit(ev::key_stats, k);
