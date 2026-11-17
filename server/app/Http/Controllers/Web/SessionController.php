@@ -82,8 +82,12 @@ class SessionController extends Controller
 
     public function kill(Request $request, Pc $pc)
     {
-        $d = $request->validate(['exe' => 'required_without:pid|nullable|string|max:128', 'pid' => 'nullable|integer']);
-        $cmd = $this->commands->send($pc, 'kill', array_filter(['exe' => $d['exe'] ?? null, 'pid' => $d['pid'] ?? null]), $request->user());
+        $d = $request->validate(['exe' => 'required_without:pid|nullable|string|max:128', 'pid' => 'nullable|integer|min:1',
+            'start_time' => 'nullable|integer|min:1']);
+        // start_time (from process_snapshot.list[].start) pins the exact process: a reused pid is never killed.
+        $args = array_filter(['exe' => $d['exe'] ?? null, 'pid' => $d['pid'] ?? null,
+            'start_time' => isset($d['pid']) ? ($d['start_time'] ?? null) : null]);
+        $cmd = $this->commands->send($pc, 'kill', $args, $request->user());
         Audit::log('pc.kill', $pc, $cmd->args);
 
         return $request->expectsJson() ? response()->json(['command_id' => $cmd->id]) : back()->with('status', 'Kill command sent.');

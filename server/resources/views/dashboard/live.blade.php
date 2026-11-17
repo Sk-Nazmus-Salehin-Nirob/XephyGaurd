@@ -339,7 +339,7 @@
             <template x-for="(p, idx) in (det ? det.processes : [])" :key="(p.pid || idx) + '-' + p.name"><tr>
               <td><div style="font-weight:500" :style="p.threat && 'color:var(--alert)'" x-text="p.name"></div><div class="tiny muted cut" x-text="p.title"></div></td>
               <td class="right num" x-text="p.cpu.toFixed(1) + '%'"></td><td class="right num" x-text="p.mem + ' MB'"></td><td class="right num" x-text="p.net.toFixed(1) + ' Mb/s'"></td>
-              <td class="right nw"><span class="chip alert" x-show="p.threat" x-text="p.threat" style="margin-right:6px"></span><button class="btn btn-sm" @click="promptCloseProgram(p.name, p.pid || null)">Close</button></td></tr></template>
+              <td class="right nw"><span class="chip alert" x-show="p.threat" x-text="p.threat" style="margin-right:6px"></span><button class="btn btn-sm" @click="promptCloseProgram(p.name, p.pid || null, p.start || null)">Close</button></td></tr></template>
           </tbody></table>
         </section>
 

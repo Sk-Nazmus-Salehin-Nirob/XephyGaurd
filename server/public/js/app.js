@@ -511,7 +511,7 @@ document.addEventListener('alpine:init', () => {
     screenStreaming: false, screenHasFrame: false, screenStatus: '', screenAuditId: null, screenViewer: null, screenRenewTimer: null,
     wallStreams: {},
     tile: 240, flagged: false, blur: false, pinned: [], dock: { att: true, props: true, list: true }, pcFilter: 'all',
-    messageModal: false, messageTarget: null, messageText: '', showDone: false, closeModal: false, closeName: '', closePid: null, closeManual: false,
+    messageModal: false, messageTarget: null, messageText: '', showDone: false, closeModal: false, closeName: '', closePid: null, closeStart: null, closeManual: false,
 
     init() {
       const h = location.hash;
@@ -602,7 +602,7 @@ document.addEventListener('alpine:init', () => {
             ? d.timeline.map(e => ({ time: e.at, sev: e.type === 'rule_hit' || e.type === 'tamper' ? 'high' : 'info', label: e.summary }))
             : base.events,
           processes: (d.running_processes && d.running_processes.length)
-            ? d.running_processes.map(p => ({ pid: p.pid || 0, name: p.exe || p.name || 'process', title: p.title || p.cmdline || '', cpu: Number(p.cpu || 0), mem: Math.round(Number(p.rss_mb || p.mem || 0)), net: Number(p.net_mbps || 0), threat: p.rule_id || '' }))
+            ? d.running_processes.map(p => ({ pid: p.pid || 0, start: p.start || 0, name: p.exe || p.name || 'process', title: p.title || p.cmdline || '', cpu: Number(p.cpu || 0), mem: Math.round(Number(p.rss_mb || p.mem || 0)), net: Number(p.net_mbps || 0), threat: p.rule_id || '' }))
             : ((d.processes && d.processes.length)
               ? d.processes.map(p => ({ pid: p.pid || 0, name: p.exe || 'process', title: p.type || '', cpu: 0, mem: 0, net: 0, threat: p.rule || '' }))
               : base.processes),
@@ -817,9 +817,10 @@ document.addEventListener('alpine:init', () => {
         Alpine.store('toasts').add(e.message || 'Rescan request failed.', 'alert');
       }
     },
-    promptCloseProgram(name = '', pid = null) {
+    promptCloseProgram(name = '', pid = null, start = null) {
       this.closeName = name;
       this.closePid = pid;
+      this.closeStart = start;
       this.closeManual = !name && !pid;
       this.closeModal = true;
     },
@@ -832,11 +833,12 @@ document.addEventListener('alpine:init', () => {
       const target = this.active;
       if (!target || !target.id) return;
       try {
-        await window.xgApi(`/pcs/${target.id}/kill`, { method: 'POST', body: JSON.stringify({ exe: exe || null, pid: this.closePid || null }) });
+        await window.xgApi(`/pcs/${target.id}/kill`, { method: 'POST', body: JSON.stringify({ exe: exe || null, pid: this.closePid || null, start_time: (this.closePid && this.closeStart) || null }) });
         this.closeModal = false;
         Alpine.store('toasts').add(`Asked ${target.name} to close ${exe || ('PID ' + this.closePid)}.`, 'watch');
         this.closeName = '';
         this.closePid = null;
+        this.closeStart = null;
         this.closeManual = false;
       } catch (e) {
         Alpine.store('toasts').add(e.message || 'Could not send kill command.', 'alert');
