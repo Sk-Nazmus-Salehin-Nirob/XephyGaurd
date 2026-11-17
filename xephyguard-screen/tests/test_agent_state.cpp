@@ -2,6 +2,8 @@
 #include "../agent/agent_state.h"
 #include "../capture/fake_capture.h"
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -196,4 +198,75 @@ TEST_CASE("AgentStateMachine: callers are not starved while the screen is masked
   const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
   CHECK(ms < 1500);
   agent.on_view_stop();
+}
+
+namespace {
+// A capture of a screen that never changes: the first capture is Ok, then NoChange until the machine asks for the
+// whole screen. wait_for_change blocks like the X11 one (until its timeout or interrupt_wait).
+class StaticScreenCapture : public xg::ScreenCapture {
+public:
+  bool initialize() override { return true; }
+  bool start() override { first_ = true; return true; }
+  void stop() override {}
+  xg::CaptureStatus capture(xg::Frame& out) override {
+    captures++;
+    if (!first_ && !full_) return xg::CaptureStatus::NoChange;
+    first_ = full_ = false;
+    out.width = 128; out.height = 128; out.stride = 512;
+    out.bgra.assign(size_t(512) * 128, 0xFF);
+    out.dirty.clear();
+    out.full_dirty = true;
+    out.secure_desktop = false;
+    return xg::CaptureStatus::Ok;
+  }
+  bool wait_for_change(int timeout_ms) override {
+    waits++;
+    std::unique_lock<std::mutex> lk(m_);
+    cv_.wait_for(lk, std::chrono::milliseconds(timeout_ms), [&] { return woken_; });
+    const bool w = woken_;
+    woken_ = false;
+    return w;
+  }
+  void interrupt_wait() override { { std::lock_guard<std::mutex> lk(m_); woken_ = true; } cv_.notify_all(); }
+  void request_full() override { full_ = true; }
+  std::atomic<int> captures{0}, waits{0};
+
+private:
+  bool first_ = true, full_ = false, woken_ = false;
+  std::mutex m_;
+  std::condition_variable cv_;
+};
+}  // namespace
+
+TEST_CASE("AgentStateMachine: a static screen blocks in wait_for_change and a keyframe request still gets a picture") {
+  auto capture = std::make_shared<StaticScreenCapture>();
+  std::atomic<int> frames{0}, keyframes{0};
+  xg::AgentStateMachine agent(capture, xg::EncoderConfig{}, nullptr);
+  agent.set_frame_sender([&](const std::vector<uint8_t>& data) {
+    auto msg = xg::decode(data.data(), data.size());
+    if (!msg.has_value() || msg->type != xg::MsgType::Frame) return;
+    ++frames;
+    if (msg->flags & xg::Flags::KEY) ++keyframes;
+    xg::Message ack{};
+    ack.type = xg::MsgType::Ack; ack.seq = msg->seq; ack.stream_id = msg->stream_id;
+    auto b = xg::encode(ack);
+    agent.on_incoming_message(b.data(), b.size());
+  });
+  REQUIRE(agent.on_view_start(5, "live"));
+  std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+  CHECK(frames.load() == 1);          // the first picture only: nothing changed since
+  CHECK(capture->captures.load() < 15);  // the old 20 ms sleep would have captured about 60 times
+  CHECK(capture->waits.load() >= 1);
+
+  xg::Message req{};
+  req.type = xg::MsgType::KeyframeReq; req.stream_id = 5;
+  auto rb = xg::encode(req);
+  agent.on_incoming_message(rb.data(), rb.size());
+  for (int i = 0; i < 100 && frames.load() < 2; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  CHECK(frames.load() == 2);
+  CHECK(keyframes.load() == 2);
+
+  const auto t0 = std::chrono::steady_clock::now();
+  REQUIRE(agent.on_view_stop());      // interrupt_wait ends the blocked wait at once
+  CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(200));
 }

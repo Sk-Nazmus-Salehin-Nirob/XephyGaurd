@@ -127,6 +127,9 @@ public:
   bool start() override { return inner_.start(); }
   void stop() override { inner_.stop(); }
   xg::CaptureStatus capture(xg::Frame& out) override { mark(); return inner_.capture(out); }
+  bool wait_for_change(int timeout_ms) override { return inner_.wait_for_change(timeout_ms); }
+  void interrupt_wait() override { inner_.interrupt_wait(); }
+  void request_full() override { inner_.request_full(); }
 private:
   xg::X11Capture inner_;
 };

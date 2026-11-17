@@ -23,6 +23,7 @@ public:
   /// safety re-check is due, or interrupt_wait() was called; false on timeout.
   bool wait_for_change(int timeout_ms) override;
   void interrupt_wait() override;
+  void request_full() override { damage_all_ = true; }
 
   /// SysV shared memory id of the capture image (-1 when none); for tests.
   int shm_segment_id() const { return shminfo_.shmaddr ? shminfo_.shmid : -1; }

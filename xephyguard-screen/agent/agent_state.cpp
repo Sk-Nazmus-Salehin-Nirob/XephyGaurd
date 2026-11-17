@@ -94,6 +94,7 @@ bool AgentStateMachine::on_view_start(uint32_t stream_id, const std::string& mod
 
 bool AgentStateMachine::on_view_stop() {
   running_.store(false);
+  if (capture_) capture_->interrupt_wait();  // the capture thread may be blocked waiting for a screen change
 
   if (capture_thread_.joinable()) {
     capture_thread_.join();
@@ -200,12 +201,14 @@ void AgentStateMachine::on_incoming_message(const uint8_t* data, size_t len) {
     if (tracker_) {
       tracker_->force_all_pending();
     }
+    if (capture_) capture_->interrupt_wait();  // answer a new viewer now, not at the next wait timeout
   }
 }
 
 void AgentStateMachine::capture_loop() {
   // Never sleep while holding mutex_: std::recursive_mutex is not fair, so the loop would re-take it at once and
   // starve state(), on_incoming_message() and set_privacy_filter() for seconds while masked or paused.
+  bool asked_full = false;  // request_full() sent and no frame has come back yet
   while (running_.load()) {
     uint64_t now_ms = get_now_ms();
     int pause_ms = 0;
@@ -286,9 +289,23 @@ void AgentStateMachine::capture_loop() {
     }
 
     if (status == CaptureStatus::NoChange) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      // Nothing on screen changed. A viewer that still needs a picture (keyframe request, lifted mask, reconnect)
+      // gets one by asking the capture for the whole screen; otherwise block until the screen changes. The wait
+      // is bounded so the privacy check at the top of the loop keeps running a few times per second.
+      bool need_picture = false;
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        need_picture = !tracker_ || (flow_ && flow_->needs_keyframe()) || !tracker_->pending().empty();
+      }
+      if (need_picture && !asked_full) {
+        asked_full = true;
+        capture_->request_full();
+        continue;
+      }
+      capture_->wait_for_change(250);
       continue;
     }
+    asked_full = false;
 
     if (status == CaptureStatus::Ok) {
       std::vector<uint8_t> wire_data;

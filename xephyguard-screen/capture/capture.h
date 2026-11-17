@@ -32,5 +32,8 @@ public:
   }
   /// Thread-safe: ends a wait_for_change() blocked on another thread at once.
   virtual void interrupt_wait() {}
+  /// Capture thread only: the next capture() must return Ok with the whole screen (a new viewer or a lifted privacy
+  /// mask needs a picture even though nothing changed). Captures that return Ok on every call ignore it.
+  virtual void request_full() {}
 };
 }

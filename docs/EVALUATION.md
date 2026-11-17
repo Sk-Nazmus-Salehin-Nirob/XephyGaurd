@@ -69,3 +69,14 @@ Reading it against the targets (docs/plan/screen.md, not yet met):
 - **Idle (nobody viewing):** 0.0 to 0.1 % CPU. The 10 wake-ups/s in the idle row come from the bench's own stdin poll in `--stdio` mode; plain `xgstreambench --workload idle` shows 0.2/s.
 - **Xvfb drag:** 0.8 fps is limited by the painter pushing a full 1080p image to Xvfb, not by the streamer; treat that cell as a bench limit.
 - Not measured: integrated-GPU PC, real Windows capture, browser decode and paint lag (use the viewer `?debug=1` overlay), several viewers or PCs at once.
+
+### Screen streaming: before/after per low-power step
+Same setup as the baseline above (Release, `taskset -c 0`, Xvfb profile = real X11 capture, 10 s per workload, `xgstreambench --capture x11`, no gateway). Dev machine, 2026-11-18.
+
+| Step | static CPU % | static wake-ups/s | typing CPU % | scrolling CPU % | notes |
+|---|---|---|---|---|---|
+| baseline (full copy + hash every 20 ms) | 21.3 | 138 | 4.6 | 44.7 | 47 captures/s of an unchanged screen |
+| M4-2a Damage events, damaged rectangles only (loop still sleeps 20 ms) | 3.2 | 50 | 5.6 | 44.8 | 0.66 ms per empty capture |
+| M4-2b capture loop blocks in `wait_for_change` (250 ms bound for the privacy check, 1 s safety re-read) | 2.7 | 7.4 | 5.1 | 44.0 | the 2.7 % is the 1 Hz safety re-read (8 MB read + hash), next in M4-3 |
+
+Moving content is unchanged (scrolling, video-like stay near 44 %): its cost is the encoder, not the capture (M4-5, M5-3, M5-4).
