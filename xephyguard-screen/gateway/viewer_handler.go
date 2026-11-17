@@ -50,19 +50,23 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 
 	// Only replay a cached keyframe and ask for a keyframe when a live agent is connected;
 	// otherwise keep the 150ms offline status grace timer active.
+	// Until it has a keyframe that the following deltas build on, a new viewer gets no delta (screen Step 25).
+	v.resync = true
 	if hasAgent {
 		if cached := stream.cachedKeyframeLocked(time.Now()); cached != nil {
 			select {
 			case v.ch <- cached:
+				// The cached keyframe is the newest frame: the next delta builds on it, no new keyframe needed.
+				v.resync = binary.LittleEndian.Uint32(cached[12:16]) != stream.lastFrameSeq
 			default:
 			}
 		}
 
-		// Tell the agent the viewer count and mode first (it picks wall/snapshot/live from it), then ask for a keyframe.
+		// Tell the agent the viewer count and mode first (it picks wall/snapshot/live from it), then ask for a
+		// keyframe (rate-limited to 1/s per stream) unless the cache already gave a current picture.
 		stream.sendViewerStatusLocked()
-		select {
-		case stream.agentOut <- buildKeyframeReq(stream.streamID, 0):
-		default:
+		if v.resync {
+			stream.requestKeyframeLocked(time.Now(), 0)
 		}
 	}
 	stream.mu.Unlock()
@@ -185,6 +189,12 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 			out, ok := viewerControlForAgent(data, stream.streamID)
 			if !ok {
 				continue // only Ack and KeyframeReq reach the agent (screen Step 6)
+			}
+			if out[3] == kMsgTypeKeyReq {
+				stream.mu.Lock()
+				stream.requestKeyframeLocked(time.Now(), binary.LittleEndian.Uint16(out[6:8]))
+				stream.mu.Unlock()
+				continue
 			}
 			select {
 			case stream.agentOut <- out:

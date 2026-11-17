@@ -172,6 +172,10 @@ A browser `Origin` must be the request host (nginx forwards the dashboard `Host`
 The gateway keeps the agent's last keyframe for at most 5 s and replays a copy to a new viewer with frame flag
 `CACHED` (64, `core/protocol.h`; never sent by agents). Any frame flagged `MASKED` (8) or `SECURE` (16) clears the
 cache, and such keyframes are never cached. The renewal must also keep `sub` and `audit_id`.
+Catch-up (screen Step 25): a viewer gets no delta frame until it has a keyframe the deltas build on (a new viewer,
+one whose queue overflowed, or every viewer after an agent reconnect); an overflow empties that viewer's queue only,
+other viewers are not affected. `MASKED`/`SECURE` placeholders always go through. KeyframeReqs to the agent, from
+viewers or from the gateway, are limited to 1 per second per stream; one held back is sent when the second ends.
 
 Gateway → agent `Status` (type 5, 28-byte header, sent whenever the viewer set changes and before the `KeyframeReq`
 that a new viewer triggers): `flags` and `width` = number of viewers (0 = nobody watches, stop capturing), and the

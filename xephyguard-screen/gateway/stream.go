@@ -31,6 +31,9 @@ const (
 
 	// kKeyframeCacheTTL is how long a cached keyframe may be replayed to a new viewer.
 	kKeyframeCacheTTL = 5 * time.Second
+
+	// kKeyframeReqInterval: at most one KeyframeReq per stream per interval reaches the agent (screen Step 25).
+	kKeyframeReqInterval = time.Second
 )
 
 type Viewer struct {
@@ -43,6 +46,9 @@ type Viewer struct {
 	conn              *websocket.Conn
 	closed            atomic.Bool
 	sentOfflineNotice atomic.Bool
+	// resync (guarded by the stream's mu): the viewer missed frames or its first picture is older than the stream,
+	// so deltas would not apply; it gets no delta until the next keyframe (screen Step 25).
+	resync bool
 }
 
 type Stream struct {
@@ -55,6 +61,9 @@ type Stream struct {
 	nextViewerID   uint64
 	lastKeyframe   []byte
 	lastKeyframeAt time.Time
+	lastFrameSeq   uint32      // seq of the newest frame fanned out
+	lastKeyReqAt   time.Time   // last KeyframeReq sent to the agent
+	keyReqTimer    *time.Timer // a request held back by kKeyframeReqInterval; nil when none
 	ctx            context.Context
 	cancel         context.CancelFunc
 }
@@ -283,4 +292,81 @@ func (st *Stream) cachedKeyframeLocked(now time.Time) []byte {
 	copy(out, st.lastKeyframe)
 	binary.LittleEndian.PutUint16(out[4:6], binary.LittleEndian.Uint16(out[4:6])|kFlagCached)
 	return out
+}
+
+// requestKeyframeLocked sends a KeyframeReq to the agent at most once per kKeyframeReqInterval. A request inside the
+// interval is held and sent when it ends (one timer, so a burst of requests becomes one). Returns true when one was
+// queued for the agent now. Caller holds st.mu.
+func (st *Stream) requestKeyframeLocked(now time.Time, monitorID uint16) bool {
+	if st.agentConn == nil {
+		return false
+	}
+	if wait := st.lastKeyReqAt.Add(kKeyframeReqInterval).Sub(now); !st.lastKeyReqAt.IsZero() && wait > 0 {
+		if st.keyReqTimer == nil {
+			st.keyReqTimer = time.AfterFunc(wait, func() {
+				st.mu.Lock()
+				defer st.mu.Unlock()
+				st.keyReqTimer = nil
+				st.requestKeyframeLocked(time.Now(), monitorID)
+			})
+		}
+		return false
+	}
+	st.lastKeyReqAt = now
+	select {
+	case st.agentOut <- buildKeyframeReq(st.streamID, monitorID):
+		return true
+	default:
+		return false
+	}
+}
+
+// fanOutLocked delivers one agent message to every viewer. A viewer whose queue is full is caught up instead of
+// fed a broken delta chain: its queue is emptied, it waits for the next keyframe (a keyframe that overflows it is
+// queued at once), and the agent is asked for one, rate-limited. Masked/secure placeholders always go through.
+// Returns the number of viewers that overflowed. Caller holds st.mu.
+func (st *Stream) fanOutLocked(data []byte, now time.Time) (overflows int, keyReqs int) {
+	isFrame := data[3] == kMsgTypeFrame
+	flags := binary.LittleEndian.Uint16(data[4:6])
+	isKey := isFrame && flags&kFlagKey != 0
+	isDelta := isFrame && !isKey && flags&(kFlagMasked|kFlagSecure) == 0
+	if isFrame {
+		st.lastFrameSeq = binary.LittleEndian.Uint32(data[12:16])
+	}
+	for _, v := range st.viewers {
+		if v.resync && isDelta {
+			continue
+		}
+		select {
+		case v.ch <- data:
+			if isKey {
+				v.resync = false
+			}
+			continue
+		default:
+		}
+		overflows++
+		for drained := false; !drained; {
+			select {
+			case <-v.ch:
+			default:
+				drained = true
+			}
+		}
+		if isKey || !isDelta {
+			select {
+			case v.ch <- data:
+			default:
+			}
+		}
+		if isKey {
+			v.resync = false
+			continue
+		}
+		v.resync = true
+		if st.requestKeyframeLocked(now, binary.LittleEndian.Uint16(data[6:8])) {
+			keyReqs++
+		}
+	}
+	return overflows, keyReqs
 }

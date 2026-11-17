@@ -47,13 +47,14 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	stream.agentConn = c
 	stream.agentID = agentID
+	stream.lastKeyReqAt = time.Time{} // a new agent connection gets its first request at once
+	for _, v := range stream.viewers {
+		v.resync = true // the new connection starts a new frame chain
+	}
 	if len(stream.viewers) > 0 {
 		s.broadcastStatusLocked(stream, true)
 		stream.sendViewerStatusLocked()
-		select {
-		case stream.agentOut <- buildKeyframeReq(stream.streamID, 0):
-		default:
-		}
+		stream.requestKeyframeLocked(time.Now(), 0)
 	}
 	stream.mu.Unlock()
 
@@ -101,7 +102,6 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 
 			frameStreamID := binary.LittleEndian.Uint32(data[8:12])
 			flags := binary.LittleEndian.Uint16(data[4:6])
-			monitorID := binary.LittleEndian.Uint16(data[6:8])
 
 			if frameStreamID != stream.streamID {
 				// A frame for another PC's stream: drop it (screen Step 3).
@@ -134,31 +134,9 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 				s.metrics.bytesIn.Add(uint64(len(data)))
 			}
 
-			// Fan out to viewers
-			for _, v := range stream.viewers {
-				select {
-				case v.ch <- data:
-				default:
-					s.metrics.viewerDrops.Add(1)
-					// Queue full: drop oldest frame
-					select {
-					case <-v.ch:
-					default:
-					}
-					// Queue newest
-					select {
-					case v.ch <- data:
-					default:
-					}
-					// Send KEYFRAME_REQ to agent
-					keyReq := buildKeyframeReq(frameStreamID, monitorID)
-					select {
-					case stream.agentOut <- keyReq:
-						s.metrics.keyframeReqs.Add(1)
-					default:
-					}
-				}
-			}
+			overflows, keyReqs := stream.fanOutLocked(data, time.Now())
+			s.metrics.viewerDrops.Add(uint64(overflows))
+			s.metrics.keyframeReqs.Add(uint64(keyReqs))
 			stream.mu.Unlock()
 		}
 	}
