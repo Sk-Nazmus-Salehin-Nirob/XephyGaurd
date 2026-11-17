@@ -5,6 +5,34 @@
 
 namespace xg {
 
+namespace {
+// "2026.11.17-101500-ab12cd" -> 20261117101500; "2026.11.17-ab12cd" -> 20261117000000.
+std::optional<uint64_t> version_key(const std::string& v) {
+    auto digits = [&](size_t pos, size_t n) -> std::optional<uint64_t> {
+        if (pos + n > v.size()) return std::nullopt;
+        uint64_t x = 0;
+        for (size_t i = pos; i < pos + n; ++i) {
+            if (v[i] < '0' || v[i] > '9') return std::nullopt;
+            x = x * 10 + uint64_t(v[i] - '0');
+        }
+        return x;
+    };
+    if (v.size() < 10 || v[4] != '.' || v[7] != '.') return std::nullopt;
+    auto y = digits(0, 4), m = digits(5, 2), d = digits(8, 2);
+    if (!y || !m || !d) return std::nullopt;
+    uint64_t t = 0;
+    if (v.size() >= 17 && v[10] == '-' && (v.size() == 17 || v[17] == '-'))
+        if (auto hms = digits(11, 6)) t = *hms;
+    return ((*y * 100 + *m) * 100 + *d) * 1000000 + t;
+}
+}  // namespace
+
+std::optional<int> compare_bundle_versions(const std::string& a, const std::string& b) {
+    const auto ka = version_key(a), kb = version_key(b);
+    if (!ka || !kb) return std::nullopt;
+    return *ka < *kb ? -1 : (*ka > *kb ? 1 : 0);
+}
+
 Severity parse_severity(const std::string& s) {
     auto l = to_lower(s);
     if (l == "info") return Severity::info;

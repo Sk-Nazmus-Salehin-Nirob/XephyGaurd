@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -66,6 +67,10 @@ struct DeviceRule {
 };
 
 /// The signature bundle compiled by the CCC from data/signatures/*.yaml.
+/// Orders bundle versions "YYYY.MM.DD[-HHMMSS][-digest]" (CCC / compile_signatures.py) by date and time.
+/// Returns <0, 0, >0 like strcmp, or nullopt when either version does not have that shape.
+std::optional<int> compare_bundle_versions(const std::string& a, const std::string& b);
+
 struct SignatureSet {
     std::string version;
     std::vector<ProcessRule> processes;

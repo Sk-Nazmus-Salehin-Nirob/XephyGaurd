@@ -126,6 +126,13 @@ bool Agent::apply_signatures(const json& env, bool require_signature) {
         log::error("signatures: parse error: {}", err);
         return reject();
     }
+    // Rollback guard (I-AGENT-30): a validly signed but older bundle must not replace a newer one.
+    if (require_signature) {
+        if (auto c = compare_bundle_versions(set.version, rules_.version()); c && *c < 0) {
+            log::warn("signatures: bundle {} is older than {}; keeping {}", set.version, rules_.version(), rules_.version());
+            return reject();
+        }
+    }
     // A bundle without any AI/IDE domain would blind domain monitoring on this PC. Keep the last-known-good
     // bundle instead (a first load with nothing to lose is still accepted).
     if (set.ai_domains.empty() && set.ide_domains.empty() && !rules_.ai_domains().empty()) {
