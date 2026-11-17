@@ -153,6 +153,12 @@ active session streams over IPC (`screen_caps.ipc_stream`), relays helper frames
 8 MiB, excess dropped) and gateway messages down as `screen_rx`; reconnect backoff 1 s doubling to 30 s.
 Messages from the gateway are capped at 64 KiB per WebSocket message (fragments included) and 1 KiB per relayed message.
 
+Screen frame records (`xephyguard-screen/core/protocol.h`, little-endian; 28-byte header, then `tile_count` records):
+- v1 (header byte 2 = 1): record = `x`,`y` (u16, tile indices on a 64 px grid), `codec` (u8), reserved (u8), `len` (u32), payload; `len` <= 16384.
+- v2 (screen Step 26, header byte 2 = 2, `Frame` messages only): record = `x`,`y`,`w`,`h` (u16 pixels), `codec` (u8: 0 raw BGRA, 1 WebP, 2 JPEG), reserved (u8), `len` (u32), payload (14-byte record header).
+  Decoders reject a record with `w` or `h` outside 1..256, a rectangle not inside the header `width` x `height`, a raw payload that is not exactly `w*h*4` bytes, `len` > 262144, or a v2 message of another type with records.
+  Agents keep sending v1 until the viewer draws v2 (Step 27) and the encoder emits rectangles (Step 28). The gateway reads only the header and relays either version; viewer-to-agent `Ack`/`KeyframeReq` stay v1.
+
 ## Screen view lease (dashboard → gateway)
 `POST /api/screen/pc/{pc}/token`, `POST /api/screen/{student}/token` and `POST /api/screen/{audit}/renew` return an
 HS256 JWT (30 s) with `iss`, `aud`, `sub` (user who opened the view, kept on renewal), `audit_id`, `pc_id`, `stream_id`, `student_id`, `lab_session_id`, `mode`,
