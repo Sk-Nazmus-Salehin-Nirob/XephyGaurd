@@ -64,7 +64,14 @@ else()
 endif()
 
 # ----------------------------------------------------------------- screen streaming
+# xephyguard-screen reads XG_SANITIZE as a boolean and then adds address,undefined. In a thread build that
+# would mix ASan into TSAN; it already inherits -fsanitize=thread from this directory, so hide the option.
+set(_xg_sanitize "${XG_SANITIZE}")
+if(XG_SANITIZE STREQUAL "thread")
+    set(XG_SANITIZE OFF)
+endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../xephyguard-screen ${CMAKE_CURRENT_BINARY_DIR}/xephyguard-screen EXCLUDE_FROM_ALL)
+set(XG_SANITIZE "${_xg_sanitize}")
 
 # ----------------------------------------------------------------- executables
 if(WIN32)
