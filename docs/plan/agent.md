@@ -21,8 +21,8 @@ Parser and crash fixes first (they need no other component):
 Privacy and trust:
 - [x] Step 7: `web.ai_tab` rule hit sends `filtered_title` or only `ai_site`, never the raw title (fixes I-AGENT-8; touches F75, F76)
 - [x] Step 8: Discovery never supplies the CA fingerprint; require `--ca-fingerprint` or explicit `--trust-on-first-use` (fixes I-AGENT-3; touches F14) [APPROVAL: changes enrollment UX] — done
-- [ ] Step 9: Agent-side: refuse to start the screen stream without TLS, default `screen_tls=true`, drop plaintext branch for this caller (fixes I-AGENT-1; touches F95) [CROSS: needs screen/ccc-deploy Step "gateway behind nginx mTLS" first; update docs/PROTOCOL.md]
-- [ ] Step 10: Stop broadcasting `agent_token` to helpers; helper asks the service over IPC for a short-lived stream token (fixes I-AGENT-6; touches F95, F43) [CROSS: needs server issuance, I-SERVER-11; update docs/PROTOCOL.md]
+- [ ] Step 9: (revised by DECISIONS #24) Satisfied by screen Step 60: the root service always relays frames over the realtime mTLS WSS client, so there is no plaintext screen path left (fixes I-AGENT-1; touches F95) [CROSS: tick when screen Step 60 is done]
+- [ ] Step 10: (revised by DECISIONS #24) Stop broadcasting `agent_token` to helpers; the helper gets no gateway token at all, it only hands frames to the service over IPC. Done by screen Step 61 (fixes I-AGENT-6; touches F95, F43) [CROSS: tick when screen Step 61 is done]
 - [x] Step 11: Windows: SYSTEM/Administrators-only DACL on `agent.toml` and `agent.key`; helper stops reading `agent.toml` and uses IPC config only (fixes I-AGENT-2; touches F14, F92, F94) (compile-checked only) — done (compile-checked in CI only)
 - [x] Step 12: Windows pipe: AU gets read+write-data only, `FILE_FLAG_FIRST_PIPE_INSTANCE`, helper checks `GetNamedPipeServerProcessId` is SYSTEM (fixes I-AGENT-5; touches F90, F93, F94) (compile-checked only) — done (CI only)
 
@@ -74,7 +74,7 @@ The audit has no performance finding. No step until one is measured.
 
 ## Cross-component order (agent side)
 1. screen/ccc-deploy: gateway behind nginx mTLS (I-CCC-1, I-CCC-7) → agent Step 9.
-2. server: per-PC stream credential (I-SERVER-11) and `pc_id`-bound JWT (I-SERVER-1) → agent Step 10.
+2. screen Steps 59-61 (helper→service IPC, service relay, helper drops its WS client) → agent Step 10; server Step 1 (`pc_id`-bound viewer JWT, I-SERVER-1) is independent of the agent.
 3. data/ signature schema (Step 18) → agent Step 19 → Step 35.
 
 ## Alternative architecture proposals (not scheduled; each needs owner approval before any step is written)
