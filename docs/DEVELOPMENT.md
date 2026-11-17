@@ -28,6 +28,9 @@ Run each from the repo root:
 * Core/capture (C++): `cmake -S xephyguard-screen -B xephyguard-screen/build && systemd-run --user --scope -q -p MemoryMax=5G -p MemorySwapMax=0 nice cmake --build xephyguard-screen/build -j6 && ctest --test-dir xephyguard-screen/build --output-on-failure`
 * Viewer (JS): `(cd xephyguard-screen && node --test viewer)`
 
+Debug: gateway `GET http://127.0.0.1:8082/metrics` (loopback only, Prometheus text, aggregate counters, not under `/screen-gw/`);
+viewer page `index.html?debug=1&...` shows fps, kbit/s and paint lag (receipt to painted; end-to-end latency comes from the bench).
+
 Notes: the build dir must sit inside `xephyguard-screen/`: the fixture test writes `../tests/fixtures/*.bin`
 relative to the ctest working dir. `xgtests` takes ~2.5 min. `go.mod` asks for Go 1.27.4; an older `go`
 downloads it once (`GOTOOLCHAIN=auto`).

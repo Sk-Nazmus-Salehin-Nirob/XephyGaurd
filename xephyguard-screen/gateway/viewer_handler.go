@@ -35,6 +35,7 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.metrics.viewerConnects.Add(1)
 	stream.nextViewerID++
 	viewerID := stream.nextViewerID
 	v := &Viewer{
@@ -151,6 +152,10 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 				writeCancel()
 				if err != nil {
 					return
+				}
+				if len(msg) >= kHeaderSize && msg[3] == kMsgTypeFrame {
+					s.metrics.framesOut.Add(1)
+					s.metrics.bytesOut.Add(uint64(len(msg)))
 				}
 				// A snapshot lease gets one full picture (a keyframe), then the view ends.
 				if v.mode == "snapshot" && isKeyframe(msg) {

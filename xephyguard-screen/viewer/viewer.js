@@ -210,6 +210,7 @@ export class ScreenViewer {
     this.tileCanvas = this.canvas && typeof this.canvas.getContext === 'function'
       ? new TileCanvas(this.canvas)
       : null;
+    this.stats = this.options.stats || null; // optional ViewerStats (debug overlay)
     this.ws = null;
     this.lastAppliedSeq = 0;
     this.waitingForKeyframe = true;
@@ -281,6 +282,7 @@ export class ScreenViewer {
       return this.drainPromise || Promise.resolve(); // reject malformed message without throwing
     }
     this.sendAck(msg.streamId, msg.monitorId, msg.seq);
+    if (this.stats) msg.receivedAt = this.stats.recordReceived(data.byteLength);
 
     // A keyframe or full frame repaints everything, so frames queued before it are stale.
     if (msg.flags & (Flags.KEY | Flags.FULL)) {
@@ -288,6 +290,7 @@ export class ScreenViewer {
     } else if (this.frameQueue.length >= MAX_QUEUED_FRAMES) {
       // Behind by more than a delta chain can recover from: drop it and ask for a fresh keyframe.
       this.frameQueue.length = 0;
+      if (this.stats) this.stats.queueDrops++;
       this.waitingForKeyframe = true;
       this.requestKeyframeLimited(msg.streamId, msg.monitorId);
     }
@@ -397,6 +400,7 @@ export class ScreenViewer {
       if (bitmaps[i]) decodedTiles.push({ tileX: t.tileX, tileY: t.tileY, bitmap: bitmaps[i] });
     });
     tc.drawTiles(decodedTiles);
+    if (this.stats && msg.receivedAt !== undefined) this.stats.recordPaint(msg.receivedAt);
 
     if (this.options.onFrame) {
       this.options.onFrame(msg);
@@ -413,6 +417,7 @@ export class ScreenViewer {
   requestKeyframe(streamId, monitorId) {
     if (this.ws && this.ws.readyState === 1 /* OPEN */) {
       const reqBytes = encodeKeyframeReq(streamId, monitorId);
+      if (this.stats) this.stats.keyframeRequests++;
       this.ws.send(reqBytes);
     }
   }

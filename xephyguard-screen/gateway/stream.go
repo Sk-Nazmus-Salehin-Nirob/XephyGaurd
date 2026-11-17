@@ -77,6 +77,7 @@ type RelayServer struct {
 	// internalToken guards POST /internal/revoke; empty disables the endpoint.
 	internalToken string
 	revoked       *revocations
+	metrics       gatewayMetrics
 	// originPatterns are extra allowed browser Origin hosts (host[:port], path.Match patterns) besides
 	// the request's own host, e.g. the dashboard on another port in a native dev setup.
 	originPatterns []string
@@ -258,6 +259,7 @@ func (s *RelayServer) Routes() http.Handler {
 	mux.HandleFunc("/screen-gw/view", s.HandleView)
 	mux.HandleFunc("/health", s.HandleHealth)
 	mux.HandleFunc("/screen-gw/health", s.HandleHealth)
+	mux.HandleFunc("/metrics", s.HandleMetrics)        // loopback only and not under /screen-gw/, so nginx never serves it
 	mux.HandleFunc("/internal/revoke", s.HandleRevoke) // loopback only; nginx never proxies /internal/
 	return mux
 }

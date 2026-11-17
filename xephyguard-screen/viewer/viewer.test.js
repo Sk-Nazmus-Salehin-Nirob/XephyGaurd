@@ -16,6 +16,7 @@ import {
   MAX_QUEUED_FRAMES,
   HEADER_SIZE
 } from './viewer.js';
+import { ViewerStats } from './stats.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -274,4 +275,24 @@ test('Viewer queue: malformed and non-frame messages are ignored without an ACK'
   await r.viewer.handleBinaryFrame(encodeAck(7, 0, 1));
   assert.deepEqual(r.sent, []);
   assert.deepEqual(r.applied, []);
+});
+
+test('Viewer stats: receipt, paint, keyframe requests and queue overflow are counted when stats are given', async () => {
+  const r = rig();
+  let t = 0;
+  r.viewer.stats = new ViewerStats(() => (t += 5));
+  await r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1 }));
+  let snap = r.viewer.stats.snapshot();
+  assert.ok(snap.kbps > 0 && snap.fps > 0 && snap.lagMs > 0);
+  for (let i = 0; i < MAX_QUEUED_FRAMES + 2; i++) r.viewer.handleBinaryFrame(frameBytes({ flags: DELTA, seq: 2 + i, baseSeq: 1 + i }));
+  await r.viewer.drain();
+  snap = r.viewer.stats.snapshot();
+  assert.equal(snap.queueDrops, 1);
+  assert.ok(snap.keyframeRequests >= 1);
+});
+
+test('Viewer stats: without stats nothing changes', async () => {
+  const r = rig();
+  await r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1 }));
+  assert.deepEqual(r.applied, [1]);
 });

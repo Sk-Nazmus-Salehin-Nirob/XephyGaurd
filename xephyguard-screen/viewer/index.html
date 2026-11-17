@@ -89,11 +89,13 @@
 
     <div class="canvas-wrap">
       <canvas id="screenCanvas"></canvas>
+      <pre id="stats" hidden style="position:absolute;top:8px;left:8px;margin:0;padding:6px 8px;background:#000a;color:#8f8;font:12px monospace;pointer-events:none"></pre>
     </div>
   </div>
 
   <script type="module">
     import { ScreenViewer } from './viewer.js';
+    import { ViewerStats } from './stats.js';
 
     const canvas = document.getElementById('screenCanvas');
     const statusEl = document.getElementById('status');
@@ -101,6 +103,7 @@
     const btnDisconnect = document.getElementById('btnDisconnect');
 
     let viewer = null;
+    let statsTimer = null;
 
     btnConnect.addEventListener('click', () => {
       const params = new URLSearchParams(window.location.search);
@@ -118,8 +121,16 @@
     const wsUrl = `${baseGw}/view?${qs}`;
       statusEl.textContent = 'Connecting to ' + wsUrl + '...';
 
-      viewer = new ScreenViewer(wsUrl, canvas);
+      // ?debug=1 shows fps, kbit/s and paint lag (numbers only).
+      const stats = params.get('debug') === '1' ? new ViewerStats() : null;
+      viewer = new ScreenViewer(wsUrl, canvas, { stats });
       viewer.connect();
+      if (stats) {
+        const statsEl = document.getElementById('stats');
+        statsEl.hidden = false;
+        clearInterval(statsTimer);
+        statsTimer = setInterval(() => { statsEl.textContent = stats.format(viewer ? viewer.frameQueue.length : 0); }, 500);
+      }
 
       viewer.ws.addEventListener('open', () => {
         statusEl.textContent = 'Connected. Waiting for agent frames...';
@@ -139,6 +150,8 @@
     });
 
     btnDisconnect.addEventListener('click', () => {
+      clearInterval(statsTimer);
+      document.getElementById('stats').hidden = true;
       if (viewer) {
         viewer.disconnect();
         viewer = null;

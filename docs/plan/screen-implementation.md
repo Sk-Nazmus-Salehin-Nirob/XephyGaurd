@@ -69,7 +69,7 @@ Done as part of M0-4, docs only:
 
 ## M3: Phase 2 measurement (needed before any performance step)
 - [x] M3-1 Step 19: CI jobs for Go, viewer, `xgtests`
-- [ ] M3-2 Step 21: gateway `/metrics`, viewer debug stats overlay
+- [x] M3-2 Step 21: gateway `/metrics`, viewer debug stats overlay
 - [ ] M3-3 Step 20: `bench/stream_bench` (synthetic 1080p workloads, pinned core, CPU-only profile, idle phase)
 - [ ] M3-4 eval-10: `eval/harness/screen_bench.py` wrapper
 - [ ] M3-5 Step 22: baseline numbers into docs/EVALUATION.md

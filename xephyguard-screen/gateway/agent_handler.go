@@ -39,6 +39,7 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[Gateway Agent Connected] remote=%s path=%s pc_id=%d", r.RemoteAddr, r.URL.Path, pcID)
 
 	// The stream is fixed for the whole connection and resolved before the writer starts.
+	s.metrics.agentConnects.Add(1)
 	stream := s.getOrCreateStream(pcID)
 	stream.mu.Lock()
 	if stream.agentConn != c {
@@ -128,11 +129,17 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			if data[3] == kMsgTypeFrame {
+				s.metrics.framesIn.Add(1)
+				s.metrics.bytesIn.Add(uint64(len(data)))
+			}
+
 			// Fan out to viewers
 			for _, v := range stream.viewers {
 				select {
 				case v.ch <- data:
 				default:
+					s.metrics.viewerDrops.Add(1)
 					// Queue full: drop oldest frame
 					select {
 					case <-v.ch:
@@ -147,6 +154,7 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 					keyReq := buildKeyframeReq(frameStreamID, monitorID)
 					select {
 					case stream.agentOut <- keyReq:
+						s.metrics.keyframeReqs.Add(1)
 					default:
 					}
 				}
