@@ -12,7 +12,9 @@ import {
   MsgType,
   Flags,
   Codec,
-  ScreenViewer
+  ScreenViewer,
+  MAX_QUEUED_FRAMES,
+  HEADER_SIZE
 } from './viewer.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -148,4 +150,128 @@ test('Viewer: renewLease sends one renew message on an open socket only', () => 
   assert.equal(viewer.renewLease(''), false); // no token
   assert.equal(viewer.renewLease('tok'), true);
   assert.deepEqual(sent.map((m) => JSON.parse(m)), [{ type: 'renew', token: 'tok' }]);
+});
+
+// ---- ordered frame queue (screen Step 12) ----
+
+function frameBytes({ flags, seq, baseSeq = 0, tiles = [[0, 0]], w = 128, h = 128, stream = 7 }) {
+  const parts = [];
+  const head = new DataView(new ArrayBuffer(HEADER_SIZE));
+  head.setUint16(0, MAGIC, true);
+  head.setUint8(2, VERSION);
+  head.setUint8(3, MsgType.Frame);
+  head.setUint16(4, flags, true);
+  head.setUint32(8, stream, true);
+  head.setUint32(12, seq, true);
+  head.setUint32(16, baseSeq, true);
+  head.setUint16(20, w, true);
+  head.setUint16(22, h, true);
+  head.setUint16(24, tiles.length, true);
+  parts.push(new Uint8Array(head.buffer));
+  for (const [x, y] of tiles) {
+    const th = new DataView(new ArrayBuffer(10));
+    th.setUint16(0, x, true);
+    th.setUint16(2, y, true);
+    th.setUint8(4, Codec.Webp);
+    th.setUint32(6, 4, true);
+    parts.push(new Uint8Array(th.buffer), new Uint8Array([1, 2, 3, 4]));
+  }
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out.buffer;
+}
+
+// A viewer on a fake canvas and socket. `decodeDelay(callIndex)` lets a test make some decodes slow.
+function rig({ decodeDelay = () => 0 } = {}) {
+  const drawn = []; // seq/tile order the canvas received
+  const sent = [];
+  let calls = 0;
+  const closed = [];
+  globalThis.createImageBitmap = async () => {
+    const i = calls++;
+    await new Promise((r) => setTimeout(r, decodeDelay(i)));
+    return { id: i, close: () => closed.push(i) };
+  };
+  const ctx = { drawImage: (bmp, x, y) => drawn.push({ id: bmp.id, x, y }), save() {}, restore() {}, fillRect() {}, fillText() {}, clearRect() {} };
+  const canvas = { getContext: () => ctx, width: 0, height: 0 };
+  const viewer = new ScreenViewer(canvas, {});
+  viewer.ws = { readyState: 1, send: (m) => sent.push(parseMessage(m)), close() {} };
+  const applied = [];
+  viewer.options.onFrame = (m) => applied.push(m.seq);
+  return { viewer, drawn, sent, applied, closed, decodes: () => calls };
+}
+
+const KEY = Flags.KEY;
+const DELTA = Flags.DELTA;
+
+test('Viewer queue: frames are applied in arrival order even when an earlier one decodes slower', async () => {
+  const r = rig({ decodeDelay: (i) => (i === 0 ? 40 : 0) }); // the keyframe's tile is the slow one
+  r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1 }));
+  r.viewer.handleBinaryFrame(frameBytes({ flags: DELTA, seq: 2, baseSeq: 1 }));
+  r.viewer.handleBinaryFrame(frameBytes({ flags: DELTA, seq: 3, baseSeq: 2 }));
+  assert.equal(r.sent.filter((m) => m.type === MsgType.Ack).length, 3, 'all three ACKed on receipt, before any decode finished');
+  assert.deepEqual(r.applied, []);
+  await r.viewer.drain();
+  assert.deepEqual(r.applied, [1, 2, 3]);
+  assert.deepEqual(r.drawn.map((d) => d.id), [0, 1, 2]);
+  assert.deepEqual(r.sent.map((m) => m.seq), [1, 2, 3]);
+});
+
+test('Viewer queue: the tiles of one frame decode in parallel', async () => {
+  const r = rig({ decodeDelay: () => 20 });
+  const t0 = Date.now();
+  await r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1, tiles: [[0, 0], [1, 0], [0, 1], [1, 1], [2, 0], [2, 1]] }));
+  assert.equal(r.drawn.length, 6);
+  assert.ok(Date.now() - t0 < 100, 'six 20 ms decodes must not run one after another');
+});
+
+test('Viewer queue: a keyframe drops the frames queued before it', async () => {
+  const r = rig({ decodeDelay: () => 10 });
+  r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1 }));
+  r.viewer.handleBinaryFrame(frameBytes({ flags: DELTA, seq: 2, baseSeq: 1 }));
+  r.viewer.handleBinaryFrame(frameBytes({ flags: DELTA, seq: 3, baseSeq: 2 }));
+  r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 10 }));
+  await r.viewer.drain();
+  assert.deepEqual(r.applied, [1, 10]); // 1 was already decoding; 2 and 3 were stale
+  assert.equal(r.sent.filter((m) => m.type === MsgType.Ack).length, 4, 'dropped frames are still ACKed');
+});
+
+test('Viewer queue: a gap asks for a keyframe and drops deltas until it arrives', async () => {
+  const r = rig();
+  await r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1 }));
+  await r.viewer.handleBinaryFrame(frameBytes({ flags: DELTA, seq: 5, baseSeq: 4 })); // 2..4 lost
+  assert.equal(r.sent.filter((m) => m.type === MsgType.KeyframeReq).length, 1);
+  await r.viewer.handleBinaryFrame(frameBytes({ flags: DELTA, seq: 6, baseSeq: 5 }));
+  assert.deepEqual(r.applied, [1]);
+  await r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 9 }));
+  await r.viewer.handleBinaryFrame(frameBytes({ flags: DELTA, seq: 10, baseSeq: 9 }));
+  assert.deepEqual(r.applied, [1, 9, 10]);
+});
+
+test('Viewer queue: a backlog beyond the limit is dropped and a keyframe is requested', async () => {
+  const r = rig({ decodeDelay: (i) => (i === 0 ? 30 : 0) });
+  r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1 }));
+  for (let s = 2; s <= MAX_QUEUED_FRAMES + 3; ++s) r.viewer.handleBinaryFrame(frameBytes({ flags: DELTA, seq: s, baseSeq: s - 1 }));
+  await r.viewer.drain();
+  assert.ok(r.sent.some((m) => m.type === MsgType.KeyframeReq), 'asked for a fresh keyframe');
+  assert.ok(r.applied.length < MAX_QUEUED_FRAMES + 3, 'stale frames were skipped, not all drawn');
+});
+
+test('Viewer queue: nothing is drawn after disconnect and late bitmaps are released', async () => {
+  const r = rig({ decodeDelay: () => 30 });
+  const p = r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1 }));
+  r.viewer.disconnect();
+  await p;
+  assert.deepEqual(r.drawn, []);
+  assert.deepEqual(r.applied, []);
+  assert.deepEqual(r.closed, [0]);
+});
+
+test('Viewer queue: malformed and non-frame messages are ignored without an ACK', async () => {
+  const r = rig();
+  await r.viewer.handleBinaryFrame(new ArrayBuffer(5));
+  await r.viewer.handleBinaryFrame(encodeAck(7, 0, 1));
+  assert.deepEqual(r.sent, []);
+  assert.deepEqual(r.applied, []);
 });

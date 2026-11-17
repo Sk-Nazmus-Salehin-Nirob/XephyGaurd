@@ -6,6 +6,7 @@ export const HEADER_SIZE = 28;
 export const TILE_HEADER_SIZE = 10;
 export const MAX_TILES = 4096;
 export const MAX_PAYLOAD = 64 * 64 * 4;
+export const MAX_QUEUED_FRAMES = 8; // decoded-but-not-yet-drawn frames kept before the viewer drops its backlog
 
 export const MsgType = {
   Frame: 1,
@@ -212,6 +213,15 @@ export class ScreenViewer {
     this.ws = null;
     this.lastAppliedSeq = 0;
     this.waitingForKeyframe = true;
+    this.frameQueue = [];
+    this.drainPromise = null;
+    this.generation = 0; // bumped on connect/disconnect: late decodes of an old socket are discarded
+  }
+
+  resetQueue() {
+    this.generation++;
+    this.frameQueue.length = 0;
+    this.drainPromise = null;
   }
 
   connect(url) {
@@ -223,6 +233,7 @@ export class ScreenViewer {
       this.disconnect();
     }
     this.waitingForKeyframe = true;
+    this.resetQueue();
     this.ws = new WebSocket(targetUrl);
     this.ws.binaryType = 'arraybuffer';
 
@@ -240,7 +251,7 @@ export class ScreenViewer {
       if (this.options.onError) this.options.onError(err);
     };
 
-    this.ws.onmessage = async (event) => {
+    this.ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
         // Control JSON message
         try {
@@ -252,49 +263,105 @@ export class ScreenViewer {
         return;
       }
 
-      await this.handleBinaryFrame(event.data);
+      // Synchronous: parse, ACK and queue. Decoding and drawing happen in drain(), one frame at a time.
+      this.handleBinaryFrame(event.data);
     };
   }
 
-  async handleBinaryFrame(data) {
+  /**
+   * Takes one binary message from the socket: parses it, ACKs it on receipt (not on paint, so a slow
+   * decode never stalls the agent's send window) and queues it. Returns the promise of the running
+   * drain, which settles when the queue is empty.
+   * @param {ArrayBuffer} data
+   * @returns {Promise<void>}
+   */
+  handleBinaryFrame(data) {
     const msg = parseMessage(data);
-    if (!msg) {
-      return; // Reject malformed message without throwing
+    if (!msg || msg.type !== MsgType.Frame) {
+      return this.drainPromise || Promise.resolve(); // reject malformed message without throwing
     }
+    this.sendAck(msg.streamId, msg.monitorId, msg.seq);
 
-    if (msg.type !== MsgType.Frame) {
-      return;
+    // A keyframe or full frame repaints everything, so frames queued before it are stale.
+    if (msg.flags & (Flags.KEY | Flags.FULL)) {
+      this.frameQueue.length = 0;
+    } else if (this.frameQueue.length >= MAX_QUEUED_FRAMES) {
+      // Behind by more than a delta chain can recover from: drop it and ask for a fresh keyframe.
+      this.frameQueue.length = 0;
+      this.waitingForKeyframe = true;
+      this.requestKeyframeLimited(msg.streamId, msg.monitorId);
     }
+    this.frameQueue.push(msg);
+    return this.drain();
+  }
 
-    // Check banner flags
-    if (msg.flags & Flags.MASKED) {
-      this.tileCanvas.setBanner('PRIVACY MASKED');
-    } else if (msg.flags & Flags.SECURE) {
-      this.tileCanvas.setBanner('SECURE DESKTOP');
-    } else if (msg.flags & Flags.CACHED) {
-      this.tileCanvas.setBanner('LAST PICTURE (CACHED)');
-    } else {
-      this.tileCanvas.setBanner(null);
+  /** Applies queued frames in arrival order, one at a time; tiles of a frame decode in parallel. */
+  drain() {
+    if (!this.drainPromise) {
+      const gen = this.generation;
+      this.drainPromise = (async () => {
+        try {
+          while (this.frameQueue.length > 0 && gen === this.generation) {
+            try {
+              await this.applyFrame(this.frameQueue.shift(), gen);
+            } catch {
+              // a throwing onFrame callback must not stop the queue
+            }
+          }
+        } finally {
+          if (gen === this.generation) this.drainPromise = null;
+        }
+      })();
     }
+    return this.drainPromise;
+  }
 
-    // Delta / Keyframe sequence handling
+  requestKeyframeLimited(streamId, monitorId) {
+    if (Date.now() - (this.keyframeReqTime || 0) > 1500) {
+      this.requestKeyframe(streamId, monitorId);
+      this.keyframeReqTime = Date.now();
+    }
+  }
+
+  async decodeTile(tile, msg) {
+    try {
+      if (tile.codec === Codec.Webp) {
+        return await createImageBitmap(new Blob([tile.payload], { type: 'image/webp' }));
+      }
+      if (tile.codec === Codec.Jpeg) {
+        return await createImageBitmap(new Blob([tile.payload], { type: 'image/jpeg' }));
+      }
+      if (tile.codec === Codec.Raw) {
+        const tileW = Math.min(TILE_SIZE, msg.width - tile.tileX * TILE_SIZE);
+        const tileH = Math.min(TILE_SIZE, msg.height - tile.tileY * TILE_SIZE);
+        // Convert BGRA to RGBA for ImageData if needed
+        const rgba = new Uint8ClampedArray(tileW * tileH * 4);
+        for (let p = 0; p < tileW * tileH; ++p) {
+          rgba[p * 4 + 0] = tile.payload[p * 4 + 2]; // R
+          rgba[p * 4 + 1] = tile.payload[p * 4 + 1]; // G
+          rgba[p * 4 + 2] = tile.payload[p * 4 + 0]; // B
+          rgba[p * 4 + 3] = 255; // A (force opaque; BGRX byte 3 can be 0x00)
+        }
+        return await createImageBitmap(new ImageData(rgba, tileW, tileH));
+      }
+    } catch {
+      // Skip un-decodable tile without throwing
+    }
+    return null;
+  }
+
+  async applyFrame(msg, gen) {
     const isKey = (msg.flags & Flags.KEY) !== 0;
     const isFull = (msg.flags & Flags.FULL) !== 0;
     const isDelta = (msg.flags & Flags.DELTA) !== 0;
 
-    if (isKey) {
-      this.tileCanvas.setSize(msg.width, msg.height);
+    // Sequence checks first (synchronous), so lastAppliedSeq follows frames in order.
+    if (isKey || isFull) {
       this.lastAppliedSeq = msg.seq;
-      this.waitingForKeyframe = false;
-    } else if (isFull) {
-      this.tileCanvas.setSize(msg.width, msg.height);
-      this.lastAppliedSeq = msg.seq;
+      if (isKey) this.waitingForKeyframe = false;
     } else if (isDelta) {
       if (this.waitingForKeyframe) {
-        if (Date.now() - (this.keyframeReqTime || 0) > 1500) {
-          this.requestKeyframe(msg.streamId, msg.monitorId);
-          this.keyframeReqTime = Date.now();
-        }
+        this.requestKeyframeLimited(msg.streamId, msg.monitorId);
         return; // Drop deltas until requested keyframe arrives
       }
       if (msg.baseSeq !== this.lastAppliedSeq) {
@@ -307,64 +374,44 @@ export class ScreenViewer {
       this.lastAppliedSeq = msg.seq;
     }
 
-    // Decode tiles
-    const decodedTiles = [];
-    for (const tile of msg.tiles) {
-      try {
-        let bitmap = null;
-        if (tile.codec === Codec.Webp) {
-          const blob = new Blob([tile.payload], { type: 'image/webp' });
-          bitmap = await createImageBitmap(blob);
-        } else if (tile.codec === Codec.Jpeg) {
-          const blob = new Blob([tile.payload], { type: 'image/jpeg' });
-          bitmap = await createImageBitmap(blob);
-        } else if (tile.codec === Codec.Raw) {
-          const tileW = Math.min(TILE_SIZE, msg.width - tile.tileX * TILE_SIZE);
-          const tileH = Math.min(TILE_SIZE, msg.height - tile.tileY * TILE_SIZE);
-          // Convert BGRA to RGBA for ImageData if needed
-          const rgba = new Uint8ClampedArray(tileW * tileH * 4);
-          for (let p = 0; p < tileW * tileH; ++p) {
-            rgba[p * 4 + 0] = tile.payload[p * 4 + 2]; // R
-            rgba[p * 4 + 1] = tile.payload[p * 4 + 1]; // G
-            rgba[p * 4 + 2] = tile.payload[p * 4 + 0]; // B
-            rgba[p * 4 + 3] = 255; // A (force opaque; BGRX byte 3 can be 0x00)
-          }
-          const imgData = new ImageData(rgba, tileW, tileH);
-          bitmap = await createImageBitmap(imgData);
-        }
-
-        if (bitmap) {
-          decodedTiles.push({
-            tileX: tile.tileX,
-            tileY: tile.tileY,
-            bitmap
-          });
-        }
-      } catch {
-        // Skip un-decodable tile without throwing
-      }
+    const bitmaps = await Promise.all(msg.tiles.map((t) => this.decodeTile(t, msg)));
+    const tc = this.tileCanvas;
+    if (gen !== this.generation || !tc) {
+      for (const b of bitmaps) if (b && typeof b.close === 'function') b.close();
+      return; // disconnected or reconnected while decoding
     }
 
-    // Batch draw on canvas
-    this.tileCanvas.drawTiles(decodedTiles);
+    if (isKey || isFull) tc.setSize(msg.width, msg.height);
+    if (msg.flags & Flags.MASKED) {
+      tc.setBanner('PRIVACY MASKED');
+    } else if (msg.flags & Flags.SECURE) {
+      tc.setBanner('SECURE DESKTOP');
+    } else if (msg.flags & Flags.CACHED) {
+      tc.setBanner('LAST PICTURE (CACHED)');
+    } else {
+      tc.setBanner(null);
+    }
+
+    const decodedTiles = [];
+    msg.tiles.forEach((t, i) => {
+      if (bitmaps[i]) decodedTiles.push({ tileX: t.tileX, tileY: t.tileY, bitmap: bitmaps[i] });
+    });
+    tc.drawTiles(decodedTiles);
 
     if (this.options.onFrame) {
       this.options.onFrame(msg);
     }
-
-    // Send ACK back to gateway/agent
-    this.sendAck(msg.streamId, msg.monitorId, msg.seq);
   }
 
   sendAck(streamId, monitorId, seq) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === 1 /* OPEN */) {
       const ackBytes = encodeAck(streamId, monitorId, seq);
       this.ws.send(ackBytes);
     }
   }
 
   requestKeyframe(streamId, monitorId) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === 1 /* OPEN */) {
       const reqBytes = encodeKeyframeReq(streamId, monitorId);
       this.ws.send(reqBytes);
     }
@@ -386,6 +433,7 @@ export class ScreenViewer {
   }
 
   disconnect() {
+    this.resetQueue();
     if (this.ws) {
       this.ws.close();
       this.ws = null;
