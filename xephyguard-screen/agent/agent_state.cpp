@@ -1,5 +1,6 @@
 #include "agent_state.h"
 #include "thread_priority.h"
+#include <algorithm>
 #include <chrono>
 
 namespace xg {
@@ -66,6 +67,16 @@ void AgentStateMachine::set_wall_interval_ms(int ms) {
   wall_interval_ms_ = ms > 0 ? ms : 1;
 }
 
+void AgentStateMachine::set_cpu_budget_pct(double pct) {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  governor_.set_budget_pct(pct);
+}
+
+StreamStats AgentStateMachine::stream_stats() const {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  return {governor_.fps(), governor_.quality_scale(), governor_.cpu_pct(), governor_.budget_pct(), governor_.level()};
+}
+
 void AgentStateMachine::wall_pause() {
   int ms = 0;
   {
@@ -104,6 +115,9 @@ bool AgentStateMachine::on_view_start(uint32_t stream_id, const std::string& mod
   wall_sent_ = false;
   wall_wake_ = false;
   wall_last_.clear();
+  governor_ = CpuGovernor(governor_.budget_pct());
+  last_frame_ms_ = 0;
+  gov_frames_ = 0;
 
   if (!capture_ || !capture_->initialize() || !capture_->start()) {
     return false;
@@ -258,12 +272,21 @@ void AgentStateMachine::capture_loop() {
   // starve state(), on_incoming_message() and set_privacy_filter() for seconds while masked or paused.
   bool asked_full = false;  // request_full() sent and no frame has come back yet
   set_current_thread_idle_priority();  // capture + encode run only on CPU time nobody else wants (best effort)
+  double gov_cpu0 = current_thread_cpu_seconds();
+  uint64_t gov_t0 = get_now_ms();
   while (running_.load()) {
     uint64_t now_ms = get_now_ms();
     int pause_ms = 0;
 
     {
       std::lock_guard<std::recursive_mutex> lock(mutex_);
+      if (now_ms - gov_t0 >= 1000) {  // the governor measures this thread's own CPU time once per second
+        const double cpu = current_thread_cpu_seconds();
+        governor_.update(cpu - gov_cpu0, static_cast<double>(now_ms - gov_t0) / 1000.0, gov_frames_);
+        gov_frames_ = 0;
+        gov_cpu0 = cpu;
+        gov_t0 = now_ms;
+      }
       if (state_ == AgentState::PausedDisconnected) {
         pause_ms = 50;
       } else {
@@ -297,12 +320,17 @@ void AgentStateMachine::capture_loop() {
             if (tracker_) tracker_->force_all_pending();
             wall_sent_ = false;
           }
-          if (mode_ != "wall" && flow_ && !flow_->can_send(now_ms)) pause_ms = 10;
+          if (mode_ != "wall" && flow_ && !flow_->can_send(now_ms)) {
+            pause_ms = 10;
+          } else if (mode_ == "live" && last_frame_ms_ != 0) {
+            const uint64_t interval = static_cast<uint64_t>(governor_.min_interval_ms());
+            if (now_ms - last_frame_ms_ < interval) pause_ms = static_cast<int>(interval - (now_ms - last_frame_ms_));
+          }
         }
       }
     }
     if (pause_ms > 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(pause_ms));
+      pause_for(pause_ms);  // stop and keyframe requests end it early
       continue;
     }
 
@@ -425,12 +453,14 @@ void AgentStateMachine::capture_loop() {
           ++seq_;
           uint32_t base = keyframe ? 0 : last_sent_seq_;
 
-          encoder_->set_quality_scale(flow_->quality_scale());
+          encoder_->set_quality_scale(std::min(flow_->quality_scale(), mode_ == "live" ? governor_.quality_scale() : 1.0));
           auto msg = encoder_->build(frame, pending, stream_id_, seq_, base, keyframe);
           wire_data = encode(msg);
 
           tracker_->mark_sent();
           flow_->on_sent(seq_, now_ms);
+          last_frame_ms_ = now_ms;
+          ++gov_frames_;
           if (keyframe) {
             flow_->note_keyframe_sent();
           }

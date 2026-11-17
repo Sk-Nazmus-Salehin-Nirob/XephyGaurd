@@ -7,6 +7,7 @@
 #include <sched.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -26,6 +27,19 @@ bool set_current_thread_idle_priority() {
   return ::setpriority(PRIO_PROCESS, tid, 19) == 0;
 #else
   return ::setpriority(PRIO_PROCESS, 0, 19) == 0;
+#endif
+}
+
+double current_thread_cpu_seconds() {
+#if defined(_WIN32)
+  FILETIME created, exited, kernel, user;  // (compile-checked only)
+  if (!GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user)) return 0.0;
+  auto ticks = [](const FILETIME& f) { return (static_cast<unsigned long long>(f.dwHighDateTime) << 32) | f.dwLowDateTime; };
+  return static_cast<double>(ticks(kernel) + ticks(user)) * 1e-7;  // 100 ns units
+#else
+  timespec ts{};
+  if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) != 0) return 0.0;
+  return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
 #endif
 }
 

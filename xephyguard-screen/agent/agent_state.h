@@ -3,6 +3,7 @@
 #include "../core/downscale.h"
 #include "../core/encoder.h"
 #include "../core/flow.h"
+#include "../core/governor.h"
 #include "../core/protocol.h"
 #include "../core/tiles.h"
 #include "privacy.h"
@@ -27,6 +28,12 @@ enum class AgentState {
 };
 
 using FrameSender = std::function<void(const std::vector<uint8_t>& data)>;
+
+// What the CPU governor chose for the live stream, and the CPU it measured (numbers only, nothing from the screen).
+struct StreamStats {
+  double fps_cap = 0, quality_scale = 1, cpu_pct = 0, budget_pct = 0;
+  int level = 0;
+};
 using PrivacyChecker = std::function<bool()>;
 
 class AgentStateMachine {
@@ -63,6 +70,9 @@ public:
 
   // Wall mode: time between thumbnails (default 5 s). Tests use a short one.
   void set_wall_interval_ms(int ms);
+  // Live mode: the capture + encode thread's CPU budget in percent of one core (default 8, floor 2 fps).
+  void set_cpu_budget_pct(double pct);
+  StreamStats stream_stats() const;
 
 private:
   void capture_loop();
@@ -88,6 +98,9 @@ private:
 
   uint32_t seq_ = 0;
   uint32_t last_sent_seq_ = 0;
+  CpuGovernor governor_;
+  uint64_t last_frame_ms_ = 0;  // live: when the last frame went out (governor pacing)
+  int gov_frames_ = 0;          // live frames sent since the governor's last update
 
   // Wall mode: the last thumbnail sent, so an unchanged one is answered with a 28-byte header only.
   std::vector<uint8_t> wall_last_;

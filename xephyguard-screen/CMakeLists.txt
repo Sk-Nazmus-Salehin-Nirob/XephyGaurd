@@ -97,6 +97,7 @@ add_library(xgcore STATIC
   core/flow.cpp
   core/downscale.cpp
   core/thread_priority.cpp
+  core/governor.cpp
   capture/fake_capture.cpp
   agent/agent_state.cpp
   agent/privacy.cpp
@@ -151,6 +152,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     tests/test_agent_state.cpp
     tests/test_downscale.cpp
     tests/test_thread_priority.cpp
+    tests/test_governor.cpp
     tests/test_capabilities.cpp
     tests/test_privacy.cpp
     tests/test_x11_shm.cpp

@@ -259,6 +259,7 @@ void run_phase(const std::string& workload, int seconds, bool json, bool use_std
   const double secs = ms_since(t0) / 1000.0;
   const Usage u1 = usage();
   const double caps = double(cap->captures.load() - c0);
+  const xg::StreamStats gov = sm.stream_stats();
   sm.on_view_stop();
 #if defined(__linux__)
   if (painter > 0) { kill(painter, SIGKILL); waitpid(painter, nullptr, 0); }
@@ -272,13 +273,15 @@ void run_phase(const std::string& workload, int seconds, bool json, bool use_std
   const double p50 = pct(lat, 0.5), p95 = pct(lat, 0.95);
   if (json) {
     std::fprintf(res, "{\"workload\":\"%s\",\"seconds\":%.1f,\"fps\":%.2f,\"bytes_per_s\":%.0f,\"build_ms_p50\":%.2f,\"build_ms_p95\":%.2f,"
-                "\"keyframes\":%llu,\"cpu_s_per_s\":%.4f,\"cpu_ms_per_frame\":%.2f,\"captures_per_s\":%.1f,\"cpu_ms_per_capture\":%.2f,\"wakeups_per_s\":%.1f}\n",
+                "\"keyframes\":%llu,\"cpu_s_per_s\":%.4f,\"cpu_ms_per_frame\":%.2f,\"captures_per_s\":%.1f,\"cpu_ms_per_capture\":%.2f,\"wakeups_per_s\":%.1f,\"gov_fps\":%.1f,\"gov_quality\":%.2f,\"gov_level\":%d}\n",
                 workload.c_str(), secs, fps, bytes / secs, p50, p95, (unsigned long long)keys, cpu / secs,
-                frames ? cpu * 1000 / frames : 0.0, caps / secs, caps ? cpu * 1000 / caps : 0.0, wake);
+                frames ? cpu * 1000 / frames : 0.0, caps / secs, caps ? cpu * 1000 / caps : 0.0, wake, gov.fps_cap,
+                gov.quality_scale, gov.level);
   } else {
-    std::fprintf(res, "%-10s fps %6.2f  %9.0f B/s  build p50/p95 %6.2f/%6.2f ms  key %3llu  cpu %5.1f%% of a core  %7.2f ms/frame  %5.1f cap/s %6.2f ms/cap  wake-ups %6.1f/s\n",
+    std::fprintf(res, "%-10s fps %6.2f  %9.0f B/s  build p50/p95 %6.2f/%6.2f ms  key %3llu  cpu %5.1f%% of a core  %7.2f ms/frame  %5.1f cap/s %6.2f ms/cap  wake-ups %6.1f/s  gov fps %4.1f q %.2f lvl %d\n",
                 workload.c_str(), fps, bytes / secs, p50, p95, (unsigned long long)keys, 100 * cpu / secs,
-                frames ? cpu * 1000 / frames : 0.0, caps / secs, caps ? cpu * 1000 / caps : 0.0, wake);
+                frames ? cpu * 1000 / frames : 0.0, caps / secs, caps ? cpu * 1000 / caps : 0.0, wake, gov.fps_cap,
+                gov.quality_scale, gov.level);
   }
   std::fflush(res);
 }

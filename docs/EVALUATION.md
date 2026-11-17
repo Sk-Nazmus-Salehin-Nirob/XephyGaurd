@@ -81,6 +81,14 @@ Same setup as the baseline above (Release, `taskset -c 0`, Xvfb profile = real X
 | M4-3b safety re-read compares with the shadow, reports only changed rows (none: NoChange, no copy, no hash) | 0.9 (30 s run; 1.2 before) | 5.5 (6.5 before) | 5.3 | - | 10 s rows include the one first keyframe (140 ms = 1.4 % of 10 s); 30 s run without it: about 0.7 % -> 0.45 % |
 | M4-4 capture/encode thread at `SCHED_IDLE` | - | - | 4.4 | - | typing 5 s on core 0: 4.8 fps alone; with a busy loop on the same core 0.2 fps (the stream yields to student work; Windows background mode not run) |
 
+#### M4-6a CPU governor (budget 8 % of one core, floor 2 fps)
+Same setup, 10 s per workload, governor numbers from `xgstreambench` (`gov fps`, `q`, `lvl`).
+
+| codec | scrolling before -> after | video before -> after | notes |
+|---|---|---|---|
+| JPEG q85 | 10.6 % at 5 fps -> 6.7 % at 3.1 fps | 10.9 % at 5 fps -> 7.0 % at 3.2 fps | settles under budget; typing (1.8 %) is not throttled |
+| WebP q85 method 4 | 48.2 % at 3.6 fps -> 29.7 % at 2.2 fps, quality 0.5 | 45.6 % -> 25.5 % at 2.2 fps | the 2 fps floor wins: WebP cannot meet 8 % on moving content |
+
 #### M4-5 codec by measurement
 Synthetic 1080p capture, Release, `taskset -c 0`, 5 s per workload, `xgstreambench --codec ... [--quality N] [--webp-method N]`, 2026-11-18. All rows run at the 5 fps pacing cap (200 ms floor, M5-1), so CPU compares the codecs at the same frame rate. ms/MP = build p50 / 2.07 MP (scrolling and video change nearly every tile).
 
