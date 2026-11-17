@@ -10,6 +10,9 @@
 #   contains: page title contains this anywhere (use only brand names that are unique)
 # Titles are only checked for windows whose app is in `browsers` (so "claude_notes.py - VS Code" is ignored).
 version: 1
+# Severity of a web.ai_tab hit raised from a window title alone. Medium: the title only corroborates; the
+# proxy's domain decision (blocked/observed AI host) is the authoritative signal (plan alternative F76).
+ai_tab_severity: medium
 browsers: [chrome, google-chrome, google-chrome-stable, chromium, chromium-browser, msedge, microsoft-edge,
            brave, brave-browser, firefox, firefox-esr, librewolf, navigator, opera, vivaldi, vivaldi-bin, arc, zen]
 browser_title_suffixes: [" - google chrome", " - chromium", " - mozilla firefox", " — mozilla firefox",

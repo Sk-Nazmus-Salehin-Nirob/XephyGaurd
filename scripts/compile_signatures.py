@@ -67,6 +67,8 @@ def validate_web(web: dict) -> list[str]:
     for key in ("browsers", "browser_title_suffixes", "telemetry_domains"):
         if not all(isinstance(v, str) and v for v in web.get(key, [])):
             errors.append(f"web.{key}: must be non-empty strings")
+    if web.get("ai_tab_severity", "medium") not in ("info", "low", "medium", "high", "critical"):
+        errors.append("web.ai_tab_severity: bad severity")
     for proc, dom in (web.get("process_domains") or {}).items():
         if not isinstance(dom, str) or "." not in dom:
             errors.append(f"web.process_domains.{proc}: must be a host name")
