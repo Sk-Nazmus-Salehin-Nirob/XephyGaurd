@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Lab;
 use App\Models\Setting;
 use App\Services\CertificateAuthority;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 /** Unauthenticated pages: the student notice, the CA certificate and the agent install scripts. */
@@ -112,16 +113,16 @@ class PublicController extends Controller
     }
 
     /** Dynamic Proxy Auto-Config (PAC) script for proxy_only lab PCs. */
-    public function proxyPac(\Illuminate\Http\Request $request): Response
+    public function proxyPac(Request $request): Response
     {
-        $mode = (string) \App\Models\Setting::get('network_mode', config('xephyguard.network_mode', 'gateway'));
-        $host = (string) (\App\Models\Setting::get('ccc_ip') ?: $request->getHost());
+        $mode = (string) Setting::get('network_mode', config('xephyguard.network_mode', 'gateway'));
+        $host = (string) (Setting::get('ccc_ip') ?: $request->getHost());
         $port = (int) config('xephyguard.proxy_port', 8080);
 
         if ($mode !== 'proxy_only' || $host === '' || $host === 'localhost') {
             $js = "function FindProxyForURL(url, host) {\n  return \"DIRECT\";\n}\n";
         } else {
-            $safeHost = addcslashes($host, "\\\"");
+            $safeHost = addcslashes($host, '\\"');
             $js = <<<JS
 function FindProxyForURL(url, host) {
   if (isPlainHostName(host) ||
