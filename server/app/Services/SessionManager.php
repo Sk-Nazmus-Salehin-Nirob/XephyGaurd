@@ -64,6 +64,7 @@ class SessionManager
         }
         $session->forceFill(['status' => 'ended', 'ended_at' => now()])->save();
         Audit::log('session.stop', $session, ['by' => $by?->email ?? 'timetable']);
+        app(ScreenGatewayRevoker::class)->session($session->id);
         try {
             ScoreSession::dispatch($session->id);   // scoring + report generation start automatically
         } catch (\Throwable $e) {

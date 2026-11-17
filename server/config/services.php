@@ -43,6 +43,8 @@ return [
         'path' => env('SCREEN_GATEWAY_PATH', '/screen-gw'),
         'port' => (int) env('SCREEN_GATEWAY_PORT', 8082),
         'ttl' => (int) env('SCREEN_GATEWAY_TTL', 30),
+        // Loopback address of the gateway for POST /internal/revoke (never the public URL).
+        'internal_url' => env('SCREEN_GATEWAY_INTERNAL_URL', 'http://127.0.0.1:8082'),
     ],
 
 ];

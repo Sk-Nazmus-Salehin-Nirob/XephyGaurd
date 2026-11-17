@@ -4,13 +4,16 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Lab;
 use App\Models\Pc;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Audit;
 use App\Services\Doctor;
 use App\Services\NetworkPolicyWriter;
+use App\Services\ScreenGatewayRevoker;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\Rules\Password;
 
 /** System health, settings, users and the audit log. */
@@ -34,7 +37,7 @@ class AdminController extends Controller
         $keys = ['lab_name', 'network_mode', 'ccc_ip', 'lab_subnet', 'retention_days_raw', 'retention_days_reports',
             'notice_text', 'paste_alert_chars', 'timezone', 'google_search_url'];
         $values = collect($keys)->mapWithKeys(fn ($k) => [$k => Setting::get($k)])->all();
-        $lab = \App\Models\Lab::current();
+        $lab = Lab::current();
         $values['lab_name'] ??= $lab->name;
         $values['ccc_ip'] ??= $lab->ccc_ip ?: (filter_var(request()->getHost(), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? request()->getHost() : '127.0.0.1');
         $values['lab_subnet'] ??= $lab->subnet ?: '192.168.10.0/24';
@@ -76,7 +79,7 @@ class AdminController extends Controller
         $lines = fn ($s) => array_values(array_filter(array_map('trim', preg_split('/\R/', (string) $s))));
         Setting::put('inspect_hosts', $lines($d['inspect_hosts'] ?? '') ?: NetworkPolicyWriter::DEFAULT_INSPECT_HOSTS);
         Setting::put('google_hide_selectors', $lines($d['google_hide_selectors'] ?? ''));
-        \App\Models\Lab::current()->update(['name' => $d['lab_name'], 'ccc_ip' => $d['ccc_ip'], 'subnet' => $d['lab_subnet']]);
+        Lab::current()->update(['name' => $d['lab_name'], 'ccc_ip' => $d['ccc_ip'], 'subnet' => $d['lab_subnet']]);
         Audit::log('settings.save', null, collect($d)->except('notice_text')->all());
         $net->write();
 
@@ -106,6 +109,9 @@ class AdminController extends Controller
         }
         $user = $user?->exists ? tap($user)->update($data) : User::create($data);
         Audit::log('user.save', $user, ['email' => $user->email, 'role' => $user->role, 'active' => $user->active]);
+        if (! $user->active || ! $user->hasRole('instructor')) {
+            app(ScreenGatewayRevoker::class)->user($user->id);   // lost the right to watch screens
+        }
 
         return $request->expectsJson()
             ? response()->json(['ok' => true])
@@ -119,7 +125,7 @@ class AdminController extends Controller
                 ->when($request->string('action')->toString(), fn ($q, $a) => $q->where('action', 'like', "$a%"))
                 ->latest('id')->paginate(100)->withQueryString();
         } catch (\Throwable) {
-            $entries = new \Illuminate\Pagination\LengthAwarePaginator([], 0, 100);
+            $entries = new LengthAwarePaginator([], 0, 100);
         }
 
         return view('admin.audit', ['entries' => $entries]);

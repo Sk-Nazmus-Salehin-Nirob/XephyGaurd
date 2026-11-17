@@ -7,6 +7,7 @@ use App\Models\Pc;
 use App\Models\ScreenViewAudit;
 use App\Models\SessionPc;
 use App\Models\Student;
+use App\Services\ScreenGatewayRevoker;
 use Firebase\JWT\JWT;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -201,6 +202,7 @@ class ViewTokenController extends Controller
         if ($audit->ended_at === null) {
             $audit->update(['ended_at' => now()]);
         }
+        app(ScreenGatewayRevoker::class)->audit($audit->id);
 
         return response()->json([
             'status' => 'stopped',

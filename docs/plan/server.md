@@ -126,4 +126,4 @@ Overall proposal: **policy as a versioned, cached, signed document, built by one
 | F111 Scoring queue | Job calls analysis HTTP | Keep; separate analysis token; retry with backoff | Matches I-ANALYSIS-17 |
 
 ## Screen work lives in plan/screen.md
-Server-side screen steps are 1-3 and 13 above (token, access, per-PC credential). The screen plan adds: call the gateway revoke endpoint on stop, logout and session end (screen S-5), send the token `mode` so wall uses thumbnails (S-13, S-37), and fetch a fresh viewer token on reconnect (S-33, S-40). Add these as server steps when the gateway side lands.
+Server-side screen steps are 1-3 and 13 above (token, access, per-PC credential). The screen plan adds: call the gateway revoke endpoint on stop, logout and session end (screen S-5; done 2026-11-17, screen M2-5), send the token `mode` so wall uses thumbnails (S-13, S-37), and fetch a fresh viewer token on reconnect (S-33, S-40). Add these as server steps when the gateway side lands.

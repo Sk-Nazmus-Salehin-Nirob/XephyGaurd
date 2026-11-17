@@ -143,6 +143,8 @@ Server → gateway revoke (CCC-internal, loopback only, never proxied by nginx):
 with `Authorization: Bearer $XG_INTERNAL_TOKEN` and JSON `{"audit_id":N}`, `{"user_id":N}` and/or `{"lab_session_id":N}`
 (any non-zero field matches the lease's `audit_id`, `sub`, `lab_session_id`). Matching viewers are closed (4003 "lease
 revoked") and tokens issued at or before the revoke are refused on connect and renewal for 1 h. Answer `{"closed":N}`.
+The server calls it (best effort, 2 s timeout, `SCREEN_GATEWAY_INTERNAL_URL`, default `http://127.0.0.1:8082`) on view stop
+(`audit_id`), logout and on deactivating or demoting a user below instructor (`user_id`), and on session end (`lab_session_id`).
 
 Gateway → server (CCC-internal, loopback): `GET /api/internal/screen/agent/{sha256 fingerprint}` with
 `Authorization: Bearer $XG_INTERNAL_TOKEN` returns `{"pc_id": N}` for an enrolled, unrevoked agent on a
