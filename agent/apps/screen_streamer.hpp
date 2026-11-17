@@ -15,6 +15,8 @@ namespace xg {
 
 class ScreenCapture;
 struct StreamStats;
+/// What the helper reports for the heartbeat (screen Step 57): the governor's CPU % of one core and throttle level.
+struct ScreenCost { double cpu_pct = 0; int level = 0; };
 
 /// The window the student is working in, as the helper's window monitor last saw it. Used only to decide
 /// whether to mask the picture; never sent anywhere (ETHICS.md, screen Step 11).
@@ -60,6 +62,7 @@ public:
     void set_cpu_budget_pct(double pct);
     /// The governor's choice and measured CPU of the current or last view (numbers only).
     StreamStats stream_stats() const;
+    ScreenCost cost() const;
 
     /// Arms the streamer for `stream_id`. Capture starts only when the gateway asks for a picture.
     /// A no-op if already armed for the same stream.

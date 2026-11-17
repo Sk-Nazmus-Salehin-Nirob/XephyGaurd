@@ -144,6 +144,11 @@ StreamStats ScreenStreamer::stream_stats() const {
     return impl_->sm ? impl_->sm->stream_stats() : StreamStats{};
 }
 
+ScreenCost ScreenStreamer::cost() const {
+    const StreamStats s = stream_stats();
+    return ScreenCost{s.cpu_pct, s.level};
+}
+
 bool ScreenStreamer::start(uint32_t stream_id, FrameOut out, std::function<void(bool)> on_viewing_changed) {
     if (stream_id == 0 || !out) return false;
     std::lock_guard lk(impl_->mu);

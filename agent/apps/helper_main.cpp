@@ -376,8 +376,15 @@ int helper_main() {
         if (!screen_streamer.is_running()) screen_streamer.start(screen_stream_id, send_frame, on_viewing_changed);
     };
 
+    int64_t next_cost_ms = 0;
     while (true) {
         screen_streamer.tick();  // lease lapsed -> stop capturing
+        // Streaming cost for the heartbeat (screen Step 57): every 10 s while viewed, numbers only.
+        if (viewing_active.load() && plat->ipc->connected() && steady_ms() >= next_cost_ms) {
+            const ScreenCost c = screen_streamer.cost();
+            send({{"t", "screen_cost"}, {"cpu_pct", c.cpu_pct}, {"level", c.level}});
+            next_cost_ms = steady_ms() + 10000;
+        }
         if (!plat->ipc->connected()) {
             if (was_connected) plat->ui->set_indicator("XephyGuard service not reachable", "always_on");
             screen_streamer.on_link_lost();

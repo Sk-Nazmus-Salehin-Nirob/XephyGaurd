@@ -260,5 +260,6 @@ TEST_CASE("streamer passes the CPU budget to the running view's governor", "[scr
     CHECK(r.s.stream_stats().budget_pct == 15.0);
     r.s.set_cpu_budget_pct(500);  // clamped
     CHECK(r.s.stream_stats().budget_pct == 100.0);
+    CHECK(r.s.cost().level == r.s.stream_stats().level);  // heartbeat cost mirrors the governor
     r.s.stop();
 }

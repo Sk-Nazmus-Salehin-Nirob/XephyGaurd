@@ -140,6 +140,8 @@ void ScreenRelay::send_loop(IScreenLink& link, const std::atomic<bool>& stop) {
             link.close();
             return;
         }
+        ++sent_frames_;
+        sent_bytes_ += frame.size();
     }
 }
 

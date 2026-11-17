@@ -182,6 +182,11 @@ private:
     uint64_t last_cpu_ms_ = 0;
     int64_t last_cpu_sample_ = 0;
     double cpu_pct_ = 0;
+    // Screen streaming cost (screen Step 57): relay counters at the last heartbeat, the source helper's governor.
+    uint64_t last_screen_frames_ = 0, last_screen_bytes_ = 0;
+    int64_t last_screen_sample_ = 0;
+    double screen_cpu_pct_ = 0;
+    int64_t screen_level_ = 0, screen_cost_at_ = 0;
     std::map<std::string, int64_t> next_run_;
     bool reevaluate_ = false;
 };

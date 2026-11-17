@@ -76,6 +76,10 @@ re-applies them and reports `tamper/network_lock_removed`.
 ```
 Response: `{ack_seq, server_time_ms, policy_version, signatures_version, isolated}`.
 
+* `usage.screen` (only in a heartbeat after screen frames went up): `{"fps": 6.5, "kbps": 820, "cpu_pct": 5.9, "level": 3}`.
+  `fps`/`kbps` are frames and kbit/s the service relayed since the previous heartbeat; `cpu_pct` (capture thread, % of
+  one core) and `level` (governor throttle, 0 = none) come from the helper's `screen_cost` and are left out when
+  older than 30 s. Numbers only, nothing from the screen (screen Step 57).
 * Max 500 events / 1 MB per batch, 64 kB per event; malformed batches are rejected with 422.
 * `seq` is monotonic per installation and survives restarts and acknowledgements (SQLite queue).
   The CCC ignores `seq <= agents.last_seq` and has a unique `(agent_id, seq)` index, so a batch
@@ -212,6 +216,8 @@ service drops helper frames and sends no `screen_rx`; it keeps the newest gatewa
 and replays it once when a lease arrives (the viewer's request can beat the command). The helper starts capturing
 only inside a lease, stops by itself when `ttl_s` lapses or the service link drops, and a gateway request alone never
 starts it (screen Step 15).
+Helper → service every 10 s while viewed: `{"t":"screen_cost","cpu_pct":5.9,"level":3}`; accepted only from the
+source helper, numbers clamped (cpu_pct 0..1000, level 0..1000), anything else ignored.
 `screen_rx` data is one gateway message. The helper's `config` carries only
 `screen.enabled`, `screen.privacy_rules` (mask rules, see the policy section) and `screen.codec`/`quality`/`webp_method`/`cpu_budget_pct`: no gateway address, port or token reaches the student session (screen Step 61); the helper opens
 no network connection for the screen.

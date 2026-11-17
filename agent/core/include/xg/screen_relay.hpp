@@ -64,6 +64,9 @@ public:
     /// Shutdown: sets nothing itself (the caller set `stop` first) but wakes every wait and ends a blocked receive.
     void request_stop();
     uint64_t dropped() const { return dropped_.load(); }
+    /// Frames and bytes the gateway link accepted (screen Step 57: per-PC streaming cost in the heartbeat).
+    uint64_t sent_frames() const { return sent_frames_.load(); }
+    uint64_t sent_bytes() const { return sent_bytes_.load(); }
     /// 0 -> 1 s, then doubling up to 30 s.
     static int next_backoff_ms(int current_ms);
 
@@ -81,6 +84,7 @@ private:
     std::atomic<uint64_t> source_{0};
     std::atomic<bool> linked_{false};
     std::atomic<uint64_t> dropped_{0};
+    std::atomic<uint64_t> sent_frames_{0}, sent_bytes_{0};
     std::atomic<int64_t> lease_until_ms_{0};  // steady_ms(); 0 = no lease
     std::mutex hold_mu_;
     std::string held_status_, held_key_;      // newest gateway Status(viewers>0) / KeyframeReq seen without a lease

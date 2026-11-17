@@ -824,6 +824,12 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
         sink_->emit(ev::key_stats, k);
     } else if (t == "paste_chord") {
         ++paste_chords_;
+    } else if (t == "screen_cost") {
+        // Numbers only, and only from the helper that streams: the governor's CPU % of one core and throttle level.
+        if (screen_relay_->source() != peer.conn_id) return;
+        screen_cpu_pct_ = jr::num(j, "cpu_pct", 0.0, 0.0, 1000.0);
+        screen_level_ = jr::i64(j, "level", 0, 0, 1000);
+        screen_cost_at_ = steady_ms();
     } else if (t == "screen_caps") {
         screen_caps_ = {
             {"session_type", limit(jr::str(j, "session_type", "x11"), 16)},
@@ -1167,6 +1173,24 @@ json Agent::build_heartbeat() {
         last_cpu_sample_ = now;
         usage = {{"rss_kb", u.rss_bytes / 1024}, {"cpu_pct", std::round(cpu_pct_ * 100.0) / 100.0},
                  {"bytes_up", status_.bytes_up.load()}};
+    }
+    {
+        // Streaming cost since the last heartbeat; present only while frames went up (nothing from the screen).
+        const int64_t now = steady_ms();
+        const uint64_t frames = screen_relay_->sent_frames(), bytes = screen_relay_->sent_bytes();
+        if (last_screen_sample_ > 0 && now > last_screen_sample_ && frames > last_screen_frames_) {
+            const double secs = double(now - last_screen_sample_) / 1000.0;
+            json sc = {{"fps", std::round(double(frames - last_screen_frames_) / secs * 10.0) / 10.0},
+                       {"kbps", std::round(double(bytes - last_screen_bytes_) * 8.0 / 1000.0 / secs)}};
+            if (screen_cost_at_ > 0 && now - screen_cost_at_ <= 30000) {
+                sc["cpu_pct"] = std::round(screen_cpu_pct_ * 10.0) / 10.0;
+                sc["level"] = screen_level_;
+            }
+            usage["screen"] = sc;
+        }
+        last_screen_frames_ = frames;
+        last_screen_bytes_ = bytes;
+        last_screen_sample_ = now;
     }
     std::vector<std::string> users;
     if (plat_.system)

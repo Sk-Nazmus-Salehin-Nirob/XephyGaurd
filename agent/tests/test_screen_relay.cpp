@@ -122,6 +122,9 @@ TEST_CASE("screen relay forwards only the source helper's frames, unchanged", "[
     r.relay->push(8, "other user's helper");  // wrong peer
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     CHECK(r.relay->dropped() == before + 1);
+    // Streaming cost counters (heartbeat usage.screen) count only what the link accepted.
+    CHECK(Rig::eventually([&] { return r.relay->sent_frames() == r.sent_count(); }));
+    CHECK(r.relay->sent_bytes() == 3 * r.relay->sent_frames());
     std::lock_guard lk(r.link.load()->mu);
     for (const auto& m : r.link.load()->sent) CHECK(m == std::string("\x00\x01\xff", 3));
 }

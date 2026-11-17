@@ -94,7 +94,8 @@ Done as part of M0-4, docs only:
 - [x] M4-6b Step 52 [agent]: policy `screen.cpu_budget_pct` -> helper `set_cpu_budget_pct`, applied at once (PROTOCOL.md)
 - [x] M4-6c Step 52 [server]: Settings page field `screen_cpu_budget_pct` (1..100), sent as policy `screen.cpu_budget_pct` once set (PROTOCOL.md)
 - [x] M4-7 Step 56: DXGI copies only dirty + move-destination rects (clamped to the screen) GPU -> staging -> persistent shadow, pointer-only frames are NoChange, `request_full()` re-sends the shadow; the device was already created on the adapter that owns the output; GDI capped at 5 fps (NoChange until the slot, interruptible wait). Not compiled locally (no MinGW); CI syntax loop now covers `capture/win_*.cpp` (M4-7b)
-- [ ] M4-8 Step 57 [agent]: streaming cost in heartbeat; ETHICS.md check
+- [x] M4-8a Step 57 [agent]: heartbeat `usage.screen` {fps, kbps} from the relay's sent counters since the last heartbeat, {cpu_pct, level} from the source helper's `screen_cost` (every 10 s while viewed, numbers clamped, dropped after 30 s); PROTOCOL.md, ETHICS.md row (numbers only)
+- [ ] M4-8b Step 57 [server]: store and show `usage.screen` per PC
 - [ ] M4-9 Step 58: acceptance run (idle < 2 wake-ups/s, live <= 8 % of one core)
 
 ## M5: Phase 3 smoothness (stop and re-plan if two steps in a row do not improve the metric)
