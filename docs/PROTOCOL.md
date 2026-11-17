@@ -7,8 +7,9 @@ opened on student PCs. Source of truth for field names: `agent/core/include/xg/p
 ## Discovery (UDP 47474, optional)
 Agent broadcasts `{"probe":"XEPHYGUARD_DISCOVER","v":1}`; the CCC answers
 `{"service":"xephyguard-ccc","host":"192.168.10.2","api_port":8443,"ca_fingerprint":"<sha256>","lab":"Lab 3"}`.
-The reply is unauthenticated: the agent pins the CA fingerprint (from `--ca-fingerprint` or the reply)
-and verifies every later TLS connection against that CA.
+The reply is unauthenticated, so the agent uses it only for `host`/`api_port`. It never trusts the reply's
+`ca_fingerprint`: the CA is pinned from `--ca-fingerprint` (installers, Add-a-PC page) or, only when the admin
+passes `--trust-on-first-use`, from the first download. Every later TLS connection is verified against that CA.
 
 ## Enrollment ("approve, don't configure")
 | Step | Request | Auth |

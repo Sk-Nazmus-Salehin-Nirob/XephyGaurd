@@ -9,6 +9,7 @@
 
 #include "xg/agent_messages.hpp"
 #include "xg/config.hpp"
+#include "xg/discovery.hpp"
 #include "xg/event_queue.hpp"
 #include "xg/hit_dedup.hpp"
 #include "xg/interfaces.hpp"
@@ -179,5 +180,7 @@ struct EnrollOptions {
     bool trust_on_first_use = false;
 };
 int enroll(Config& cfg, const std::string& config_path, const EnrollOptions& opts, ISystemInfo& sys);
+/// Takes the CCC address from a discovery reply; never its CA fingerprint.
+void apply_discovery(Config& cfg, const net::DiscoveryResult& d);
 
 }  // namespace xg

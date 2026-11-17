@@ -13,10 +13,13 @@
 #include <thread>
 #endif
 
+#include "fakes.hpp"
+#include "xg/agent.hpp"
 #include "xg/crypto.hpp"
 #include "xg/discovery.hpp"
 #include "xg/http.hpp"
 #include "xg/pusher.hpp"
+#include "xg/util.hpp"
 #include "xg/websocket.hpp"
 
 using namespace xg;
@@ -228,6 +231,64 @@ TEST_CASE("plain GET probe has a total deadline and a size cap") {
         CHECK(r.status == 200);
         CHECK(r.body == "{}");
     }
+}
+
+namespace {
+std::string self_signed_ca_pem() {
+    EVP_PKEY* key = EVP_EC_gen("P-256");
+    X509* cert = X509_new();
+    X509_set_version(cert, 2);
+    ASN1_INTEGER_set(X509_get_serialNumber(cert), 1);
+    X509_gmtime_adj(X509_getm_notBefore(cert), 0);
+    X509_gmtime_adj(X509_getm_notAfter(cert), 3600);
+    X509_set_pubkey(cert, key);
+    X509_NAME_add_entry_by_txt(X509_get_subject_name(cert), "CN", MBSTRING_ASC,
+                               reinterpret_cast<const unsigned char*>("Rogue CA"), -1, -1, 0);
+    X509_set_issuer_name(cert, X509_get_subject_name(cert));
+    X509_sign(cert, key, EVP_sha256());
+    BIO* b = BIO_new(BIO_s_mem());
+    PEM_write_bio_X509(b, cert);
+    char* d = nullptr;
+    long n = BIO_get_mem_data(b, &d);
+    std::string pem(d, size_t(n));
+    BIO_free(b);
+    X509_free(cert);
+    EVP_PKEY_free(key);
+    return pem;
+}
+}  // namespace
+
+TEST_CASE("enrollment never trusts a CA fingerprint from discovery (I-AGENT-3)") {
+    // A discovery reply only sets the address.
+    Config cfg = Config::defaults();
+    net::DiscoveryResult d;
+    d.host = "10.9.9.9";
+    d.api_port = 9443;
+    d.ca_fingerprint = "deadbeef";
+    apply_discovery(cfg, d);
+    CHECK(cfg.ccc_host == "10.9.9.9");
+    CHECK(cfg.api_port == 9443);
+    CHECK(cfg.ca_fingerprint.empty());
+
+    // Without --ca-fingerprint or --trust-on-first-use, a downloaded CA is refused before anything is trusted.
+    const auto dir = std::filesystem::temp_directory_path() / ("xge-" + random_hex(4));
+    std::filesystem::create_directories(dir);
+    const std::string pem = self_signed_ca_pem();
+    OneShotServer srv([&](int c) {
+        const std::string r = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(pem.size()) + "\r\n\r\n" + pem;
+        ::send(c, r.data(), r.size(), MSG_NOSIGNAL);
+    });
+    cfg.ccc_host = "127.0.0.1";
+    cfg.http_port = srv.port;
+    cfg.ca_file = (dir / "ca.crt").string();
+    cfg.data_dir = dir.string();
+    test::FakeSystem sys;
+    EnrollOptions o;
+    o.key = "XG-TEST";
+    o.wait = false;
+    CHECK(enroll(cfg, (dir / "agent.toml").string(), o, sys) == 5);
+    CHECK_FALSE(std::filesystem::exists(cfg.ca_file));
+    std::filesystem::remove_all(dir);
 }
 
 TEST_CASE("WebSocketClient supports plain TCP binary duplex frames and extra headers") {

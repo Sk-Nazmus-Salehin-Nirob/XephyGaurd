@@ -35,6 +35,14 @@ static std::string load_or_create_machine_uid(const std::string& data_dir) {
     return fresh;
 }
 
+void apply_discovery(Config& cfg, const net::DiscoveryResult& d) {
+    // The UDP reply is unauthenticated: any LAN host can answer first. It may say where the CCC is,
+    // never which CA to trust (I-AGENT-3). The fingerprint comes from --ca-fingerprint (installer, Add-a-PC
+    // page) or an explicit --trust-on-first-use.
+    cfg.ccc_host = d.host;
+    cfg.api_port = d.api_port;
+}
+
 int enroll(Config& cfg, const std::string& config_path, const EnrollOptions& o, ISystemInfo& sys) {
     if (o.key.empty()) {
         std::cerr << "enroll: --key is required (shown on the CCC 'Add a PC' page)\n";
@@ -51,9 +59,7 @@ int enroll(Config& cfg, const std::string& config_path, const EnrollOptions& o, 
             return 3;
         }
         std::cout << "Found CCC '" << d->lab_name << "' at " << d->host << "\n";
-        cfg.ccc_host = d->host;
-        cfg.api_port = d->api_port;
-        if (fp.empty()) fp = d->ca_fingerprint;
+        apply_discovery(cfg, *d);
     }
     std::error_code ec;
     fs::create_directories(fs::path(cfg.ca_file).parent_path(), ec);
