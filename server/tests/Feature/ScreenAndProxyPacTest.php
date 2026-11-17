@@ -16,32 +16,15 @@ class ScreenAndProxyPacTest extends TestCase
 {
     use BuildsLab, RefreshDatabase;
 
-    public function test_policy_builder_screen_config_handles_direct_port_and_tls_reverse_proxy(): void
+    public function test_policy_carries_no_screen_gateway_address_or_token(): void
     {
         $this->bootLab();
         [$pc] = $this->enrolledPc();
 
-        config([
-            'services.screen_gateway.url' => '',
-            'services.screen_gateway.port' => 8082,
-            'services.screen_gateway.path' => '/screen-gw',
-        ]);
-        $direct = app(PolicyBuilder::class)->response($pc);
-        $this->assertSame(8082, $direct['screen']['port']);
-        $this->assertSame('/agent', $direct['screen']['path']);
-        $this->assertFalse($direct['screen']['tls']);
-        $this->assertArrayNotHasKey('agent_token', $direct['screen']);
-
-        config([
-            'services.screen_gateway.url' => 'https://lab.example.edu/screen-gw',
-            'services.screen_gateway.port' => 443,
-            'services.screen_gateway.path' => '/screen-gw',
-        ]);
-        $proxied = app(PolicyBuilder::class)->response($pc);
-        $this->assertSame(443, $proxied['screen']['port']);
-        $this->assertSame('/screen-gw/agent', $proxied['screen']['path']);
-        $this->assertTrue($proxied['screen']['tls']);
-        $this->assertArrayNotHasKey('agent_token', $proxied['screen']);
+        config(['services.screen_gateway.url' => 'https://lab.example.edu/screen-gw']);
+        $policy = app(PolicyBuilder::class)->response($pc);
+        $this->assertArrayNotHasKey('screen', $policy);
+        $this->assertStringNotContainsString('agent_token', json_encode($policy));
     }
 
     public function test_proxy_pac_reflects_network_mode_and_policy_carries_pac_url(): void

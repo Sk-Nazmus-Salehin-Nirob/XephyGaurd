@@ -105,33 +105,6 @@ class PolicyBuilder
                 'channel' => 'private-pc.'.$pc->id,
                 'auth_path' => '/api/agent/v1/broadcasting/auth',
             ],
-            'screen' => $this->screenGatewayConfig(),
-        ];
-    }
-
-    private function screenGatewayConfig(): array
-    {
-        $gwUrl = (string) config('services.screen_gateway.url', '');
-        $port = (int) config('services.screen_gateway.port', 8082);
-        $prefix = rtrim((string) config('services.screen_gateway.path', '/screen-gw'), '/');
-        $parsed = $gwUrl !== '' ? (parse_url($gwUrl) ?: []) : [];
-        $scheme = strtolower((string) ($parsed['scheme'] ?? ''));
-
-        if (! empty($parsed['port'])) {
-            $port = (int) $parsed['port'];
-        } elseif ($scheme === 'https' || $scheme === 'wss') {
-            $port = 443;
-        }
-
-        $tls = $port === 443 || $port === 8443 || in_array($scheme, ['https', 'wss'], true);
-        $agentPath = $tls
-            ? (($prefix !== '' ? $prefix : '/screen-gw').'/agent')
-            : '/agent';
-
-        return [
-            'port' => $port,
-            'path' => $agentPath,
-            'tls' => $tls,
         ];
     }
 }
