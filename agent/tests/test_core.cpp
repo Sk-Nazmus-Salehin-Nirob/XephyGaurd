@@ -434,3 +434,37 @@ TEST_CASE("default student notice states live screen viewing truthfully (I-AGENT
     CHECK(n.find("view this screen live") != std::string::npos);
     CHECK(n.find("screen content is recorded") == std::string::npos);
 }
+
+TEST_CASE("signature bundle web hints: AI sites only in browsers, extension domains, net hints") {
+    json sig = test::sample_signatures();
+    sig["extensions"].push_back({{"id", "ext.jb.misc"}, {"ide", "jetbrains"}, {"ext_ids", {"tabnine", "codeium"}},
+                                 {"id_domains", {{"tabnine", {"tabnine.com"}}}}});
+    sig["extensions"][0]["domains"] = {"githubcopilot.com"};
+    sig["web"] = json::parse(R"({
+      "browsers": ["chrome", "firefox"],
+      "browser_title_suffixes": [" - google chrome", " - mozilla firefox"],
+      "ai_sites": [{"site": "Claude AI", "equals": ["claude"], "suffix": [" - claude"], "contains": ["claude.ai"]},
+                   {"site": "ChatGPT", "contains": ["chatgpt"]},
+                   {"site": "Broken"}],
+      "telemetry_domains": ["telemetry"],
+      "process_domains": {"Claude.exe": "API.anthropic.com"}})");
+    std::string err;
+    auto set = SignatureSet::from_json(sig, &err);
+    REQUIRE(err.empty());
+    CHECK(set.web.ai_sites.size() == 2);  // a site without patterns is dropped
+    CHECK(set.web.process_domains.at("claude") == "api.anthropic.com");
+    RuleEngine re(std::move(set));
+    CHECK(re.match_ai_site("chrome.exe", "Claude - Google Chrome") == "Claude AI");
+    CHECK(re.match_ai_site("firefox", "Refactor plan - Claude - Mozilla Firefox") == "Claude AI");
+    CHECK(re.match_ai_site("chrome", "ChatGPT") == "ChatGPT");
+    // I-AGENT-18: not every title with the word is an AI site, and non-browsers are never checked.
+    CHECK_FALSE(re.match_ai_site("chrome", "Claude Debussy - Wikipedia - Google Chrome"));
+    CHECK_FALSE(re.match_ai_site("code", "claude_notes.py - Visual Studio Code"));
+    CHECK_FALSE(re.match_ai_site("code", "ChatGPT"));
+    ExtensionInfo copilot{"vscode", "github.copilot", "1", "alice", "", false, ""};
+    CHECK(re.extension_domains(copilot, "ext.copilot") == std::vector<std::string>{"githubcopilot.com"});
+    ExtensionInfo tab{"jetbrains", "tabnine-intellij", "1", "alice", "", false, ""};
+    CHECK(re.extension_domains(tab, "ext.jb.misc") == std::vector<std::string>{"tabnine.com"});
+    ExtensionInfo cod{"jetbrains", "codeium", "1", "alice", "", false, ""};
+    CHECK(re.extension_domains(cod, "ext.jb.misc").empty());
+}

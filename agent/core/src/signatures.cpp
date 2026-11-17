@@ -96,6 +96,9 @@ SignatureSet SignatureSet::from_json(const json& j, std::string* err) {
         }
         for (const auto& r : j.value("extensions", json::array())) {
             ExtensionRule e{str(r, "id"), to_lower(str(r, "ide")), str(r, "description"), sev(r), strs(r, "ext_ids")};
+            e.domains = strs(r, "domains");
+            if (const json& idd = jr::obj(r, "id_domains"); !idd.empty())
+                for (const auto& [ext, doms] : idd.items()) e.id_domains[to_lower(ext)] = strs(idd, ext.c_str());
             if (!e.id.empty()) s.extensions.push_back(std::move(e));
         }
         const json ports = j.value("ports", json::object());
@@ -147,6 +150,20 @@ SignatureSet SignatureSet::from_json(const json& j, std::string* err) {
                     if (!host.empty()) s.ide_domains.push_back(std::move(host));
                 }
             }
+        }
+        if (const json& w = jr::obj(j, "web"); !w.empty()) {
+            for (const auto& a : w.value("ai_sites", json::array())) {
+                AiSite site{str(a, "site"), strs(a, "equals"), strs(a, "prefix"), strs(a, "suffix"), strs(a, "contains")};
+                if (!site.site.empty() && !(site.equals.empty() && site.prefix.empty() && site.suffix.empty() &&
+                                            site.contains.empty()))
+                    s.web.ai_sites.push_back(std::move(site));
+            }
+            s.web.browsers = strs(w, "browsers", true, true);
+            s.web.browser_title_suffixes = strs(w, "browser_title_suffixes");
+            s.web.telemetry_domains = strs(w, "telemetry_domains");
+            for (const auto& [proc, dom] : jr::obj(w, "process_domains").items())
+                if (dom.is_string() && !dom.get<std::string>().empty())
+                    s.web.process_domains[normalize_exe(proc)] = to_lower(dom.get<std::string>());
         }
     } catch (const std::exception& e) {
         if (err) *err = e.what();

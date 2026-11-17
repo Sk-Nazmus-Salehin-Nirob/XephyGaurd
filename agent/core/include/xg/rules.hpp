@@ -53,6 +53,13 @@ public:
     /// uses it to report only matching extensions instead of its whole inventory.
     std::vector<std::string> extension_ids() const;
 
+    /// AI site whose title patterns match a focused *browser* window; nullopt for other apps or titles.
+    std::optional<std::string> match_ai_site(const std::string& app, const std::string& title) const;
+    bool is_browser(const std::string& exe) const;
+    /// Backend domains that show extension `e` (matched by `rule_id`) is in use.
+    std::vector<std::string> extension_domains(const ExtensionInfo& e, const std::string& rule_id) const;
+    WebHints web() const;
+
     PortProbe probe() const;
     ArtifactScanSpec artifact_scan() const;
     std::vector<ArtifactRule> artifact_rules() const;

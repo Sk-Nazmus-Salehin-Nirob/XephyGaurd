@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,6 +22,8 @@ struct ExtensionRule {
     std::string id, ide, description;
     Severity severity = Severity::high;
     std::vector<std::string> ext_ids;          // lowercase
+    std::vector<std::string> domains;          // backend host suffixes proving active use (lowercase)
+    std::map<std::string, std::vector<std::string>> id_domains;  // per ext id, overrides `domains`
 };
 
 struct PortRule {
@@ -66,11 +69,26 @@ struct DeviceRule {
     std::vector<std::string> vendors;
 };
 
-/// The signature bundle compiled by the CCC from data/signatures/*.yaml.
+/// Browser tab title patterns for one AI site (all lowercase; see data/signatures/web.yaml).
+struct AiSite {
+    std::string site;
+    std::vector<std::string> equals, prefix, suffix, contains;
+};
+
+/// data/signatures/web.yaml: browser AI site detection and network hints.
+struct WebHints {
+    std::vector<AiSite> ai_sites;
+    std::vector<std::string> browsers;                // normalized exe names
+    std::vector<std::string> browser_title_suffixes;  // lowercase, e.g. " - google chrome"
+    std::vector<std::string> telemetry_domains;       // substrings of hosts that never raise AI alerts
+    std::map<std::string, std::string> process_domains;  // normalized exe -> domain when a flow has no SNI
+};
+
 /// Orders bundle versions "YYYY.MM.DD[-HHMMSS][-digest]" (CCC / compile_signatures.py) by date and time.
 /// Returns <0, 0, >0 like strcmp, or nullopt when either version does not have that shape.
 std::optional<int> compare_bundle_versions(const std::string& a, const std::string& b);
 
+/// The signature bundle compiled by the CCC from data/signatures/*.yaml.
 struct SignatureSet {
     std::string version;
     std::vector<ProcessRule> processes;
@@ -83,6 +101,7 @@ struct SignatureSet {
     std::vector<DeviceRule> devices;
     std::vector<std::string> ai_domains;
     std::vector<std::string> ide_domains;
+    WebHints web;
 
     static SignatureSet from_json(const json& j, std::string* err = nullptr);
     size_t rule_count() const;
