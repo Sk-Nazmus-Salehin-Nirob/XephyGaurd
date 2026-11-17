@@ -35,7 +35,7 @@ Done as part of M0-4, docs only:
 - [x] M0-4 docs: apply the corrections above to plan/server.md and plan/agent.md
 
 ## M1: Phase 0 architecture (order matters: old path keeps working until Step 62)
-- [ ] M1-1 Step 43: retire xgagent (program + CMake target only), update docs/FEATURES.md F47
+- [x] M1-1 Step 43: retire xgagent (program + CMake target only), update docs/FEATURES.md F47
 - [ ] M1-2 ccc-1: screen-gateway on `127.0.0.1:8082` in production compose; nginx `/screen-gw/` is the only public path
 - [ ] M1-3 ccc nginx: `/screen-gw/agent` verifies the client cert, strips client `X-Agent-Cert-Fingerprint`, sets its own (pairs with M1-4)
 - [ ] M1-4 Step 1: gateway trusts that header only from `-trusted-proxy` loopback

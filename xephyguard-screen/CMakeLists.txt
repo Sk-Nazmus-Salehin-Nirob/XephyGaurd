@@ -157,17 +157,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   add_test(NAME xgtests COMMAND xgtests)
 
-  add_executable(xgagent agent/agent_main.cpp)
-  target_include_directories(xgagent PRIVATE core capture agent third_party)
-  if(WIN32)
-    target_link_libraries(xgagent PRIVATE xgcore winhttp)
-    if(MINGW)
-      target_link_options(xgagent PRIVATE -static -static-libgcc -static-libstdc++)
-    endif()
-  else()
-    target_link_libraries(xgagent PRIVATE xgcore)
-  endif()
-
   add_executable(xgbench bench/load_agents.cpp)
   target_include_directories(xgbench PRIVATE core capture agent third_party)
   target_link_libraries(xgbench PRIVATE xgcore)

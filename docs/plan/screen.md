@@ -18,7 +18,7 @@ One component per step (tag **[screen]** = xephyguard-screen/, **[agent]** = age
 
 ## Phase 0: Architecture first (runs before Phase 1)
 Decided so no bug fix lands in code that is about to be deleted. Agent and ccc-deploy parts are [CROSS] and update docs/PROTOCOL.md and docs/THREAT_MODEL.md in their step.
-- [ ] Step 43: Retire F47 standalone `xgagent` (DECISIONS #25): remove its program and CMake target only, keep `capture/` and `core/` as the shared library; update docs/FEATURES.md (fixes none; touches F47, F95)
+- [x] Step 43: Retire F47 standalone `xgagent` (DECISIONS #25): remove its program and CMake target only, keep `capture/` and `core/` as the shared library; update docs/FEATURES.md (fixes none; touches F47, F95)
 - [ ] Step 59: [agent] Helper-to-service screen channel on the existing helper IPC: message type "screen frame", length check, 4 MB cap, peer must be the session helper, bytes forwarded opaque, never decoded; tests for oversize, wrong type, wrong peer (fixes none; touches F95) [update docs/PROTOCOL.md]
 - [ ] Step 60: [agent] Service opens the gateway WebSocket through nginx :8443 with its mTLS cert using the realtime WSS client; relays helper messages up and `Ack`/`KeyframeReq`/`Status` down; reconnect with backoff (fixes I-SCREEN-1 part 2; touches F95) [CROSS: ccc-deploy nginx `/screen-gw/agent` location with client-cert verify and header set/strip, together with Step 1]
 - [ ] Step 61: [agent] Helper stops connecting to the gateway: remove its WinHTTP/WS client and `X-Agent-Token`; it only captures, encodes and writes to the service channel (fixes I-SCREEN-18, I-SCREEN-30 by removal; touches F95) (Windows part compile-checked only)
