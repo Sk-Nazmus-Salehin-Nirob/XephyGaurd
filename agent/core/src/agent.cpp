@@ -382,17 +382,21 @@ void Agent::scan_network() {
 }
 
 // --------------------------------------------------------------------------------------- devices
+void Agent::emit_device(const DeviceInfo& d, const std::optional<RuleHit>& hit, bool raise_hit) {
+    sink_->emit(ev::device, {{"action", d.action}, {"subsystem", d.subsystem}, {"class", d.devclass},
+                             {"vendor", d.vendor_id}, {"product", d.product_id}, {"model", limit(d.model, 128)},
+                             {"serial_hash", d.serial_hash}, {"rule_id", hit ? hit->rule_id : ""}});
+    if (hit && raise_hit)
+        handle_rule_hit(*hit, d.vendor_id + ":" + d.product_id + ":" + d.serial_hash,
+                        json{{"class", d.devclass}, {"vendor", d.vendor_id}, {"model", d.model}});
+}
+
 void Agent::scan_devices() {
     if (!plat_.devices || !policy_.collect.devices) return;
     for (const auto& d : plat_.devices->scan()) {
         auto hit = rules_.match_device(d);
         if (!hit && d.devclass != "usb_storage") continue;
-        sink_->emit(ev::device, {{"action", d.action}, {"subsystem", d.subsystem}, {"class", d.devclass},
-                                 {"vendor", d.vendor_id}, {"product", d.product_id}, {"model", limit(d.model, 128)},
-                                 {"serial_hash", d.serial_hash}, {"rule_id", hit ? hit->rule_id : ""}});
-        if (hit)
-            handle_rule_hit(*hit, d.vendor_id + ":" + d.product_id + ":" + d.serial_hash,
-                            json{{"class", d.devclass}, {"vendor", d.vendor_id}, {"model", d.model}});
+        emit_device(d, hit, true);
     }
 }
 
@@ -406,6 +410,15 @@ bool is_extension_host_proc(const std::string& p) {
 
 bool is_browser_proc(const std::string& p) {
     return p == "chrome" || p == "msedge" || p == "brave" || p == "firefox" || p == "opera" || p == "vivaldi" || p == "arc";
+}
+
+double round_kb(uint64_t bytes) { return std::round((double(bytes) / 1024.0) * 10.0) / 10.0; }
+
+/// Rule-hit context for one outbound AI flow (domain lowercased by the caller).
+json flow_context(const OutboundAiFlow& f, const std::string& dom) {
+    return json{{"process", f.process}, {"exe", f.process},          {"pid", f.pid},
+                {"domain", dom},        {"remote_ip", f.remote_ip},   {"sent_kb", round_kb(f.bytes_sent)},
+                {"recv_kb", round_kb(f.bytes_recv)}};
 }
 
 std::tuple<std::string, std::string, std::string> classify_ai_flow(const RuleEngine& rules,
@@ -437,8 +450,6 @@ void Agent::scan_ai_traffic() {
     for (const auto& f : flows) {
         const auto dom = to_lower(f.domain);
         auto [rule_id, category, desc] = classify_ai_flow(rules_, dom, f.process);
-        const double sent_kb = std::round((double(f.bytes_sent) / 1024.0) * 10.0) / 10.0;
-        const double recv_kb = std::round((double(f.bytes_recv) / 1024.0) * 10.0) / 10.0;
         // Browsers and standalone AI apps / CLIs emit immediately; IDE extension-host AI streams defer to
         // scan_extensions() when extension scanning is enabled (which still falls back if no extension matches).
         if (category == "browser_ai" || is_browser_proc(f.process) || !is_extension_host_proc(f.process) ||
@@ -446,15 +457,7 @@ void Agent::scan_ai_traffic() {
             RuleHit hit{rule_id, category, desc, Severity::high};
             // A standalone program talking to an AI service (not a browser / IDE host) can be closed in Test mode.
             const bool closable = !is_browser_proc(f.process) && !is_extension_host_proc(f.process);
-            handle_rule_hit(hit, f.process + ":" + dom,
-                            json{{"process", f.process},
-                                 {"exe", f.process},
-                                 {"pid", f.pid},
-                                 {"domain", dom},
-                                 {"remote_ip", f.remote_ip},
-                                 {"sent_kb", sent_kb},
-                                 {"recv_kb", recv_kb}},
-                            closable ? f.pid : 0);
+            handle_rule_hit(hit, f.process + ":" + dom, flow_context(f, dom), closable ? f.pid : 0);
         }
     }
 }
@@ -680,8 +683,8 @@ void Agent::scan_extensions() {
             ctx["domain"] = item.flow->domain;
             ctx["process"] = item.flow->process;
             ctx["remote_ip"] = item.flow->remote_ip;
-            ctx["sent_kb"] = std::round((double(item.flow->bytes_sent) / 1024.0) * 10.0) / 10.0;
-            ctx["recv_kb"] = std::round((double(item.flow->bytes_recv) / 1024.0) * 10.0) / 10.0;
+            ctx["sent_kb"] = round_kb(item.flow->bytes_sent);
+            ctx["recv_kb"] = round_kb(item.flow->bytes_recv);
         }
         handle_rule_hit(live_hit, item.ext.ide + ":" + item.ext.id + ":" + item.ext.user, std::move(ctx));
     }
@@ -705,29 +708,14 @@ void Agent::scan_extensions() {
         const auto dom = to_lower(f.domain);
         auto [rule_id, category, desc] = classify_ai_flow(rules_, dom, f.process);
         if (category != "ai_extension") continue;
-        const double sent_kb = std::round((double(f.bytes_sent) / 1024.0) * 10.0) / 10.0;
-        const double recv_kb = std::round((double(f.bytes_recv) / 1024.0) * 10.0) / 10.0;
         RuleHit hit{rule_id, category, desc + " (" + f.process + ")", Severity::high};
-        handle_rule_hit(hit, f.process + ":" + dom,
-                        json{{"process", f.process},
-                             {"exe", f.process},
-                             {"pid", f.pid},
-                             {"domain", dom},
-                             {"remote_ip", f.remote_ip},
-                             {"sent_kb", sent_kb},
-                             {"recv_kb", recv_kb}});
+        handle_rule_hit(hit, f.process + ":" + dom, flow_context(f, dom));
     }
 }
 
 void Agent::on_device_event(const DeviceInfo& d) {
     if (!policy_.collect.devices) return;
-    auto hit = rules_.match_device(d);
-    sink_->emit(ev::device, {{"action", d.action}, {"subsystem", d.subsystem}, {"class", d.devclass},
-                             {"vendor", d.vendor_id}, {"product", d.product_id}, {"model", limit(d.model, 128)},
-                             {"serial_hash", d.serial_hash}, {"rule_id", hit ? hit->rule_id : ""}});
-    if (hit && d.action == "add")
-        handle_rule_hit(*hit, d.vendor_id + ":" + d.product_id + ":" + d.serial_hash,
-                        json{{"class", d.devclass}, {"vendor", d.vendor_id}, {"model", d.model}});
+    emit_device(d, rules_.match_device(d), d.action == "add");
 }
 
 void Agent::on_helper_conn(const IIpcServer::Peer& peer, bool connected) {

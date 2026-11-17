@@ -77,6 +77,7 @@ private:
     void on_enroll_approved(const msg::EnrollApproved& e);
     void on_helper_conn(const IIpcServer::Peer& peer, bool connected);
     void on_device_event(const DeviceInfo& d);
+    void emit_device(const DeviceInfo& d, const std::optional<RuleHit>& hit, bool raise_hit);
     void on_file_activity(const FileActivity& a);
     void on_key(int64_t t_ms, bool backspace, bool paste_chord);
     void on_artifacts_scanned(const ArtifactScanResult& res);
