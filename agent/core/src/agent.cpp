@@ -802,7 +802,8 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
         if (!ai_site.empty()) {
             RuleHit hit{"web.ai_tab", "browser_ai", "Active AI browser tab: " + ai_site, Severity::high};
             handle_rule_hit(hit, app + ":" + ai_site,
-                            json{{"app", app}, {"title", limit(raw_title, 256)}, {"ai_site", ai_site}, {"user", user}});
+                            // Title follows title_capture like window_focus (ETHICS: no raw titles by default).
+                            json{{"app", app}, {"title", filtered_title}, {"ai_site", ai_site}, {"user", user}});
         }
     } else if (t == "paste") {
         if (!pol.collect.clipboard) return;

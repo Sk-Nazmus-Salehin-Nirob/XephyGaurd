@@ -395,3 +395,21 @@ TEST_CASE("agent heartbeat reports honest capabilities.gpu from IGpuMonitor::ava
     CHECK(a.build_heartbeat()["capabilities"]["gpu"] == true);
     std::filesystem::remove_all(dir2);
 }
+
+TEST_CASE("web.ai_tab hits carry the filtered title, never the raw one (I-AGENT-8)") {
+    Harness h;
+    IIpcServer::Peer peer{7, 1000, 555, "alice"};
+    for (auto tc : {TitleCapture::off, TitleCapture::app_only}) {
+        auto p = Policy::default_for(Mode::practice);
+        p.collect.window = true;
+        p.title_capture = tc;
+        h.agent->apply_policy(p);
+        h.sink.events.clear();
+        h.agent->on_helper_message(peer, R"({"t":"window","app":"chrome","title":"ChatGPT - secret project plan"})");
+        auto hits = h.of(ev::rule_hit);
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].data["context"]["ai_site"] == "ChatGPT");
+        CHECK(hits[0].data.dump().find("secret project plan") == std::string::npos);
+        h.agent->apply_signatures({{"version", "test-2"}, {"bundle", test::sample_signatures().dump()}}, false);  // reset dedup
+    }
+}
