@@ -48,6 +48,7 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 	stream.agentID = agentID
 	if len(stream.viewers) > 0 {
 		s.broadcastStatusLocked(stream, true)
+		stream.sendViewerStatusLocked()
 		select {
 		case stream.agentOut <- buildKeyframeReq(stream.streamID, 0):
 		default:

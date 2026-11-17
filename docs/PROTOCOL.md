@@ -155,6 +155,12 @@ The gateway keeps the agent's last keyframe for at most 5 s and replays a copy t
 `CACHED` (64, `core/protocol.h`; never sent by agents). Any frame flagged `MASKED` (8) or `SECURE` (16) clears the
 cache, and such keyframes are never cached. The renewal must also keep `sub` and `audit_id`.
 
+Gateway → agent `Status` (type 5, 28-byte header, sent whenever the viewer set changes and before the `KeyframeReq`
+that a new viewer triggers): `flags` and `width` = number of viewers (0 = nobody watches, stop capturing), and the
+reserved header field at bytes 26-27 (u16 LE) = the view mode the agent must serve: `0` none/not stated, `1` live,
+`2` snapshot, `3` wall. With several viewers the most demanding mode wins (live > snapshot > wall). A viewer count above
+0 with mode `0` means live. Agents that do not read the field behave as before.
+
 Server → gateway revoke (CCC-internal, loopback only, never proxied by nginx): `POST http://127.0.0.1:8082/internal/revoke`
 with `Authorization: Bearer $XG_INTERNAL_TOKEN` and JSON `{"audit_id":N}`, `{"user_id":N}` and/or `{"lab_session_id":N}`
 (any non-zero field matches the lease's `audit_id`, `sub`, `lab_session_id`). Matching viewers are closed (4003 "lease

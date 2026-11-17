@@ -40,7 +40,7 @@ Privacy and capture:
 - [x] Step 10: [screen] X11 shared memory created 0600 and removed (`IPC_RMID`) right after attach (fixes I-SCREEN-4; touches F43, F47, F95)
 - [x] Step 11: [agent] Wire `PrivacyFilter` into the embedded streamer (window provider from helper, rules from policy, fail-safe mask) (fixes I-SCREEN-5; touches F95, F43) [APPROVAL: ETHICS.md wording for what is masked]
 - [x] Step 12: [screen] Viewer ordered frame queue: one frame at a time in sequence, tiles decoded in parallel, stale frames dropped, ACK on receive (fixes I-SCREEN-9; touches F43)
-- [ ] Step 13: [screen] Gateway sends the token's `mode` to the agent in the `Status` message (reserved field) (fixes I-SCREEN-7 part 1; touches F43, F45) [update docs/PROTOCOL.md]
+- [x] Step 13: [screen] Gateway sends the token's `mode` to the agent in the `Status` message (reserved field) (fixes I-SCREEN-7 part 1; touches F43, F45) [update docs/PROTOCOL.md]
 - [ ] Step 14: [agent] Streamer honours `wall`, `snapshot`, `live` (no hard-coded `live`) (fixes I-SCREEN-7 part 2; touches F95, F43)
 - [ ] Step 15: [agent] Helper starts only on a service start command (Step 59 channel) with a lease expiry, and stops itself when it lapses; the service starts it only for a CCC lease, and a gateway `KeyframeReq` alone never starts capture (fixes I-SCREEN-20; touches F95) [CROSS: agent IPC message, update PROTOCOL.md]
 - [x] ~~Step 16: [agent] One mutex around the Windows WinHTTP socket~~ **Dropped** (DECISIONS #24): Step 61 removes that socket from the helper

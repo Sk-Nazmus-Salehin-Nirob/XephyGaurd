@@ -57,7 +57,8 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Always trigger an immediate keyframe request to the live agent
+		// Tell the agent the viewer count and mode first (it picks wall/snapshot/live from it), then ask for a keyframe.
+		stream.sendViewerStatusLocked()
 		select {
 		case stream.agentOut <- buildKeyframeReq(stream.streamID, 0):
 		default:
@@ -70,12 +71,7 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		stream.mu.Lock()
 		delete(stream.viewers, viewerID)
-		if len(stream.viewers) == 0 && stream.agentConn != nil {
-			select {
-			case stream.agentOut <- buildViewerStatus(stream.streamID, 0):
-			default:
-			}
-		}
+		stream.sendViewerStatusLocked()
 		stream.mu.Unlock()
 		return
 	}
@@ -202,12 +198,7 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 
 	stream.mu.Lock()
 	delete(stream.viewers, viewerID)
-	if len(stream.viewers) == 0 && stream.agentConn != nil {
-		select {
-		case stream.agentOut <- buildViewerStatus(stream.streamID, 0):
-		default:
-		}
-	}
+	stream.sendViewerStatusLocked()
 	v.closed.Store(true)
 	stream.mu.Unlock()
 }

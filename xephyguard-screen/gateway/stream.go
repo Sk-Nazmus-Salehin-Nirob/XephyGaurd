@@ -135,8 +135,58 @@ func buildKeyframeReq(streamID uint32, monitorID uint16) []byte {
 	return buf
 }
 
-// Build a binary Status message reporting active viewer count to the agent.
-func buildViewerStatus(streamID uint32, viewers uint16) []byte {
+// View mode codes carried in the Status message's reserved header field (docs/PROTOCOL.md). 0 = no viewer / not
+// stated; an agent treats 0 with viewers > 0 as live.
+const (
+	kModeNone     = uint16(0)
+	kModeLive     = uint16(1)
+	kModeSnapshot = uint16(2)
+	kModeWall     = uint16(3)
+)
+
+func modeCode(mode string) uint16 {
+	switch mode {
+	case "live":
+		return kModeLive
+	case "snapshot":
+		return kModeSnapshot
+	case "wall":
+		return kModeWall
+	}
+	return kModeNone
+}
+
+// viewerModeLocked is the mode the agent must serve for the current viewers: the most demanding one wins
+// (live > snapshot > wall). Caller holds s.mu.
+func (s *Stream) viewerModeLocked() uint16 {
+	best := kModeNone
+	for _, v := range s.viewers {
+		switch c := modeCode(v.mode); {
+		case c == kModeLive:
+			return kModeLive
+		case c == kModeSnapshot:
+			best = kModeSnapshot
+		case c == kModeWall && best == kModeNone:
+			best = kModeWall
+		}
+	}
+	return best
+}
+
+// sendViewerStatusLocked tells the agent how many viewers there are and in which mode, so it can start,
+// switch or stop capture. Caller holds s.mu. A full agent queue drops it (the next change sends another).
+func (s *Stream) sendViewerStatusLocked() {
+	if s.agentConn == nil {
+		return
+	}
+	select {
+	case s.agentOut <- buildViewerStatus(s.streamID, uint16(len(s.viewers)), s.viewerModeLocked()):
+	default:
+	}
+}
+
+// Build a binary Status message reporting active viewer count and view mode to the agent.
+func buildViewerStatus(streamID uint32, viewers uint16, mode uint16) []byte {
 	buf := make([]byte, kHeaderSize)
 	binary.LittleEndian.PutUint16(buf[0:2], kMagic)
 	buf[2] = kVersion
@@ -145,6 +195,7 @@ func buildViewerStatus(streamID uint32, viewers uint16) []byte {
 	binary.LittleEndian.PutUint16(buf[6:8], 0)
 	binary.LittleEndian.PutUint32(buf[8:12], streamID)
 	binary.LittleEndian.PutUint16(buf[20:22], viewers)
+	binary.LittleEndian.PutUint16(buf[26:28], mode)
 	return buf
 }
 
