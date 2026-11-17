@@ -49,7 +49,7 @@ the focused window in memory only to decide the mask and never sends it for this
 unknown, a rule does not compile, or the list is malformed, the helper masks the screen (a `MASKED` placeholder
 frame, no pixels). The server reads the list from `data/screen/privacy_rules.yaml` (`rules:` entries with `process`/`title_regex`),
 drops entries that would make the agent reject the policy (bad type, over 256 bytes, no field, invalid regex), keeps at most
-128, and omits `screen` when the list is empty or unreadable.
+128, and omits `privacy_rules` when the list is empty or unreadable (and `screen` when nothing else is in it).
 
 `policy.screen.codec` (`"jpeg"` | `"webp"`, default `jpeg`), `policy.screen.quality` (integer 10..100, default 85) and
 `policy.screen.webp_method` (integer 0..6, default 1; WebP only) set how screen tiles are encoded (cost only, not what is
@@ -58,7 +58,8 @@ the policy. The service passes them to the helper in `config.screen`; a view in 
 does not send them yet (agent defaults apply).
 `policy.screen.cpu_budget_pct` (number 1..100, default 8, optional, invalid keeps the default) is the CPU budget of the
 helper's capture/encode thread in percent of one core; the governor lowers fps (floor 2) then quality to stay under it.
-Passed in `config.screen` like the above, applied at once (also to a running view).
+Passed in `config.screen` like the above, applied at once (also to a running view). The server sends it only after an
+admin set it on the Settings page (`Setting` `screen.cpu_budget_pct`, integer 1..100); otherwise the agent default applies.
 
 `policy.network_lock` (`off` | `observe` | `strict`, default `off`, DECISIONS #23) is applied only when
 `proxy_mode` is `proxy_only` and the mode is not `always_on`. `observe` drops QUIC (UDP 443) to public

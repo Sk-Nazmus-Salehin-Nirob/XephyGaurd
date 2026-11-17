@@ -44,6 +44,7 @@ class AdminController extends Controller
         $values['paste_alert_chars'] ??= 800;
         $values['timezone'] ??= config('app.timezone', 'UTC');
         $values['google_search_url'] ??= 'https://www.google.com/search?q={searchTerms}&udm=14';
+        $values['screen_cpu_budget_pct'] = Setting::get('screen.cpu_budget_pct', 8);
         foreach (['always_on', 'practice', 'test'] as $m) {
             $values["title_capture_$m"] = Setting::get("privacy.title_capture.$m", $m === 'always_on' ? 'off' : 'app_only');
         }
@@ -65,12 +66,16 @@ class AdminController extends Controller
             'title_capture_always_on' => 'required|in:off,app_only,full', 'title_capture_practice' => 'required|in:off,app_only,full',
             'title_capture_test' => 'required|in:off,app_only,full', 'log_urls' => 'nullable|boolean', 'log_queries' => 'nullable|boolean',
             'inspect_hosts' => 'nullable|string|max:5000', 'google_hide_selectors' => 'nullable|string|max:5000',
+            'screen_cpu_budget_pct' => 'nullable|integer|min:1|max:100',
         ]);
         foreach (['lab_name', 'network_mode', 'ccc_ip', 'lab_subnet', 'retention_days_raw', 'retention_days_reports', 'notice_text', 'paste_alert_chars'] as $k) {
             Setting::put($k, $d[$k]);
         }
         Setting::put('timezone', ($d['timezone'] ?? '') ?: config('app.timezone', 'UTC'));
         Setting::put('google_search_url', $d['google_search_url'] ?? '');
+        if (isset($d['screen_cpu_budget_pct'])) {
+            Setting::put('screen.cpu_budget_pct', (int) $d['screen_cpu_budget_pct']);
+        }
         foreach (['always_on', 'practice', 'test'] as $m) {
             Setting::put("privacy.title_capture.$m", $d["title_capture_$m"]);
         }

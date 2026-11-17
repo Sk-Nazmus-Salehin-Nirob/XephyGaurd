@@ -59,6 +59,7 @@
         </div></section>
       <section class="section" id="search"><div class="panel-head"><h2 class="h2">Search AI summaries</h2></div>
         <div class="panel-body stack" style="max-width:760px;--gap:18px">
+          <label class="field"><span>Screen view CPU budget (% of one core)</span><input name="screen_cpu_budget_pct" type="number" min="1" max="100" class="input mono" value="{{ $v['screen_cpu_budget_pct'] ?? 8 }}"><p class="help">Live screen view on a lab PC lowers its frame rate (not below 2 fps), then quality, to stay under this. Default 8.</p></label>
           <label class="field"><span>Search engine override URL (udm=14)</span><input name="google_search_url" class="input mono" value="{{ $v['google_search_url'] ?? 'https://www.google.com/search?q={searchTerms}&udm=14' }}"><p class="help">Forces web-only search results without generative AI overviews when enabled in a profile.</p></label>
           <label class="field"><span>Search sites to inspect</span><textarea name="inspect_hosts" class="textarea mono" rows="3">{{ !empty($v['inspect_hosts']) ? $v['inspect_hosts'] : "www.google.com\nsearch.yahoo.com\nduckduckgo.com" }}</textarea><p class="help">Only these sites are opened up so AI summary boxes can be hidden.</p></label>
           <label class="field"><span>Selectors that hide AI summaries</span><textarea name="google_hide_selectors" class="textarea mono" rows="2">{{ !empty($v['google_hide_selectors']) ? $v['google_hide_selectors'] : 'div[data-attrid="AIOverview"], #m-x-content, g-ai-overview' }}</textarea></label>

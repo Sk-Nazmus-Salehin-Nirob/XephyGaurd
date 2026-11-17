@@ -27,6 +27,24 @@ class ScreenAndProxyPacTest extends TestCase
         $this->assertStringNotContainsString('agent_token', json_encode($policy));
     }
 
+    public function test_admin_sets_screen_cpu_budget_and_policy_carries_it(): void
+    {
+        $this->bootLab();
+        [$pc] = $this->enrolledPc();
+        $form = ['lab_name' => 'Lab', 'network_mode' => 'proxy_only', 'ccc_ip' => '192.168.10.1', 'lab_subnet' => '192.168.10.0/24',
+            'retention_days_raw' => 30, 'retention_days_reports' => 365, 'notice_text' => 'Monitored.', 'paste_alert_chars' => 800,
+            'title_capture_always_on' => 'off', 'title_capture_practice' => 'app_only', 'title_capture_test' => 'app_only'];
+        $admin = $this->user('admin');
+
+        $this->actingAs($admin)->post('/settings', $form + ['screen_cpu_budget_pct' => 0])->assertSessionHasErrors('screen_cpu_budget_pct');
+        $this->actingAs($admin)->post('/settings', $form + ['screen_cpu_budget_pct' => 101])->assertSessionHasErrors('screen_cpu_budget_pct');
+        $this->assertNull(Setting::get('screen.cpu_budget_pct'));
+
+        $this->actingAs($admin)->post('/settings', $form + ['screen_cpu_budget_pct' => 12])->assertSessionHasNoErrors();
+        $this->assertSame(12, app(PolicyBuilder::class)->forPc($pc)['screen']['cpu_budget_pct']);
+        $this->actingAs($admin)->get('/settings')->assertOk()->assertSee('name="screen_cpu_budget_pct"', false);
+    }
+
     public function test_proxy_pac_reflects_network_mode_and_policy_carries_pac_url(): void
     {
         $this->bootLab();

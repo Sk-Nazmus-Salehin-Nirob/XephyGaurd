@@ -65,7 +65,11 @@ class PolicyBuilder
             'kill_exempt' => $agent['kill_exempt'] ?? [],
             'signatures_version' => SignatureVersion::active()?->version ?? '',
             'notice_text' => Setting::get('notice_text'),
-            'screen' => ['privacy_rules' => app(ScreenPrivacyRules::class)->rules()],
+            // cpu_budget_pct only once an admin has set it; the agent's default is 8 (docs/PROTOCOL.md).
+            'screen' => array_filter([
+                'privacy_rules' => app(ScreenPrivacyRules::class)->rules(),
+                'cpu_budget_pct' => ($b = Setting::get('screen.cpu_budget_pct')) !== null ? (int) $b : null,
+            ], fn ($v) => $v !== null && $v !== []),
             'suppress_ai_overview' => (bool) ($profile->network['google_udm14'] ?? false),
             'google_search_url' => Setting::get('google_search_url'),
             'proxy_mode' => Setting::get('network_mode', config('xephyguard.network_mode', 'gateway')),
@@ -77,9 +81,6 @@ class PolicyBuilder
                 ? (in_array($session->network_lock, LabSession::NETWORK_LOCKS, true) ? $session->network_lock : 'observe')
                 : null,
         ], fn ($v) => $v !== null && $v !== []);
-        if (empty($policy['screen']['privacy_rules'])) {
-            unset($policy['screen']);
-        }
         $policy['session_id'] = $session?->id ?? 0;
         $policy['version'] = self::version($policy);
 
