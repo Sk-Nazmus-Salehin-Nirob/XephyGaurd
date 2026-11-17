@@ -133,7 +133,9 @@ screen-protocol message. A JSON line never starts with `0x00`. The service check
 decodes the payload, and closes the connection on an unknown type, an empty or an oversize record. Records are
 accepted only on connections that passed the helper peer check above, and relayed only from the helper the
 service chose as source: one that sent `{"t":"screen_caps",...,"ipc_stream":true}` from the active session.
-Service → helper: `{"t":"screen_rx","data":"<base64 gateway message>"}`. Not sent by the helper yet (screen Step 61).
+Service → helper: `{"t":"screen_rx","data":"<base64 gateway message>"}`. The helper's `config` carries only
+`screen.enabled`: no gateway address, port or token reaches the student session (screen Step 61); the helper opens
+no network connection for the screen.
 
 ## Proxy → CCC (internal)
 `POST http://127.0.0.1:8000/api/internal/net-events` with `Authorization: Bearer $XG_INTERNAL_TOKEN`,

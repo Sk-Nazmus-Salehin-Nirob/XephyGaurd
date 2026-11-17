@@ -859,12 +859,9 @@ void Agent::push_helper_config() {
                                     {"pc_id", cfg_.pc_id},
                                     {"ext_ids", rules_.extension_ids()},
                                     {"proxy_pac_url", pac_url},
-                                    {"screen", {{"enabled", cfg_.screen_enabled},
-                                                {"port", cfg_.screen_port},
-                                                {"path", cfg_.screen_path},
-                                                {"tls", cfg_.screen_tls},
-                                                {"ca_file", cfg_.ca_file},
-                                                {"agent_token", cfg_.screen_token}}},
+                                    // No gateway address or credential: the helper streams through the service
+                                    // (DECISIONS #24), so the student's session never holds a screen token.
+                                    {"screen", {{"enabled", cfg_.screen_enabled}}},
                                     {"collect", {{"window", p.collect.window}, {"clipboard", p.collect.clipboard},
                                                  {"keys", p.collect.keys}}}}));
     plat_.ipc->broadcast(ipc::line({{"t", "indicator"},

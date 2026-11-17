@@ -9,6 +9,8 @@
 #include <thread>
 
 #include "xg/interfaces.hpp"
+#include "xg/crypto.hpp"
+#include "xg/ipc_framing.hpp"
 #include "xg/ipc_messages.hpp"
 #include "xg/keystats.hpp"
 #include "xg/log.hpp"
@@ -335,29 +337,25 @@ int helper_main() {
               {"live", can_live},
               {"delta_tiles", can_live},
               {"monitors", count_monitors()},
-              {"secure_desktop", secure_desk}});
+              {"secure_desktop", secure_desk},
+              {"ipc_stream", can_live}});  // frames go to the service, which relays them (DECISIONS #24)
     };
 
     ScreenStreamer screen_streamer;
-    // Screen settings come only from the service over IPC: the helper runs as the student and must never read
-    // agent.toml (it holds the PC's bearer token, I-AGENT-2). The last pushed settings restart the stream.
-    struct ScreenTarget {
-        bool valid = false;
-        std::string host, path, token, ca;
-        uint32_t pc_id = 0;
-        uint16_t port = 0;
-        bool tls = false;
-    } screen_target;
+    // The helper only captures and encodes: frames go to the service over IPC and the service alone talks to
+    // the gateway with its mTLS cert (DECISIONS #24). The helper never sees a gateway credential and never
+    // reads agent.toml (I-AGENT-2). Settings come only from the service.
+    uint32_t screen_stream_id = 0;
+    auto send_frame = [&](std::string_view f) { return ipc::send_screen_frame(*plat->ipc, f); };
     auto check_screen_stream = [&]() {
-        if (!screen_target.valid || !cfg_screen_enabled.load() || !linux_screen_ready()) return;
-        if (screen_streamer.is_running()) return;
-        const auto& t = screen_target;
-        screen_streamer.start(t.host, t.pc_id, t.port, t.path, t.tls, t.token, t.ca, on_viewing_changed);
+        if (screen_stream_id == 0 || !cfg_screen_enabled.load() || !linux_screen_ready()) return;
+        if (!screen_streamer.is_running()) screen_streamer.start(screen_stream_id, send_frame, on_viewing_changed);
     };
 
     while (true) {
         if (!plat->ipc->connected()) {
             if (was_connected) plat->ui->set_indicator("XephyGuard service not reachable", "always_on");
+            screen_streamer.on_link_lost();
             was_connected = false;
             if (plat->ipc->connect(endpoint)) {
                 was_connected = true;
@@ -381,38 +379,20 @@ int helper_main() {
             if (j.is_discarded()) continue;
             const std::string t = j.value("t", "");
             if (t == "config") {
-                const std::string host = j.value("ccc_host", "");
                 const std::string pc_id_str = j.value("pc_id", "");
                 bool s_enabled = kDefaultScreenEnabled;
                 if (j.contains("screen") && j["screen"].is_object()) {
                     s_enabled = j["screen"].value("enabled", s_enabled);
                 }
                 cfg_screen_enabled.store(s_enabled);
-                if (!host.empty() && !pc_id_str.empty()) {
-                    uint32_t pc_id = 0;
-                    try { pc_id = static_cast<uint32_t>(std::stoul(pc_id_str)); } catch (...) {}
-                    if (pc_id > 0) {
-                        uint16_t s_port = 8082;
-                        std::string s_path = "/agent";
-                        bool s_tls = false;
-                        std::string s_tok;
-                        std::string s_ca;
-                        if (j.contains("screen") && j["screen"].is_object()) {
-                            const auto& sc = j["screen"];
-                            s_port = sc.value("port", uint16_t(8082));
-                            s_path = sc.value("path", std::string("/agent"));
-                            s_tls = sc.value("tls", false);
-                            s_ca = sc.value("ca_file", std::string());
-                            s_tok = sc.value("agent_token", std::string());
-                        }
-                        screen_target = {true, host, s_path, s_tok, s_ca, pc_id, s_port, s_tls || s_port == 443};
-                        if (s_enabled && linux_screen_ready()) {
-                            screen_streamer.start(host, pc_id, s_port, s_path, s_tls || s_port == 443, s_tok, s_ca,
-                                                  on_viewing_changed);
-                        } else if (screen_streamer.is_running()) {
-                            screen_streamer.stop();
-                        }
-                    }
+                uint32_t pc_id = 0;
+                try { pc_id = static_cast<uint32_t>(std::stoul(pc_id_str)); } catch (...) {}
+                if (pc_id > 0 && s_enabled && linux_screen_ready()) {
+                    if (pc_id != screen_stream_id) screen_streamer.stop();
+                    screen_stream_id = pc_id;
+                    screen_streamer.start(pc_id, send_frame, on_viewing_changed);
+                } else if (screen_streamer.is_running()) {
+                    screen_streamer.stop();
                 }
                 send_screen_caps(s_enabled);
                 {
@@ -443,6 +423,12 @@ int helper_main() {
                 refresh_indicator();
             } else if (t == "notify") {
                 plat->ui->notify(j.value("title", "XephyGuard"), j.value("body", ""), j.value("urgent", false));
+            } else if (t == "screen_rx") {
+                // One gateway control message relayed by the service (Ack / KeyframeReq / Status).
+                if (j.contains("data") && j["data"].is_string()) {
+                    if (auto b = crypto::base64_decode(j["data"].get<std::string>()); b && b->size() <= 1024)
+                        screen_streamer.on_gateway_message(*b);
+                }
             } else if (t == "paste_probe") {
                 handle_paste_chord(false);
             }
