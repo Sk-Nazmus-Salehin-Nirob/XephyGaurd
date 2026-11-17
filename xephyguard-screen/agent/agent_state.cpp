@@ -1,4 +1,5 @@
 #include "agent_state.h"
+#include "thread_priority.h"
 #include <chrono>
 
 namespace xg {
@@ -256,6 +257,7 @@ void AgentStateMachine::capture_loop() {
   // Never sleep while holding mutex_: std::recursive_mutex is not fair, so the loop would re-take it at once and
   // starve state(), on_incoming_message() and set_privacy_filter() for seconds while masked or paused.
   bool asked_full = false;  // request_full() sent and no frame has come back yet
+  set_current_thread_idle_priority();  // capture + encode run only on CPU time nobody else wants (best effort)
   while (running_.load()) {
     uint64_t now_ms = get_now_ms();
     int pause_ms = 0;

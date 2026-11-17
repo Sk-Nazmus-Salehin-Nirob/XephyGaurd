@@ -87,7 +87,7 @@ Done as part of M0-4, docs only:
 - [x] M4-3a Step 55: wall thumbnail encoded and sent only when the downscaled image changed, else a 28-byte "unchanged" frame (PROTOCOL.md); the wall pause is one condition-variable wait (stop and `KeyframeReq` end it) instead of 50 x 100 ms sleeps
 - [x] M4-3b Step 55: static screen nearly free: the 1 s safety re-read compares the screen with the shadow and reports only changed rows (none: NoChange). Bench static (Xvfb, 30 s): 1.2 % / 6.5 wake-ups/s -> 0.9 % / 5.5
 - [x] M4-3c Step 55: pause while the display is blanked (X11 DPMS, Xext already linked) or on the secure desktop (Windows lock); the placeholder goes out once per pause plus once per `KeyframeReq` (was every 100 ms), the pause is an interruptible 250 ms wait. DPMS test skips on Xvfb (no DPMS): X11 blank path not run. Linux lock screen detection (logind `LockedHint`) needs D-Bus, a new dependency: owner decision, not done
-- [ ] M4-4 Step 53 [agent]: idle priority for capture/encode threads
+- [x] M4-4 Step 53 [agent]: idle priority for capture/encode threads: `core/thread_priority` (Linux `SCHED_IDLE`, fallback nice 19 per thread; Windows background mode, fallback below normal) called at the top of the capture loop. Bench typing on a core with a busy loop: 4.8 -> 0.2 fps (yields fully; check against the 2 fps floor in M4-6). Windows branch not compiled locally (no MinGW here), CI MSVC job builds it
 - [ ] M4-5 Step 54: codec choice by measurement (libjpeg-turbo default, WebP low effort); config values
 - [ ] M4-6 Step 52: CPU governor (budget 8 %, floor 2 fps); server setting + PROTOCOL.md policy field
 - [ ] M4-7 Step 56: Windows dirty-rect copy, right adapter, GDI cap 5 fps (compile-checked only)
