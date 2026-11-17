@@ -99,6 +99,7 @@ void Agent::apply_policy(const Policy& p) {
     next_run_.clear();
     if (plat_.system) {
         plat_.system->set_exam_mode(p.mode == Mode::test);
+        apply_extension_blocklist();
         plat_.system->set_browser_ai_overview_suppressed(p.suppress_ai_overview, p.google_search_url);
         plat_.system->set_browser_proxy_pac(effective_pac_url());
         const std::string dns_target =
@@ -163,6 +164,7 @@ bool Agent::apply_signatures(const json& env, bool require_signature) {
     last_ext_hash_.clear();
     rescan_extensions_ = true;
     push_helper_config();   // the helper filters WSL extensions with the bundle's ids; refresh them now
+    apply_extension_blocklist();
     return true;
 }
 
@@ -845,6 +847,14 @@ void Agent::push_helper_config() {
                                     {"notice", p.notice_text}}));
 }
 
+void Agent::apply_extension_blocklist() {
+    // Detection backed by enforcement: during a Test, AI browser extensions from the bundle are blocked by
+    // managed browser policy; outside a Test the agent's entries are removed again (F80).
+    if (!plat_.system) return;
+    plat_.system->set_browser_extension_blocklist(policy_.mode == Mode::test ? rules_.browser_extension_ids()
+                                                                             : std::vector<std::string>{});
+}
+
 std::string Agent::effective_pac_url() const {
     if (policy_.proxy_mode != "proxy_only" || policy_.proxy_pac_url.empty()) return {};
     // Written into browser policies and HKCU for every user: only an HTTPS PAC on the CCC itself, so neither a
@@ -1512,6 +1522,7 @@ int Agent::run(std::atomic<bool>& stop) {
     queue_->kv_set("clean_shutdown", "1");
     if (plat_.system) {
         plat_.system->set_exam_mode(false);
+        plat_.system->set_browser_extension_blocklist({});
         plat_.system->set_browser_ai_overview_suppressed(false);
         plat_.system->set_browser_proxy_pac({});
         plat_.system->set_lab_dns({});

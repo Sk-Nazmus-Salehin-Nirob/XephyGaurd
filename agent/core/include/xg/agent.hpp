@@ -101,6 +101,7 @@ private:
     void push_helper_config();
     /// The policy's PAC URL if proxy_only and it is https:// on the CCC host; empty otherwise.
     std::string effective_pac_url() const;
+    void apply_extension_blocklist();
     void notify_student(const std::string& title, const std::string& body, bool urgent);
     void restart_watchers();
     std::string active_user();

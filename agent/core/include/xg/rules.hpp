@@ -59,6 +59,8 @@ public:
     /// Backend domains that show extension `e` (matched by `rule_id`) is in use.
     std::vector<std::string> extension_domains(const ExtensionInfo& e, const std::string& rule_id) const;
     WebHints web() const;
+    /// Ids of enabled browser extension rules that look like Chromium Web Store ids (32 letters a-p).
+    std::vector<std::string> browser_extension_ids() const;
 
     PortProbe probe() const;
     ArtifactScanSpec artifact_scan() const;

@@ -131,6 +131,9 @@ public:
     virtual void set_browser_ai_overview_suppressed(bool /*suppressed*/, const std::string& /*search_url*/ = {}) {}
     /// Configures or clears browser PAC proxy policies (Chrome, Edge, Brave, Opera, Vivaldi, Firefox) for proxy_only mode.
     virtual void set_browser_proxy_pac(const std::string& /*pac_url*/) {}
+    /// Blocks (non-empty) or unblocks (empty) Chromium-family browser extensions by Web Store id through managed
+    /// browser policy (ExtensionInstallBlocklist), keeping entries an administrator added (plan alternative F80).
+    virtual void set_browser_extension_blocklist(const std::vector<std::string>& /*chromium_ids*/) {}
     /// Pins system DNS to the lab resolver when gateway mode is active on Linux; empty clears the override.
     virtual void set_lab_dns(const std::string& /*dns_ip*/) {}
     /// Screen capabilities to report before any helper has sent its own `screen_caps`.

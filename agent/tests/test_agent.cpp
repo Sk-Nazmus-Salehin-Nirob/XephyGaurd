@@ -504,3 +504,16 @@ TEST_CASE("title-only AI tab hits use the bundle severity and are marked as a ti
     CHECK(hits[0].data["severity"] == "medium");  // default when the bundle does not say otherwise
     CHECK(hits[0].data["context"]["signal"] == "window_title");
 }
+
+TEST_CASE("AI browser extensions are blocked by policy only during a Test (F80)") {
+    Harness h;
+    auto* sys = static_cast<test::FakeSystem*>(h.plat.system.get());
+    json sig = test::sample_signatures();
+    sig["extensions"].push_back({{"id", "ext.browser.ai"}, {"ide", "browser"}, {"severity", "medium"},
+                                 {"ext_ids", {"jgjaeacdkonaoafenlfkkkmbaopkbilf", "not-a-store-id"}}});
+    REQUIRE(h.agent->apply_signatures({{"version", "t3"}, {"bundle", sig.dump()}}, false));
+    h.agent->apply_policy(Policy::default_for(Mode::test));
+    CHECK(sys->blocked_extensions == std::vector<std::string>{"jgjaeacdkonaoafenlfkkkmbaopkbilf"});
+    h.agent->apply_policy(Policy::default_for(Mode::practice));
+    CHECK(sys->blocked_extensions.empty());
+}

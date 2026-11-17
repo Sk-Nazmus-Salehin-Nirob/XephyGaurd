@@ -257,6 +257,19 @@ std::vector<std::string> RuleEngine::extension_domains(const ExtensionInfo& e, c
     return {};
 }
 
+std::vector<std::string> RuleEngine::browser_extension_ids() const {
+    std::shared_lock lk(mu_);
+    std::vector<std::string> out;
+    for (const auto& r : set_.extensions) {
+        if (r.ide != "browser" || !enabled(r.id)) continue;
+        for (const auto& id : r.ext_ids)
+            if (id.size() == 32 && std::all_of(id.begin(), id.end(), [](char c) { return c >= 'a' && c <= 'p'; }) &&
+                std::find(out.begin(), out.end(), id) == out.end())
+                out.push_back(id);
+    }
+    return out;
+}
+
 WebHints RuleEngine::web() const {
     std::shared_lock lk(mu_);
     return set_.web;

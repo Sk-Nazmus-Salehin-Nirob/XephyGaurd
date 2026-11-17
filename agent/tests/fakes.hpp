@@ -62,6 +62,8 @@ public:
     int64_t uptime_s() override { return 100; }
     std::string self_exe_path() override { return ""; }
     SelfUsage self_usage() override { return {20 * 1024 * 1024, 10}; }
+    std::vector<std::string> blocked_extensions;
+    void set_browser_extension_blocklist(const std::vector<std::string>& ids) override { blocked_extensions = ids; }
 };
 
 class FakeIpc : public IIpcServer {

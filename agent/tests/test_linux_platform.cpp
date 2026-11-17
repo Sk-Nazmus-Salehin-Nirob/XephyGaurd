@@ -479,4 +479,20 @@ TEST_CASE("Linux kill refuses a pid whose start time changed (F35)", "[linux]") 
     CHECK(WIFSIGNALED(status));
 }
 
+TEST_CASE("Linux browser policy blocks AI extensions in Test mode and keeps admin entries (F80)", "[linux][policy]") {
+    const auto root = std::filesystem::temp_directory_path() / ("xg-ext-" + xg::random_hex(4));
+    const auto chrome = root / "etc/opt/chrome/policies/managed/xephyguard.json";
+    std::filesystem::create_directories(chrome.parent_path());
+    REQUIRE(xg::write_file_atomic(chrome.string(), R"({"ExtensionInstallBlocklist":["adminblockedextensionidaaaaaaaaa"]})"));
+    const std::vector<std::string> ai = {"jgjaeacdkonaoafenlfkkkmbaopkbilf"};
+    REQUIRE(xg::lnx::apply_linux_browser_policies(root.string(), false, "", "", ai, ai));
+    auto doc = xg::json::parse(xg::read_file(chrome.string()));
+    CHECK(doc["ExtensionInstallBlocklist"] ==
+          xg::json({"adminblockedextensionidaaaaaaaaa", "jgjaeacdkonaoafenlfkkkmbaopkbilf"}));
+    REQUIRE(xg::lnx::apply_linux_browser_policies(root.string(), false, "", "", {}, ai));  // Test over
+    doc = xg::json::parse(xg::read_file(chrome.string()));
+    CHECK(doc["ExtensionInstallBlocklist"] == xg::json({"adminblockedextensionidaaaaaaaaa"}));
+    std::filesystem::remove_all(root);
+}
+
 #endif  // _WIN32

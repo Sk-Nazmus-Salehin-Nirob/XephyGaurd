@@ -76,8 +76,11 @@ std::string user_home(const std::string& user);
 uint32_t file_uid(const std::string& path);
 
 /// Writes or clears Chrome, Chromium, Edge and Firefox JSON enterprise policies under `root_prefix`.
+/// `blocked_extensions` go into Chromium-family ExtensionInstallBlocklist; entries in `managed_extensions` that are
+/// not blocked any more are removed, an administrator's other entries are kept.
 bool apply_linux_browser_policies(const std::string& root_prefix, bool ai_suppressed, const std::string& search_url,
-                                  const std::string& pac_url);
+                                  const std::string& pac_url, const std::vector<std::string>& blocked_extensions = {},
+                                  const std::vector<std::string>& managed_extensions = {});
 /// Writes or clears `/etc/systemd/resolved.conf.d/xephyguard.conf` under `root_prefix`.
 bool apply_linux_resolved_dns(const std::string& root_prefix, const std::string& dns_ip, bool reload_service = true);
 
