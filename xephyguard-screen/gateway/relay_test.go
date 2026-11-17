@@ -24,6 +24,7 @@ type FakeAuth struct {
 	lease      time.Duration                              // lease length; default 1 min
 	userFn     func(r *http.Request) (user, audit uint64) // identity of the lease (revoke tests)
 	renewFn    func(token string) (ViewerGrant, error)    // nil: renewal refused
+	tokenFn    func(token string) (ViewerGrant, error)    // first-message auth (screen Step 40); nil: refused
 }
 
 func (f *FakeAuth) RenewViewer(token string) (ViewerGrant, error) {
@@ -31,6 +32,13 @@ func (f *FakeAuth) RenewViewer(token string) (ViewerGrant, error) {
 		return ViewerGrant{}, errors.New("no renewal")
 	}
 	return f.renewFn(token)
+}
+
+func (f *FakeAuth) AuthViewerToken(token string) (ViewerGrant, error) {
+	if f.tokenFn == nil {
+		return ViewerGrant{}, errors.New("no token auth")
+	}
+	return f.tokenFn(token)
 }
 
 func (f *FakeAuth) AuthViewer(r *http.Request) (ViewerGrant, error) {

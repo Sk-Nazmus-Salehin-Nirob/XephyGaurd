@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +51,7 @@ func TestAuthViewerValidationAndReplayPrevention(t *testing.T) {
 		t.Fatalf("token sign failed: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/view?token="+tokenStr, nil)
+	req := bearerReq(tokenStr)
 	grant, err := tv.AuthViewer(req)
 	if err != nil {
 		t.Fatalf("expected valid token to pass, got: %v", err)
@@ -60,7 +61,7 @@ func TestAuthViewerValidationAndReplayPrevention(t *testing.T) {
 	}
 
 	// 2. Replay of same token -> MUST BE REJECTED
-	reqReplay := httptest.NewRequest("GET", "/view?token="+tokenStr, nil)
+	reqReplay := bearerReq(tokenStr)
 	_, errReplay := tv.AuthViewer(reqReplay)
 	if errReplay == nil {
 		t.Fatalf("expected replayed token to be rejected, but it succeeded")
@@ -82,7 +83,7 @@ func TestAuthViewerValidationAndReplayPrevention(t *testing.T) {
 	}
 	expiredToken := jwt.NewWithClaims(jwt.SigningMethodHS256, expiredClaims)
 	expiredStr, _ := expiredToken.SignedString(secret)
-	reqExpired := httptest.NewRequest("GET", "/view?token="+expiredStr, nil)
+	reqExpired := bearerReq(expiredStr)
 	_, errExpired := tv.AuthViewer(reqExpired)
 	if errExpired == nil {
 		t.Fatalf("expected expired token to fail")
@@ -100,7 +101,7 @@ func TestAuthViewerValidationAndReplayPrevention(t *testing.T) {
 	}
 	wrongAudToken := jwt.NewWithClaims(jwt.SigningMethodHS256, wrongAudClaims)
 	wrongAudStr, _ := wrongAudToken.SignedString(secret)
-	reqWrongAud := httptest.NewRequest("GET", "/view?token="+wrongAudStr, nil)
+	reqWrongAud := bearerReq(wrongAudStr)
 	_, errWrongAud := tv.AuthViewer(reqWrongAud)
 	if errWrongAud == nil {
 		t.Fatalf("expected wrong audience token to fail")
@@ -109,7 +110,7 @@ func TestAuthViewerValidationAndReplayPrevention(t *testing.T) {
 	// 5. Wrong algorithm (e.g. none) -> MUST BE REJECTED
 	noneToken := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
 	noneStr, _ := noneToken.SignedString(jwt.UnsafeAllowNoneSignatureType)
-	reqNone := httptest.NewRequest("GET", "/view?token="+noneStr, nil)
+	reqNone := bearerReq(noneStr)
 	_, errNone := tv.AuthViewer(reqNone)
 	if errNone == nil {
 		t.Fatalf("expected none algorithm token to fail")
@@ -161,7 +162,7 @@ func TestAuthViewerRejectsBadStreamPCAndMode(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return httptest.NewRequest("GET", "/view?token="+tok, nil)
+		return bearerReq(tok)
 	}
 	cases := []struct {
 		name string
@@ -183,5 +184,21 @@ func TestAuthViewerRejectsBadStreamPCAndMode(t *testing.T) {
 		if g, err := tv.AuthViewer(mk("ok-"+mode, 9, 9, 0, mode, true)); err != nil || g.Mode != mode {
 			t.Errorf("mode %s: got %+v, %v", mode, g, err)
 		}
+	}
+}
+
+// bearerReq is a viewer upgrade request carrying the token in the Authorization header.
+func bearerReq(tok string) *http.Request {
+	r := httptest.NewRequest("GET", "/view", nil)
+	r.Header.Set("Authorization", "Bearer "+tok)
+	return r
+}
+
+// A token in the URL query is not accepted any more (screen Step 40).
+func TestAuthViewerIgnoresQueryToken(t *testing.T) {
+	tv := NewTokenValidator(AuthConfig{JWTSecret: []byte("0123456789abcdef0123456789abcdef"), Issuer: "i", Audience: "a"})
+	_, err := tv.AuthViewer(httptest.NewRequest("GET", "/view?token=anything", nil))
+	if !errors.Is(err, ErrMissingToken) {
+		t.Fatalf("query token must count as missing, got %v", err)
 	}
 }

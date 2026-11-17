@@ -393,3 +393,26 @@ test('Viewer v2: a raw rectangle becomes an ImageData of exactly w x h', async (
   delete globalThis.ImageData;
   assert.deepEqual(sizes, [[5 * 3 * 4, 5, 3]]);
 });
+
+test('Viewer connect: the token goes out as the first message, never in the URL (Step 40)', () => {
+  const sockets = [];
+  globalThis.WebSocket = class {
+    constructor(url) { this.url = url; this.sent = []; this.readyState = 1; sockets.push(this); }
+    send(d) { this.sent.push(d); }
+    close() {}
+  };
+  try {
+    const viewer = new ScreenViewer({});
+    viewer.connect('wss://ccc/screen-gw/view', 'jwt-1');
+    const ws = sockets[0];
+    assert.equal(ws.url, 'wss://ccc/screen-gw/view');
+    ws.onopen();
+    assert.deepEqual(JSON.parse(ws.sent[0]), { type: 'auth', token: 'jwt-1' });
+    assert.equal(typeof ws.sent[1], 'object'); // the keyframe request follows the auth message
+    // single use: not kept for a later open
+    assert.equal(viewer.lastToken, '');
+    viewer.disconnect();
+  } finally {
+    delete globalThis.WebSocket;
+  }
+});

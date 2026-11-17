@@ -71,11 +71,8 @@ func (tv *TokenValidator) AuthViewer(r *http.Request) (ViewerGrant, error) {
 		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
 	}
 
-	// Check query string ?token=...
-	if tokenStr == "" {
-		tokenStr = r.URL.Query().Get("token")
-	}
-
+	// A token in the URL query is not accepted: URLs end up in proxy logs and browser history (screen Step 40).
+	// Browsers send the token as the first WebSocket message instead (RelayServer.readViewerAuth).
 	return tv.ValidateToken(tokenStr)
 }
 

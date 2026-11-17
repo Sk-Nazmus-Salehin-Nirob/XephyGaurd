@@ -280,7 +280,11 @@ export class ScreenViewer {
     return this.frameQueue.length - this.queueHead;
   }
 
-  connect(url) {
+  /**
+   * Opens the socket. `token` (a lease JWT) is sent as the first message {"type":"auth","token":...} once the
+   * socket opens, never in the URL (Step 40); omit it for a gateway that authenticates otherwise (dev).
+   */
+  connect(url, token) {
     const targetUrl = url || this.defaultUrl;
     if (!targetUrl) {
       throw new Error('No WebSocket URL provided to ScreenViewer.connect()');
@@ -290,6 +294,7 @@ export class ScreenViewer {
       this.disconnect();
     }
     this.lastUrl = targetUrl;
+    this.lastToken = token || this.options.token || '';
     this.waitingForKeyframe = true;
     this.resetQueue();
     const ws = new WebSocket(targetUrl);
@@ -297,6 +302,9 @@ export class ScreenViewer {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
+      // The gateway waits for this before it sends anything; the token is single use, so it is dropped after sending.
+      if (this.lastToken) ws.send(JSON.stringify({ type: 'auth', token: this.lastToken }));
+      this.lastToken = '';
       this.waitingForKeyframe = true;
       this.requestKeyframe(0, 0);
       if (this.options.onOpen) this.options.onOpen();
@@ -335,8 +343,8 @@ export class ScreenViewer {
 
   /**
    * Auto-reconnect (Step 33). On when options.getUrl is given (it returns the next WebSocket URL with a fresh
-   * token, sync or async; a falsy result or a throw counts as a failed attempt) or options.autoReconnect === true
-   * (reuses the last URL). Backoff 1 s, 2 s, 4 s ... 30 s with jitter; reset by the first frame of a connection.
+   * token, sync or async, as a URL string or {url, token}; a falsy result or a throw counts as a failed attempt) or
+   * options.autoReconnect === true (reuses the last URL; its token was single use, so this only suits dev gateways). Backoff 1 s, 2 s, 4 s ... 30 s with jitter; reset by the first frame of a connection.
    * Policy closes (1008) are final. options.onReconnect(attempt, delayMs) is told about each wait.
    */
   scheduleReconnect(code) {
@@ -349,9 +357,11 @@ export class ScreenViewer {
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       let url = this.lastUrl;
+      let token = '';
       if (this.options.getUrl) {
         try {
           url = await this.options.getUrl();
+          if (url && typeof url === 'object') ({ url, token } = url);
         } catch {
           url = null;
         }
@@ -362,7 +372,7 @@ export class ScreenViewer {
         return;
       }
       try {
-        this.connect(url);
+        this.connect(url, token);
       } catch {
         this.scheduleReconnect();
       }

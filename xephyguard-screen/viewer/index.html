@@ -113,18 +113,19 @@
     const baseGw = explicitGw || (window.location.port ? `${wsProto}//${defaultHost}/screen-gw` : `${wsProto}//${defaultHost}:8082`);
     const token = params.get('token') || '';
     const streamId = params.get('stream_id') || '';
-    const qs = token ? `token=${encodeURIComponent(token)}` : (streamId ? `stream_id=${encodeURIComponent(streamId)}` : '');
-    if (!qs) {
+    // A lease token is sent as the first WebSocket message, not in the gateway URL (Step 40); stream_id is dev-insecure only.
+    const qs = token ? '' : (streamId ? `stream_id=${encodeURIComponent(streamId)}` : '');
+    if (!token && !qs) {
       statusEl.textContent = 'Error: pass ?token=<JWT> or ?stream_id=<ID>&gateway=ws://host:port in URL';
       return;
     }
-    const wsUrl = `${baseGw}/view?${qs}`;
+    const wsUrl = qs ? `${baseGw}/view?${qs}` : `${baseGw}/view`;
       statusEl.textContent = 'Connecting to ' + wsUrl + '...';
 
       // ?debug=1 shows fps, kbit/s and paint lag (numbers only).
       const stats = params.get('debug') === '1' ? new ViewerStats() : null;
       viewer = new ScreenViewer(wsUrl, canvas, { stats });
-      viewer.connect();
+      viewer.connect(undefined, token);
       if (stats) {
         const statsEl = document.getElementById('stats');
         statsEl.hidden = false;

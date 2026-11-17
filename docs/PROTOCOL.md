@@ -169,6 +169,11 @@ a client-sent `stream_id` is ignored. A renewed token keeps the audit's `pc_id`;
 The gateway rejects (401) a token without `exp`, with a zero `stream_id` or `pc_id`, with `pc_id != stream_id`, or
 with a `mode` other than `live`, `snapshot`, `wall` (no `student_id` fallback). A `snapshot` viewer gets one keyframe,
 then the gateway closes the socket (1000 "snapshot delivered").
+The token is never in the URL (URLs reach proxy logs and browser history). A browser connects to `/view` with no credential;
+the gateway accepts the upgrade and waits 5 s for the first message, the text `{"type":"auth","token":"<jwt>"}` (≤ 4 KiB), and
+applies the checks above to it (the token is single use). A missing, late, binary, malformed or invalid first message closes the
+socket (1008), and a token in the query string is ignored. Non-browser clients may still send `Authorization: Bearer <jwt>` at upgrade.
+The viewer sends binary controls only after the auth message. If the PC already has the maximum of 2 viewers the socket closes with 1013.
 The socket closes at the lease `exp` (4001 "lease expired") unless the viewer renews in band: it sends the text
 message `{"type":"renew","token":"<jwt from /renew>"}` (≤ 4 KiB); the new token must be valid, unused and grant the same
 `stream_id`, `pc_id` and `mode`; the gateway extends the lease and answers `{"type":"lease","expires_at":<unix>}`.

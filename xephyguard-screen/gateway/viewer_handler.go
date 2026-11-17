@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -12,13 +13,31 @@ import (
 )
 
 func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
+	// A browser cannot set headers on a WebSocket, so its lease token arrives as the first message (screen Step 40):
+	// no token on the request means "accept the socket, then wait for {"type":"auth"}". A token in the URL query
+	// is ignored. An Authorization header (non-browser clients) and dev-insecure grants authenticate at upgrade.
 	grant, err := s.auth.AuthViewer(r)
-	if err != nil {
+	var c *websocket.Conn
+	if errors.Is(err, ErrMissingToken) {
+		if c, err = websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.originPatterns}); err != nil {
+			return
+		}
+		defer c.Close(websocket.StatusInternalError, "viewer closed")
+		if grant, err = s.readViewerAuth(c); err != nil {
+			log.Printf("[Gateway Viewer] first-message auth refused remote=%s err=%v", r.RemoteAddr, err)
+			c.Close(websocket.StatusPolicyViolation, "unauthorized")
+			return
+		}
+	} else if err != nil {
 		http.Error(w, "Unauthorized viewer: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
 	if s.revoked.blocks(grant) {
-		http.Error(w, "Unauthorized viewer: lease revoked", http.StatusUnauthorized)
+		if c != nil {
+			c.Close(websocket.StatusPolicyViolation, "lease revoked")
+		} else {
+			http.Error(w, "Unauthorized viewer: lease revoked", http.StatusUnauthorized)
+		}
 		return
 	}
 	streamID := grant.StreamID
@@ -31,7 +50,11 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 		r.RemoteAddr, streamID, grant.Mode, hasAgent, len(stream.lastKeyframe) > 0)
 	if len(stream.viewers) >= kMaxViewers {
 		stream.mu.Unlock()
-		http.Error(w, "Max viewers reached (max 2)", http.StatusTooManyRequests)
+		if c != nil {
+			c.Close(websocket.StatusTryAgainLater, "max viewers reached")
+		} else {
+			http.Error(w, "Max viewers reached (max 2)", http.StatusTooManyRequests)
+		}
 		return
 	}
 
@@ -71,20 +94,22 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	}
 	stream.mu.Unlock()
 
-	// Origin must be the request host (nginx passes the dashboard host) or match -allowed-origins (screen Step 7).
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.originPatterns})
-	if err != nil {
-		stream.mu.Lock()
-		delete(stream.viewers, viewerID)
-		stream.sendViewerStatusLocked()
-		stream.mu.Unlock()
-		return
+	if c == nil {
+		// Origin must be the request host (nginx passes the dashboard host) or match -allowed-origins (screen Step 7).
+		c, err = websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.originPatterns})
+		if err != nil {
+			stream.mu.Lock()
+			delete(stream.viewers, viewerID)
+			stream.sendViewerStatusLocked()
+			stream.mu.Unlock()
+			return
+		}
+		defer c.Close(websocket.StatusInternalError, "viewer closed")
 	}
 	c.SetReadLimit(kViewerReadLimit) // viewers send only 28-byte controls and a small renew message
 	stream.mu.Lock()
 	v.conn = c // read under stream.mu by closeViewers
 	stream.mu.Unlock()
-	defer c.Close(websocket.StatusInternalError, "viewer closed")
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -251,6 +276,29 @@ func (s *RelayServer) renewViewerLease(v *Viewer, orig ViewerGrant, data []byte)
 		}
 	}
 	return true
+}
+
+// kViewerAuthTimeout is how long a socket may stay open before its first message carries a valid token.
+const kViewerAuthTimeout = 5 * time.Second
+
+// readViewerAuth waits for {"type":"auth","token":"<jwt>"} as the first message and validates the token.
+// Anything else (binary, other text, oversize, no message in time) is an error; the caller closes the socket.
+func (s *RelayServer) readViewerAuth(c *websocket.Conn) (ViewerGrant, error) {
+	c.SetReadLimit(kViewerReadLimit)
+	ctx, cancel := context.WithTimeout(context.Background(), kViewerAuthTimeout)
+	defer cancel()
+	msgType, data, err := c.Read(ctx)
+	if err != nil {
+		return ViewerGrant{}, err
+	}
+	var msg struct {
+		Type  string `json:"type"`
+		Token string `json:"token"`
+	}
+	if msgType != websocket.MessageText || json.Unmarshal(data, &msg) != nil || msg.Type != "auth" || msg.Token == "" {
+		return ViewerGrant{}, ErrMissingToken
+	}
+	return s.auth.AuthViewerToken(msg.Token)
 }
 
 // kViewerReadLimit caps one viewer message (binary control or text renew).

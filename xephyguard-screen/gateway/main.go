@@ -59,7 +59,7 @@ func NewGatewayAuthenticator(secret, issuer, audience string, devInsecure bool, 
 
 func (g *GatewayAuthenticator) AuthViewer(r *http.Request) (ViewerGrant, error) {
 	if g.validator != nil {
-		if r.URL.Query().Get("token") != "" || r.Header.Get("Authorization") != "" {
+		if r.Header.Get("Authorization") != "" {
 			return g.validator.AuthViewer(r)
 		}
 	}
@@ -78,6 +78,13 @@ func (g *GatewayAuthenticator) AuthViewer(r *http.Request) (ViewerGrant, error) 
 		return ViewerGrant{StreamID: sid, PCID: sid, Mode: mode, Exp: time.Now().Add(time.Hour)}, nil
 	}
 	return ViewerGrant{}, ErrMissingToken
+}
+
+func (g *GatewayAuthenticator) AuthViewerToken(token string) (ViewerGrant, error) {
+	if g.validator == nil {
+		return ViewerGrant{}, ErrMissingToken
+	}
+	return g.validator.ValidateToken(token)
 }
 
 func (g *GatewayAuthenticator) RenewViewer(token string) (ViewerGrant, error) {

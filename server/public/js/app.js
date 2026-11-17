@@ -207,7 +207,7 @@ window.xgApi = async function (url, opts = {}) {
       this._manualClose = false;
       this._rxQueue = Promise.resolve();
     }
-    connect(url) {
+    connect(url, token) {
       if (this.ws) this.disconnect();
       this._manualClose = false;
       this.waitingForKeyframe = true;
@@ -215,6 +215,8 @@ window.xgApi = async function (url, opts = {}) {
       this.ws = new WebSocket(url);
       this.ws.binaryType = 'arraybuffer';
       this.ws.onopen = () => {
+        // The lease token is the first message, never part of the URL (screen Step 40).
+        if (token) this.ws.send(JSON.stringify({ type: 'auth', token }));
         this.waitingForKeyframe = true;
         this.requestKeyframe(0, 0);
         if (this.options.onOpen) this.options.onOpen();
@@ -858,7 +860,7 @@ document.addEventListener('alpine:init', () => {
         const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         if (!gwUrl) gwUrl = `${wsProto}//${window.location.host}/screen-gw`;
         else if (gwUrl.startsWith('/')) gwUrl = `${wsProto}//${window.location.host}${gwUrl.replace(/\/$/, '')}`;
-        const wsUrl = `${gwUrl.replace(/\/$/, '')}/view?token=${data.token}`;
+        const wsUrl = `${gwUrl.replace(/\/$/, '')}/view`;
         const canvas = this.$refs.live;
         if (canvas && canvas.dataset) delete canvas.dataset.hasLiveFrame;
         if (canvas && window.ScreenViewer) {
@@ -891,7 +893,7 @@ document.addEventListener('alpine:init', () => {
               }
             }
           });
-          this.screenViewer.connect(wsUrl);
+          this.screenViewer.connect(wsUrl, data.token);
           if (mode === 'live' && this.screenAuditId) {
             this.screenRenewTimer = setInterval(() => {
               if (this.screenAuditId && this.screenStreaming) {
@@ -953,7 +955,7 @@ document.addEventListener('alpine:init', () => {
             onFrame: () => { if (canvas.dataset) canvas.dataset.hasLiveFrame = '1'; },
             onClose: () => { if (canvas.dataset) delete canvas.dataset.hasLiveFrame; }
           });
-          viewer.connect(`${gwUrl.replace(/\/$/, '')}/view?token=${data.token}`);
+          viewer.connect(`${gwUrl.replace(/\/$/, '')}/view`, data.token);
           const timer = setInterval(() => {
             const st = this.wallStreams[p.id];
             if (st && st.auditId) window.xgApi(`/api/screen/${st.auditId}/renew`, { method: 'POST' }).catch(() => {});

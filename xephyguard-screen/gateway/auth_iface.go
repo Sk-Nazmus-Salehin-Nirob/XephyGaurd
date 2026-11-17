@@ -22,6 +22,9 @@ type ViewerGrant struct {
 type Authenticator interface {
 	// Returns the grant for this viewer. Error => HTTP 401 and close.
 	AuthViewer(r *http.Request) (ViewerGrant, error)
+	// Validates the lease token a browser viewer sends as its first WebSocket message (screen Step 40).
+	// Same checks as at upgrade (signature, claims, single use). Error => the socket is closed (1008).
+	AuthViewerToken(token string) (ViewerGrant, error)
 	// Validates a renewed lease token sent on an open viewer socket. Error => renewal refused.
 	RenewViewer(token string) (ViewerGrant, error)
 	// Returns a stable agent ID (client-cert fingerprint) and the PC the certificate belongs to.
