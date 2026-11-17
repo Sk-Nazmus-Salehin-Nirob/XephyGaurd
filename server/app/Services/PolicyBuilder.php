@@ -65,6 +65,7 @@ class PolicyBuilder
             'kill_exempt' => $agent['kill_exempt'] ?? [],
             'signatures_version' => SignatureVersion::active()?->version ?? '',
             'notice_text' => Setting::get('notice_text'),
+            'screen' => ['privacy_rules' => app(ScreenPrivacyRules::class)->rules()],
             'suppress_ai_overview' => (bool) ($profile->network['google_udm14'] ?? false),
             'google_search_url' => Setting::get('google_search_url'),
             'proxy_mode' => Setting::get('network_mode', config('xephyguard.network_mode', 'gateway')),
@@ -76,6 +77,9 @@ class PolicyBuilder
                 ? (in_array($session->network_lock, LabSession::NETWORK_LOCKS, true) ? $session->network_lock : 'observe')
                 : null,
         ], fn ($v) => $v !== null && $v !== []);
+        if (empty($policy['screen']['privacy_rules'])) {
+            unset($policy['screen']);
+        }
         $policy['session_id'] = $session?->id ?? 0;
         $policy['version'] = self::version($policy);
 

@@ -47,7 +47,9 @@ matches (`process` = executable name, case-insensitive; `title_regex` = case-ins
 the whole policy. The service passes the list to the helper in `config` as `screen.privacy_rules`; the helper keeps
 the focused window in memory only to decide the mask and never sends it for this purpose. While the focused window is
 unknown, a rule does not compile, or the list is malformed, the helper masks the screen (a `MASKED` placeholder
-frame, no pixels). The server does not send rules yet (screen Step 11 covers the agent side).
+frame, no pixels). The server reads the list from `data/screen/privacy_rules.yaml` (`rules:` entries with `process`/`title_regex`),
+drops entries that would make the agent reject the policy (bad type, over 256 bytes, no field, invalid regex), keeps at most
+128, and omits `screen` when the list is empty or unreadable.
 
 `policy.network_lock` (`off` | `observe` | `strict`, default `off`, DECISIONS #23) is applied only when
 `proxy_mode` is `proxy_only` and the mode is not `always_on`. `observe` drops QUIC (UDP 443) to public
