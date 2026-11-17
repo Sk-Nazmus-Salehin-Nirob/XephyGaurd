@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "xg/json_read.hpp"
 #include "xg/util.hpp"
 
 namespace xg {
@@ -104,7 +105,7 @@ Policy Policy::default_for(Mode m) {
 }
 
 Policy Policy::from_json(const json& j, std::string* err) {
-    Mode m = parse_mode(j.value("mode", std::string("always_on")));
+    Mode m = parse_mode(jr::str(j, "mode", "always_on"));
     Policy p = default_for(m);
     try {
         p.version = j.value("version", int64_t(0));

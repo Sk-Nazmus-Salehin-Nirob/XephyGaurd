@@ -148,6 +148,13 @@ TEST_CASE("discovery reply parsing") {
     CHECK(r->host == "192.168.10.2");
     CHECK(r->ca_fingerprint == "ab12");
     CHECK_FALSE(net::parse_discovery_reply(R"({"service":"other"})", "x"));
+    // Wrong types from an unauthenticated LAN reply fall back instead of throwing.
+    std::optional<net::DiscoveryResult> w;
+    REQUIRE_NOTHROW(w = net::parse_discovery_reply(
+                        R"({"service":"xephyguard-ccc","host":5,"api_port":"x","ca_fingerprint":[],"lab":{}})", "10.0.0.9"));
+    REQUIRE(w);
+    CHECK(w->host == "10.0.0.9");
+    CHECK(w->api_port == 8443);
 }
 
 #ifndef _WIN32

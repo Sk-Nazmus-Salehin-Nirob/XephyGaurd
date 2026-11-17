@@ -7,6 +7,7 @@
 #include "xg/config.hpp"
 #include "xg/event_queue.hpp"
 #include "xg/isolation.hpp"
+#include "xg/json_read.hpp"
 #include "xg/keystats.hpp"
 #include "xg/paste.hpp"
 #include "xg/policy.hpp"
@@ -167,6 +168,35 @@ TEST_CASE("protocol batch and command validation") {
     CHECK_FALSE(protocol::parse_command({{"id", "bad id!"}, {"type", "ping"}}));
     CHECK_FALSE(protocol::parse_command({{"id", "c2"}, {"type", "kill"}, {"args", json::object()}}));
     CHECK(protocol::parse_command({{"id", 42}, {"type", "kill"}, {"args", {{"pid", 5}}}})->id == "42");
+}
+
+TEST_CASE("server JSON with wrong types never throws (I-AGENT-13)") {
+    // Ack fields of the wrong type fall back to defaults instead of throwing json::type_error.
+    std::optional<protocol::BatchAck> ack;
+    REQUIRE_NOTHROW(ack = protocol::parse_batch_ack(
+                        R"({"ack_seq":3,"server_time_ms":"x","policy_version":[1],"signatures_version":7,"isolated":"yes"})"));
+    REQUIRE(ack);
+    CHECK(ack->server_time_ms == 0);
+    CHECK(ack->policy_version == 0);
+    CHECK(ack->signatures_version.empty());
+    CHECK_FALSE(ack->isolated);
+    // Command type/args of the wrong type are rejected, not thrown.
+    CHECK_NOTHROW(protocol::parse_command({{"id", "c1"}, {"type", 5}}));
+    CHECK_FALSE(protocol::parse_command({{"id", "c1"}, {"type", 5}}));
+    CHECK_FALSE(protocol::parse_command({{"id", "c1"}, {"type", "ping"}, {"args", "x"}}));
+    // jr helpers: type and range checked reads.
+    const json j = {{"s", "v"}, {"n", 5}, {"neg", -2}, {"big", 18446744073709551615ULL}, {"f", 0.5}, {"b", true}};
+    CHECK(jr::str(j, "n", "d") == "d");
+    CHECK(jr::i64(j, "s", 7) == 7);
+    CHECK(jr::i64(j, "big", 7) == 7);
+    CHECK(jr::i64(j, "neg", 7, 0) == 7);
+    CHECK(jr::i64(j, "n") == 5);
+    CHECK(jr::num(j, "f", 0, 0, 1) == 0.5);
+    CHECK(jr::boolean(j, "n", true));
+    CHECK(jr::obj(j, "s").empty());
+    CHECK(jr::str(json::array(), "s", "d") == "d");
+    // Policy with a non-string mode does not throw.
+    CHECK_NOTHROW(Policy::from_json({{"mode", 3}}));
 }
 
 TEST_CASE("key stats aggregate timing without key identity") {

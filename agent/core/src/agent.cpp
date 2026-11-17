@@ -8,6 +8,7 @@
 #include "xg/artifact_scan.hpp"
 #include "xg/crypto.hpp"
 #include "xg/ipc_messages.hpp"
+#include "xg/json_read.hpp"
 #include "xg/log.hpp"
 #include "xg/pusher.hpp"
 #include "xg/util.hpp"
@@ -110,7 +111,7 @@ void Agent::apply_policy(const Policy& p) {
 bool Agent::apply_signatures(const json& env, bool require_signature) {
     if (!env.is_object() || !env.contains("bundle") || !env["bundle"].is_string()) return false;
     const std::string bundle = env["bundle"].get<std::string>();
-    const std::string env_version = env.value("version", "");
+    const std::string env_version = jr::str(env, "version");
     // Remember a refused version so the uplink loop does not refetch it in a tight loop.
     auto reject = [&] {
         std::lock_guard rl(rejected_sig_mu_);
@@ -121,10 +122,9 @@ bool Agent::apply_signatures(const json& env, bool require_signature) {
     if (require_signature) {
         bool ok = false;
         const std::string ca = read_file(cfg_.ca_file, &ok);
-        if (!ok || !crypto::verify_signature(bundle, env.value("signature", ""), ca)) {
-            log::error("signatures: bundle {} has an invalid signature; keeping {}", env.value("version", "?"),
-                       rules_.version());
-            sink_->emit(ev::tamper, {{"kind", "signature_invalid"}, {"bundle_version", env.value("version", "")}});
+        if (!ok || !crypto::verify_signature(bundle, jr::str(env, "signature"), ca)) {
+            log::error("signatures: bundle {} has an invalid signature; keeping {}", env_version, rules_.version());
+            sink_->emit(ev::tamper, {{"kind", "signature_invalid"}, {"bundle_version", env_version}});
             return reject();
         }
     }
@@ -139,7 +139,7 @@ bool Agent::apply_signatures(const json& env, bool require_signature) {
     // A bundle without any AI/IDE domain would blind domain monitoring on this PC. Keep the last-known-good
     // bundle instead (a first load with nothing to lose is still accepted).
     if (set.ai_domains.empty() && set.ide_domains.empty() && !rules_.ai_domains().empty()) {
-        log::warn("signatures: bundle {} has no domains; keeping {}", env.value("version", "?"), rules_.version());
+        log::warn("signatures: bundle {} has no domains; keeping {}", env_version, rules_.version());
         return reject();
     }
     {
@@ -176,7 +176,7 @@ void Agent::handle_rule_hit(const RuleHit& hit, const std::string& subject, json
 
     auto do_kill = [&]() -> json {
         if (!wants_kill || pid <= 0 || !plat_.processes) return nullptr;
-        const auto exe = normalize_exe(context.value("exe", std::string{}));
+        const auto exe = normalize_exe(jr::str(context, "exe"));
         if (pol.kill_exempt.contains(exe)) return json{{"pid", pid}, {"killed", false}, {"reason", "exempt"}};
         const bool ok = plat_.processes->kill(pid);
         log::info("action: kill pid {} ({}) for {} -> {}", pid, exe, hit.rule_id, ok ? "ok" : "failed");
@@ -772,18 +772,18 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
     if (line.size() > ipc::kMaxLine) return;
     auto j = json::parse(line, nullptr, false);
     if (j.is_discarded() || !j.is_object()) return;
-    const std::string t = j.value("t", "");
+    const std::string t = jr::str(j, "t");
     const Policy pol = policy();
     const std::string user = peer.user;
     if (t == "hello") {
-        sink_->emit(ev::helper_status, {{"connected", true}, {"user", user}, {"session", j.value("session", "")},
-                                        {"display", j.value("display", "")},
-                                        {"caps", j.value("caps", json::object())}, {"helper_version", j.value("v", 0)}});
+        sink_->emit(ev::helper_status, {{"connected", true}, {"user", user}, {"session", limit(jr::str(j, "session"), 64)},
+                                        {"display", limit(jr::str(j, "display"), 64)},
+                                        {"caps", jr::obj(j, "caps")}, {"helper_version", jr::i64(j, "v")}});
         push_helper_config();
     } else if (t == "window") {
         if (!pol.collect.window) return;
-        const auto app = normalize_exe(j.value("app", ""));
-        const std::string raw_title = j.value("title", "");
+        const auto app = normalize_exe(jr::str(j, "app"));
+        const std::string raw_title = jr::str(j, "title");
         const std::string filtered_title = limit(pol.filter_title(app, raw_title), 256);
 
         auto detect_ai_tab = [](const std::string& title) -> std::string {
@@ -829,7 +829,7 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
         }
     } else if (t == "paste") {
         if (!pol.collect.clipboard) return;
-        const bool is_copy = j.value("copy", false);
+        const bool is_copy = jr::boolean(j, "copy");
         auto norm_target = [](const std::string& s) -> std::string {
             auto pos = s.find(" (");
             if (pos != std::string::npos && s.ends_with(')')) {
@@ -838,9 +838,10 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
             return normalize_exe(s);
         };
         sink_->emit(is_copy ? ev::copy : ev::paste,
-                    {{"chars", j.value("chars", 0)}, {"lines", j.value("lines", 0)}, {"code", j.value("code", false)},
-                     {"score", j.value("score", 0.0)}, {"src", limit(norm_target(j.value("src", "")), 64)},
-                     {"dst", limit(norm_target(j.value("dst", "")), 64)}, {"user", user}});
+                    {{"chars", jr::i64(j, "chars", 0, 0, int64_t(1) << 40)}, {"lines", jr::i64(j, "lines", 0, 0, int64_t(1) << 40)},
+                     {"code", jr::boolean(j, "code")}, {"score", jr::num(j, "score", 0.0, 0.0, 1.0)},
+                     {"src", limit(norm_target(jr::str(j, "src")), 64)},
+                     {"dst", limit(norm_target(jr::str(j, "dst")), 64)}, {"user", user}});
         wake_uplink_.store(true);
         flush_cv_.notify_all();
     } else if (t == "keys") {
@@ -855,12 +856,12 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
     } else if (t == "screen_caps") {
         std::lock_guard lk(helpers_mu_);
         screen_caps_ = {
-            {"session_type", j.value("session_type", "x11")},
-            {"snapshot", j.value("snapshot", false)},
-            {"live", j.value("live", false)},
-            {"delta_tiles", j.value("delta_tiles", false)},
-            {"monitors", std::max(1, j.value("monitors", 1))},
-            {"secure_desktop", j.value("secure_desktop", false)},
+            {"session_type", limit(jr::str(j, "session_type", "x11"), 16)},
+            {"snapshot", jr::boolean(j, "snapshot")},
+            {"live", jr::boolean(j, "live")},
+            {"delta_tiles", jr::boolean(j, "delta_tiles")},
+            {"monitors", jr::i64(j, "monitors", 1, 1, 16)},
+            {"secure_desktop", jr::boolean(j, "secure_desktop")},
         };
     } else if (t == "ping") {
         if (plat_.ipc) plat_.ipc->send(peer.conn_id, ipc::line({{"t", "pong"}}));
@@ -1230,12 +1231,14 @@ bool Agent::poll_enrollment() {
     if (!r.ok()) return false;
     auto j = json::parse(r.body, nullptr, false);
     if (j.is_discarded()) return false;
-    const auto st = j.value("status", "");
-    if (st == "approved" && j.contains("cert_pem") && j.contains("token")) {
-        write_file_atomic(cfg_.cert_file, j["cert_pem"].get<std::string>());
-        if (j.contains("ca_pem")) write_file_atomic(cfg_.ca_file, j["ca_pem"].get<std::string>());
-        cfg_.pc_id = std::to_string(j.value("pc_id", 0));
-        cfg_.token = j["token"].get<std::string>();
+    const auto st = jr::str(j, "status");
+    const std::string cert = jr::str(j, "cert_pem"), token = jr::str(j, "token");
+    const int64_t pc_id = jr::i64(j, "pc_id", 0, 1);
+    if (st == "approved" && !cert.empty() && !token.empty() && pc_id > 0) {
+        write_file_atomic(cfg_.cert_file, cert);
+        if (const auto ca_pem = jr::str(j, "ca_pem"); !ca_pem.empty()) write_file_atomic(cfg_.ca_file, ca_pem);
+        cfg_.pc_id = std::to_string(pc_id);
+        cfg_.token = token;
         cfg_.poll_token.clear();
         cfg_.save(config_path_);
         if (auto h = crypto::sha256_file_hex(config_path_)) file_hashes_[config_path_] = *h;
@@ -1257,9 +1260,9 @@ bool Agent::fetch_policy() {
         return false;
     }
     auto j = json::parse(r.body, nullptr, false);
-    if (j.is_discarded() || !j.contains("policy")) return false;
+    if (j.is_discarded() || !j.is_object() || !j.contains("policy") || !j["policy"].is_object()) return false;
     if (j.contains("signatures") && j["signatures"].is_object() &&
-        j["signatures"].value("version", "") != rules_.version())
+        jr::str(j["signatures"], "version") != rules_.version())
         apply_signatures(j["signatures"], true);
     std::string err;
     Policy p = Policy::from_json(j["policy"], &err);
@@ -1341,7 +1344,8 @@ bool Agent::flush_once() {
 void Agent::uplink_loop(std::atomic<bool>& stop) {
     int fail_backoff_s = 1;
     while (!stop) {
-        int wait_ms;
+        int wait_ms = 5000;
+        try {
         if (!cfg_.enrolled()) {
             poll_enrollment();
             wait_ms = 5000;
@@ -1363,6 +1367,11 @@ void Agent::uplink_loop(std::atomic<bool>& stop) {
                 fail_backoff_s = std::min(fail_backoff_s * 2, 30);
             }
         }
+        } catch (const std::exception& e) {
+            // Server data must never terminate the root service (I-AGENT-13).
+            log::error("uplink: {}", e.what());
+            status_.online = false;
+        }
         std::unique_lock lk(flush_mu_);
         flush_cv_.wait_for(lk, std::chrono::milliseconds(wait_ms),
                            [&] { return stop.load() || wake_uplink_.exchange(false); });
@@ -1380,15 +1389,19 @@ void Agent::realtime_loop(std::atomic<bool>& stop) {
         // Reverb is served by the same nginx endpoint as the API, so reuse the port the agent already
         // reaches the CCC on (the server cannot know about NAT / port forwarding in between).
         pc.port = cfg_.api_port;
-        pc.app_key = realtime_cfg_.value("app_key", "");
-        pc.channel = realtime_cfg_.value("channel", "private-pc." + cfg_.pc_id);
-        pc.auth_path = realtime_cfg_.value("auth_path", protocol::kBroadcastAuthPath);
+        pc.app_key = jr::str(realtime_cfg_, "app_key");
+        pc.channel = jr::str(realtime_cfg_, "channel", "private-pc." + cfg_.pc_id);
+        pc.auth_path = jr::str(realtime_cfg_, "auth_path", protocol::kBroadcastAuthPath);
         auto api = make_api_client(true);
         net::PusherClient client(pc, tls_options(true), *api, [this](const std::string& event, const json& data) {
             if (event != "command") return;
-            std::string err;
-            if (auto cmd = protocol::parse_command(data, &err)) handle_command(*cmd);
-            else log::warn("realtime: rejected command: {}", err);
+            try {
+                std::string err;
+                if (auto cmd = protocol::parse_command(data, &err)) handle_command(*cmd);
+                else log::warn("realtime: rejected command: {}", err);
+            } catch (const std::exception& e) {
+                log::error("realtime: command failed: {}", e.what());
+            }
         });
         std::atomic<bool> session_stop{false};
         std::thread watcher([&] {
@@ -1397,7 +1410,12 @@ void Agent::realtime_loop(std::atomic<bool>& stop) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
         });
-        client.run(stop);
+        try {
+            client.run(stop);
+        } catch (const std::exception& e) {
+            log::error("realtime: {}", e.what());
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
         session_stop = true;
         watcher.join();
         status_.realtime_connected = false;
@@ -1416,8 +1434,8 @@ void Agent::handle_command(const protocol::Command& cmd) {
         wake_uplink();
         command_result(cmd.id, "ok", json::object());
     } else if (cmd.type == "message") {
-        notify_student(cmd.args.value("title", "Message from your instructor"), cmd.args.value("text", ""),
-                       cmd.args.value("urgent", false));
+        notify_student(limit(jr::str(cmd.args, "title", "Message from your instructor"), 200),
+                       jr::str(cmd.args, "text"), jr::boolean(cmd.args, "urgent"));
         command_result(cmd.id, "ok", {{"helpers", status_.helpers_connected.load()}});
     } else if (cmd.type == "kill") {
         json killed = json::array();
@@ -1443,14 +1461,14 @@ void Agent::handle_command(const protocol::Command& cmd) {
         next_run_.erase("snap");
         command_result(cmd.id, "ok", {{"processes", killed}});
     } else if (cmd.type == "isolate_notice") {
-        const bool on = cmd.args.value("isolated", false);
+        const bool on = jr::boolean(cmd.args, "isolated");
         apply_isolation(on);
         notify_student("XephyGuard", on ? "Internet access for this PC was paused by the instructor. The local network still works."
                                         : "Internet access for this PC was restored.",
                        true);
         command_result(cmd.id, "ok", {{"isolated", status_.isolated.load()}});
     } else if (cmd.type == "rescan") {
-        const auto what = cmd.args.value("what", "all");
+        const auto what = jr::str(cmd.args, "what", "all");
         if (what == "extensions" || what == "installed" || what == "all") rescan_extensions_ = true;
         if (what == "artifacts" || what == "extensions" || what == "installed" || what == "all") rescan_artifacts_ = true;
         if (what == "processes" || what == "all") {
