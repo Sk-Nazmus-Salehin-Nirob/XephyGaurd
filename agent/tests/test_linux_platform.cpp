@@ -408,4 +408,16 @@ TEST_CASE("X11StudentUi maps indicator inside _NET_WORKAREA clear of top navbar"
 }
 #endif
 
-#endif  // !_WIN32
+TEST_CASE("Linux system info reports screen caps by session type until a helper reports its own", "[linux]") {
+    auto sys = xg::lnx::make_system_info();
+    using S = xg::UserSession;
+    auto caps = sys->fallback_screen_caps({S{"a", "/home/a", 1000, "wayland-0", "wayland", true}}, true);
+    CHECK(caps["session_type"] == "wayland");
+    CHECK(caps["live"] == false);
+    caps = sys->fallback_screen_caps({S{"a", "/home/a", 1000, ":0", "x11", true}}, true);
+    CHECK(caps["session_type"] == "x11");
+    CHECK(caps["live"] == true);
+    CHECK(sys->fallback_screen_caps({S{"a", "/home/a", 1000, ":0", "x11", true}}, false)["live"] == false);
+}
+
+#endif  // _WIN32

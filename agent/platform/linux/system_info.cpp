@@ -154,6 +154,19 @@ bool write_firefox_policy_file(const std::string& path, bool ai_suppressed, cons
 
 class SystemInfo final : public ISystemInfo {
 public:
+    json fallback_screen_caps(const std::vector<UserSession>& sessions, bool screen_enabled) override {
+        bool has_wayland = false, has_x11 = false;
+        for (const auto& s : sessions) {
+            if (s.session_type == "wayland") has_wayland = true;
+            else if (s.session_type == "x11") has_x11 = true;
+        }
+        if (has_wayland && !has_x11)
+            return {{"session_type", "wayland"}, {"snapshot", false}, {"live", false}, {"delta_tiles", false},
+                    {"monitors", 1}, {"secure_desktop", false}};
+        const bool x11_ok = has_x11 && screen_enabled;
+        return {{"session_type", "x11"}, {"snapshot", x11_ok}, {"live", x11_ok}, {"delta_tiles", x11_ok},
+                {"monitors", 1}, {"secure_desktop", false}};
+    }
     std::string hostname() override {
         char buf[256] = {0};
         ::gethostname(buf, sizeof buf - 1);

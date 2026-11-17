@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "xg/config.hpp"
+#include "xg/event.hpp"
 #include "xg/types.hpp"
 
 namespace xg {
@@ -127,6 +128,11 @@ public:
     virtual void set_browser_proxy_pac(const std::string& /*pac_url*/) {}
     /// Pins system DNS to the lab resolver when gateway mode is active on Linux; empty clears the override.
     virtual void set_lab_dns(const std::string& /*dns_ip*/) {}
+    /// Screen capabilities to report before any helper has sent its own `screen_caps`.
+    virtual json fallback_screen_caps(const std::vector<UserSession>& /*sessions*/, bool /*screen_enabled*/) {
+        return {{"session_type", "unknown"}, {"snapshot", false}, {"live", false}, {"delta_tiles", false},
+                {"monitors", 1}, {"secure_desktop", false}};
+    }
 };
 
 class IGpuMonitor {
@@ -235,5 +241,7 @@ std::string default_ipc_endpoint();
 std::string default_data_dir();
 std::string default_log_dir();
 std::string default_config_dir();
+/// Installed path of the session helper binary.
+std::string default_helper_path();
 
 }  // namespace xg

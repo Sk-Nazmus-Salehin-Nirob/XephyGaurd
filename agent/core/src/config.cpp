@@ -8,35 +8,19 @@
 #include "xg/interfaces.hpp"
 #include "xg/util.hpp"
 
-#ifndef _WIN32
-#include <sys/stat.h>
-#endif
 
 namespace xg {
 
 Config Config::defaults() {
     Config c;
-    const std::string cfg = default_config_dir();
-#ifdef _WIN32
-    const char sep = '\\';
-    std::string win_helper;
-    const char* exe_dir_pf = std::getenv("ProgramFiles");
-    std::string fallback_pf = (exe_dir_pf && *exe_dir_pf) ? std::string(exe_dir_pf) : "C:\\Program Files";
-    win_helper = fallback_pf + "\\XephyGuard\\xephyguard-helper.exe";
-    if (std::filesystem::exists(default_config_dir() + "\\xephyguard-helper.exe")) {
-        win_helper = default_config_dir() + "\\xephyguard-helper.exe";
-    }
-    c.helper_path = win_helper;
-#else
-    const char sep = '/';
-    c.helper_path = "/usr/lib/xephyguard/xephyguard-helper";
-#endif
+    const std::filesystem::path cfg = default_config_dir();
+    c.helper_path = default_helper_path();
     c.data_dir = default_data_dir();
     c.log_dir = default_log_dir();
-    c.ca_file = cfg + sep + "ca.crt";
-    c.cert_file = cfg + sep + "agent.crt";
-    c.key_file = cfg + sep + "agent.key";
-    c.manifest_file = cfg + sep + "manifest.sha256";
+    c.ca_file = (cfg / "ca.crt").string();
+    c.cert_file = (cfg / "agent.crt").string();
+    c.key_file = (cfg / "agent.key").string();
+    c.manifest_file = (cfg / "manifest.sha256").string();
     c.ipc_path = default_ipc_endpoint();
     return c;
 }

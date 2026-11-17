@@ -1090,40 +1090,8 @@ json Agent::build_heartbeat() {
     caps["gpu"] = plat_.gpu != nullptr && plat_.gpu->available();
     std::vector<UserSession> sess_list = plat_.system ? plat_.system->sessions() : std::vector<UserSession>{};
     {
-        if (screen_caps_.is_object() && !screen_caps_.empty()) {
-            caps["screen"] = screen_caps_;
-        } else {
-            bool has_wayland = false, has_x11 = false;
-            for (const auto& s : sess_list) {
-                if (s.session_type == "wayland") has_wayland = true;
-                else if (s.session_type == "x11") has_x11 = true;
-            }
-#ifdef _WIN32
-            caps["screen"] = {{"session_type", "win"},
-                              {"snapshot", cfg_.screen_enabled},
-                              {"live", cfg_.screen_enabled},
-                              {"delta_tiles", cfg_.screen_enabled},
-                              {"monitors", 1},
-                              {"secure_desktop", true}};
-#else
-            if (has_wayland && !has_x11) {
-                caps["screen"] = {{"session_type", "wayland"},
-                                  {"snapshot", false},
-                                  {"live", false},
-                                  {"delta_tiles", false},
-                                  {"monitors", 1},
-                                  {"secure_desktop", false}};
-            } else {
-                const bool x11_ok = has_x11 && cfg_.screen_enabled;
-                caps["screen"] = {{"session_type", "x11"},
-                                  {"snapshot", x11_ok},
-                                  {"live", x11_ok},
-                                  {"delta_tiles", x11_ok},
-                                  {"monitors", 1},
-                                  {"secure_desktop", false}};
-            }
-#endif
-        }
+        if (screen_caps_.is_object() && !screen_caps_.empty()) caps["screen"] = screen_caps_;
+        else if (plat_.system) caps["screen"] = plat_.system->fallback_screen_caps(sess_list, cfg_.screen_enabled);
     }
     json usage = json::object();
     if (plat_.system) {

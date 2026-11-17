@@ -21,6 +21,10 @@ namespace {
 // ---------------------------------------------------------------------------------- system info
 class SystemInfo final : public ISystemInfo {
 public:
+    json fallback_screen_caps(const std::vector<UserSession>&, bool screen_enabled) override {
+        return {{"session_type", "win"}, {"snapshot", screen_enabled}, {"live", screen_enabled},
+                {"delta_tiles", screen_enabled}, {"monitors", 1}, {"secure_desktop", true}};
+    }
     std::string hostname() override {
         wchar_t buf[256];
         DWORD n = 256;
