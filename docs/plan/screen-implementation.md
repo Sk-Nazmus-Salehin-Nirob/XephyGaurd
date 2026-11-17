@@ -108,7 +108,7 @@ Done as part of M0-4, docs only:
 - [x] M5-7 Step 33: `ScreenViewer` options `getUrl` (fresh token, sync/async) / `autoReconnect`, backoff 1..30 s with jitter, reset on first frame, 1008 is final, `onReconnect(attempt, delay)`. Not run, tests deferred
 - [x] M5-8 Step 34 [agent]: cursor at up to 30 Hz (`ScreenCapture::cursor_position`: X11 own connection XQueryPointer, Windows GetCursorPos compile-checked only; `AgentStateMachine::cursor_loop`, live mode, position only, only while Streaming and not masked), viewer DOM overlay `TileCanvas::setCursor`, gateway relays non-frame messages best effort; PROTOCOL.md, ETHICS.md. Built, tests deferred; cursor_position/loop not run
 - [ ] M5-9 Step 35 → 36: multi-monitor frames and selector; Windows all outputs (compile-checked only)
-- [ ] M5-10 Step 37 [server]: dashboard wall uses real `mode=wall` streams; F26 demo stays
+- [x] M5-10 Step 37 [server] (the wall already opened real `mode=wall` streams for up to 6 PCs with `caps.live`; F26 `xgDraw` stays and is skipped per canvas while a live frame is shown. Fixed what kept them from lasting: `ScreenViewer.renewLease`, the live and wall renew timers hand the new token to the gateway (before, every dashboard view closed at the 30 s lease), a wall stream closed by the gateway is dropped and reopened after 10 s. node --check only, not run in a browser): dashboard wall uses real `mode=wall` streams; F26 demo stays
 - [ ] M5-11 Step 38: re-run bench against targets; decide the H.264 gate (needs owner, new dependency)
 
 ## M6: remaining fixes

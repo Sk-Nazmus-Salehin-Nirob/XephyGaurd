@@ -81,7 +81,7 @@ Each step quotes before/after numbers from Step 20. Stop and re-plan if two step
 - [x] Step 34 (built, not run): [agent] Cursor position at up to 30 Hz from the helper, drawn on a viewer overlay (fixes I-SCREEN-23; touches F95, F43) [update docs/PROTOCOL.md if fields change]
 - [ ] Step 35: [screen] Raise `kMaxTiles` limit per message and send per-monitor frames with `monitor_id`; viewer monitor selector (fixes I-SCREEN-21, I-SCREEN-22 part 1; touches F43)
 - [ ] Step 36: [screen] Windows DXGI: capture every output (fixes I-SCREEN-22 part 2; touches F43, F95) (compile-checked only)
-- [ ] Step 37: [server] Dashboard wall uses real `mode=wall` streams instead of the synthetic drawer (fixes none; touches F43, F26) [CROSS: server plan; APPROVAL: F26 demo stays available]
+- [x] Step 37 (M5-10): [server] Dashboard wall uses real `mode=wall` streams instead of the synthetic drawer (fixes none; touches F43, F26) [CROSS: server plan; APPROVAL: F26 demo stays available]
 - [ ] Step 38: [screen] Re-run benchmark; record results against the targets above and decide the "H.264 gate" below (fixes none; touches F43)
 
 ## Phase 4: Config and secrets

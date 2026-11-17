@@ -286,6 +286,12 @@ window.xgApi = async function (url, opts = {}) {
         this.ws.send(encodeKeyframeReq(streamId, monitorId));
       }
     }
+    // Hands the token from POST /api/screen/{audit}/renew to the gateway; without it the socket closes at the lease end.
+    renewLease(token) {
+      if (!token || !this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+      this.ws.send(JSON.stringify({ type: 'renew', token }));
+      return true;
+    }
     disconnect() {
       this._manualClose = true;
       if (this.ws) { this.ws.close(); this.ws = null; }
@@ -897,7 +903,9 @@ document.addEventListener('alpine:init', () => {
           if (mode === 'live' && this.screenAuditId) {
             this.screenRenewTimer = setInterval(() => {
               if (this.screenAuditId && this.screenStreaming) {
-                window.xgApi(`/api/screen/${this.screenAuditId}/renew`, { method: 'POST' }).catch(() => {});
+                window.xgApi(`/api/screen/${this.screenAuditId}/renew`, { method: 'POST' })
+                  .then(r => { if (r && r.token && this.screenViewer) this.screenViewer.renewLease(r.token); })
+                  .catch(() => {});
               }
             }, 20000);
           }
@@ -953,12 +961,23 @@ document.addEventListener('alpine:init', () => {
           else if (gwUrl.startsWith('/')) gwUrl = `${wsProto}//${window.location.host}${gwUrl.replace(/\/$/, '')}`;
           const viewer = new window.ScreenViewer(canvas, {
             onFrame: () => { if (canvas.dataset) canvas.dataset.hasLiveFrame = '1'; },
-            onClose: () => { if (canvas.dataset) delete canvas.dataset.hasLiveFrame; }
+            onClose: manual => {
+              if (canvas.dataset) delete canvas.dataset.hasLiveFrame;
+              // Closed by the gateway (lease end, agent restart, revoke): drop the entry so the next sync opens a new lease.
+              if (!manual && this.wallStreams[p.id] && this.wallStreams[p.id].viewer === viewer) {
+                this.stopWallOne(p.id);
+                setTimeout(() => this.syncWallStreams(), 10000);
+              }
+            }
           });
           viewer.connect(`${gwUrl.replace(/\/$/, '')}/view`, data.token);
           const timer = setInterval(() => {
             const st = this.wallStreams[p.id];
-            if (st && st.auditId) window.xgApi(`/api/screen/${st.auditId}/renew`, { method: 'POST' }).catch(() => {});
+            if (st && st.auditId) {
+              window.xgApi(`/api/screen/${st.auditId}/renew`, { method: 'POST' })
+                .then(r => { if (r && r.token && st.viewer) st.viewer.renewLease(r.token); })
+                .catch(() => {});
+            }
           }, 20000);
           this.wallStreams[p.id] = { viewer, auditId: data.audit_id, timer };
         } catch (e) {
