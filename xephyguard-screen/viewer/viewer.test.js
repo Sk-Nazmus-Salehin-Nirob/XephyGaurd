@@ -9,6 +9,8 @@ import {
   encodeKeyframeReq,
   MAGIC,
   VERSION,
+  VERSION_2,
+  RECT_HEADER_SIZE,
   MsgType,
   Flags,
   Codec,
@@ -295,4 +297,99 @@ test('Viewer stats: without stats nothing changes', async () => {
   const r = rig();
   await r.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1 }));
   assert.deepEqual(r.applied, [1]);
+});
+
+// ---- protocol v2 rectangles (screen Step 27) ----
+
+function frameBytes2({ flags = Flags.KEY, seq = 1, baseSeq = 0, rects = [[0, 0, 64, 64]], w = 300, h = 200, stream = 7, codec = Codec.Jpeg, type = MsgType.Frame, payload = [1, 2, 3, 4] }) {
+  const parts = [];
+  const head = new DataView(new ArrayBuffer(HEADER_SIZE));
+  head.setUint16(0, MAGIC, true);
+  head.setUint8(2, VERSION_2);
+  head.setUint8(3, type);
+  head.setUint16(4, flags, true);
+  head.setUint32(8, stream, true);
+  head.setUint32(12, seq, true);
+  head.setUint32(16, baseSeq, true);
+  head.setUint16(20, w, true);
+  head.setUint16(22, h, true);
+  head.setUint16(24, rects.length, true);
+  parts.push(new Uint8Array(head.buffer));
+  for (const [x, y, rw, rh] of rects) {
+    const body = codec === Codec.Raw ? new Uint8Array(rw * rh * 4) : new Uint8Array(payload);
+    const rec = new DataView(new ArrayBuffer(RECT_HEADER_SIZE));
+    rec.setUint16(0, x, true);
+    rec.setUint16(2, y, true);
+    rec.setUint16(4, rw, true);
+    rec.setUint16(6, rh, true);
+    rec.setUint8(8, codec);
+    rec.setUint32(10, body.length, true);
+    parts.push(new Uint8Array(rec.buffer), body);
+  }
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out.buffer;
+}
+
+test('Viewer v2: parses pixel rectangles; v1 tiles get a clipped pixel rectangle too', () => {
+  const m2 = parseMessage(frameBytes2({ rects: [[256, 100, 44, 100], [0, 0, 256, 256 - 56]] }));
+  assert.equal(m2.version, VERSION_2);
+  assert.deepEqual(m2.tiles.map((t) => [t.x, t.y, t.w, t.h, t.codec]), [[256, 100, 44, 100, Codec.Jpeg], [0, 0, 256, 200, Codec.Jpeg]]);
+  assert.deepEqual([...m2.tiles[0].payload], [1, 2, 3, 4]);
+
+  const m1 = parseMessage(frameBytes({ flags: KEY, seq: 1, tiles: [[0, 0], [1, 1]], w: 100, h: 70 }));
+  assert.equal(m1.version, VERSION);
+  assert.deepEqual(m1.tiles.map((t) => [t.x, t.y, t.w, t.h]), [[0, 0, 64, 64], [64, 64, 36, 6]]);
+});
+
+test('Viewer v2: rejects bad rectangles', () => {
+  const bad = (opts) => parseMessage(frameBytes2(opts)) === null;
+  assert.equal(bad({ rects: [[0, 0, 0, 10]] }), true);          // w = 0
+  assert.equal(bad({ rects: [[0, 0, 10, 0]] }), true);          // h = 0
+  assert.equal(bad({ rects: [[0, 0, 257, 10]], w: 400 }), true); // wider than 256
+  assert.equal(bad({ rects: [[0, 0, 10, 257]], h: 400 }), true); // taller than 256
+  assert.equal(bad({ rects: [[250, 0, 64, 64]] }), true);        // x + w = 314 > 300
+  assert.equal(bad({ rects: [[0, 150, 64, 64]] }), true);        // y + h = 214 > 200
+  assert.equal(bad({ rects: [[0, 0, 64, 64]], codec: 3 }), true); // unknown codec
+  assert.equal(bad({ rects: [[0, 0, 64, 64]], type: MsgType.Cursor }), true); // v2 records on a non-Frame
+  assert.equal(bad({ rects: [[0, 0, 64, 64]], codec: Codec.Raw }), false);
+  const raw = new Uint8Array(frameBytes2({ rects: [[0, 0, 4, 4]], codec: Codec.Raw }));
+  assert.equal(parseMessage(raw.slice(0, raw.length - 1)), null); // truncated
+  new DataView(raw.buffer).setUint32(HEADER_SIZE + 10, 4 * 4 * 4 - 4, true);
+  assert.equal(parseMessage(raw), null); // raw payload not w*h*4
+});
+
+test('Viewer v2: mutated and random buffers never throw', () => {
+  const base = new Uint8Array(frameBytes2({ rects: [[10, 20, 30, 40], [100, 100, 64, 64]] }));
+  for (let i = 0; i < 5000; ++i) {
+    const b = base.slice();
+    for (let f = 0, n = 1 + (i % 4); f < n; ++f) b[Math.floor(Math.random() * b.length)] = Math.floor(Math.random() * 256);
+    const cut = i % 5 === 0 ? b.subarray(0, Math.floor(Math.random() * (b.length + 1))) : b;
+    const m = parseMessage(cut);
+    if (m && m.version === VERSION_2) {
+      for (const t of m.tiles) assert.ok(t.w >= 1 && t.w <= 256 && t.h >= 1 && t.h <= 256 && t.x + t.w <= m.width && t.y + t.h <= m.height);
+    }
+  }
+});
+
+test('Viewer v2: rectangles are drawn at their pixel position, v1 tiles at tile x 64', async () => {
+  const r = rig();
+  await r.viewer.handleBinaryFrame(frameBytes2({ rects: [[5, 7, 40, 30], [256, 100, 44, 100]] }));
+  await r.viewer.drain();
+  assert.deepEqual(r.drawn.map((d) => [d.x, d.y]), [[5, 7], [256, 100]]);
+  const r1 = rig();
+  await r1.viewer.handleBinaryFrame(frameBytes({ flags: KEY, seq: 1, tiles: [[2, 1]], w: 256, h: 128 }));
+  await r1.viewer.drain();
+  assert.deepEqual(r1.drawn.map((d) => [d.x, d.y]), [[128, 64]]);
+});
+
+test('Viewer v2: a raw rectangle becomes an ImageData of exactly w x h', async () => {
+  const r = rig();
+  const sizes = [];
+  globalThis.ImageData = class { constructor(data, w, h) { sizes.push([data.length, w, h]); } };
+  await r.viewer.handleBinaryFrame(frameBytes2({ rects: [[0, 0, 5, 3]], codec: Codec.Raw }));
+  await r.viewer.drain();
+  delete globalThis.ImageData;
+  assert.deepEqual(sizes, [[5 * 3 * 4, 5, 3]]);
 });

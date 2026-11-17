@@ -2,10 +2,14 @@ import { TileCanvas, TILE_SIZE } from './tilecanvas.js';
 
 export const MAGIC = 0x5847;
 export const VERSION = 1;
+export const VERSION_2 = 2; // Frame records are pixel rectangles
 export const HEADER_SIZE = 28;
 export const TILE_HEADER_SIZE = 10;
 export const MAX_TILES = 4096;
 export const MAX_PAYLOAD = 64 * 64 * 4;
+export const RECT_HEADER_SIZE = 14;
+export const MAX_RECT_SIDE = 256;
+export const MAX_RECT_PAYLOAD = 256 * 256 * 4;
 export const MAX_QUEUED_FRAMES = 8; // decoded-but-not-yet-drawn frames kept before the viewer drops its backlog
 
 export const MsgType = {
@@ -68,9 +72,10 @@ export function parseMessage(input) {
     }
 
     const version = view.getUint8(2);
-    if (version !== VERSION) {
+    if (version !== VERSION && version !== VERSION_2) {
       return null;
     }
+    const v2 = version === VERSION_2;
 
     const type = view.getUint8(3);
     const flags = view.getUint16(4, true);
@@ -86,45 +91,71 @@ export function parseMessage(input) {
       return null;
     }
 
+    // v2 records exist for Frame messages only.
+    if (v2 && type !== MsgType.Frame && tileCount !== 0) {
+      return null;
+    }
+
+    const recHeader = v2 ? RECT_HEADER_SIZE : TILE_HEADER_SIZE;
     let offset = HEADER_SIZE;
     const tiles = [];
 
     for (let i = 0; i < tileCount; ++i) {
-      if (offset + TILE_HEADER_SIZE > byteLength) {
+      if (offset + recHeader > byteLength) {
         return null;
       }
 
-      const tileX = view.getUint16(offset, true);
-      const tileY = view.getUint16(offset + 2, true);
-      const codec = view.getUint8(offset + 4);
-      // offset + 5 is reserved
-      const payloadLen = view.getUint32(offset + 6, true);
-
-      if (payloadLen > MAX_PAYLOAD) {
-        return null;
+      let x, y, w, h, codec, payloadLen, tileX, tileY;
+      if (v2) {
+        x = view.getUint16(offset, true);
+        y = view.getUint16(offset + 2, true);
+        w = view.getUint16(offset + 4, true);
+        h = view.getUint16(offset + 6, true);
+        codec = view.getUint8(offset + 8);
+        // offset + 9 is reserved
+        payloadLen = view.getUint32(offset + 10, true);
+        if (w < 1 || h < 1 || w > MAX_RECT_SIDE || h > MAX_RECT_SIDE || x + w > width || y + h > height) {
+          return null;
+        }
+        if (payloadLen > MAX_RECT_PAYLOAD || codec > Codec.Jpeg) {
+          return null;
+        }
+        if (codec === Codec.Raw && payloadLen !== w * h * 4) {
+          return null;
+        }
+      } else {
+        tileX = view.getUint16(offset, true);
+        tileY = view.getUint16(offset + 2, true);
+        codec = view.getUint8(offset + 4);
+        // offset + 5 is reserved
+        payloadLen = view.getUint32(offset + 6, true);
+        if (payloadLen > MAX_PAYLOAD) {
+          return null;
+        }
+        // Pixel rectangle of the 64 px tile, clipped to the frame (0 when outside it).
+        x = tileX * TILE_SIZE;
+        y = tileY * TILE_SIZE;
+        w = Math.max(0, Math.min(TILE_SIZE, width - x));
+        h = Math.max(0, Math.min(TILE_SIZE, height - y));
       }
 
-      if (offset + TILE_HEADER_SIZE + payloadLen > byteLength) {
+      if (offset + recHeader + payloadLen > byteLength) {
         return null;
       }
 
       const payload = new Uint8Array(
         buffer,
-        byteOffset + offset + TILE_HEADER_SIZE,
+        byteOffset + offset + recHeader,
         payloadLen
       );
 
-      tiles.push({
-        tileX,
-        tileY,
-        codec,
-        payload
-      });
+      tiles.push(v2 ? { x, y, w, h, codec, payload } : { tileX, tileY, x, y, w, h, codec, payload });
 
-      offset += TILE_HEADER_SIZE + payloadLen;
+      offset += recHeader + payloadLen;
     }
 
     return {
+      version,
       type,
       flags,
       monitorId,
@@ -335,8 +366,9 @@ export class ScreenViewer {
         return await createImageBitmap(new Blob([tile.payload], { type: 'image/jpeg' }));
       }
       if (tile.codec === Codec.Raw) {
-        const tileW = Math.min(TILE_SIZE, msg.width - tile.tileX * TILE_SIZE);
-        const tileH = Math.min(TILE_SIZE, msg.height - tile.tileY * TILE_SIZE);
+        const tileW = tile.w;
+        const tileH = tile.h;
+        if (tileW < 1 || tileH < 1) return null;
         // Convert BGRA to RGBA for ImageData if needed
         const rgba = new Uint8ClampedArray(tileW * tileH * 4);
         for (let p = 0; p < tileW * tileH; ++p) {
@@ -397,7 +429,7 @@ export class ScreenViewer {
 
     const decodedTiles = [];
     msg.tiles.forEach((t, i) => {
-      if (bitmaps[i]) decodedTiles.push({ tileX: t.tileX, tileY: t.tileY, bitmap: bitmaps[i] });
+      if (bitmaps[i]) decodedTiles.push({ x: t.x, y: t.y, bitmap: bitmaps[i] });
     });
     tc.drawTiles(decodedTiles);
     if (this.stats && msg.receivedAt !== undefined) this.stats.recordPaint(msg.receivedAt);

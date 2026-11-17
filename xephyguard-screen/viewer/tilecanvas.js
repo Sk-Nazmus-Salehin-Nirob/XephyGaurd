@@ -45,7 +45,7 @@ export class TileCanvas {
 
   /**
    * Queue a batch of decoded tiles to be drawn on the next animation frame.
-   * @param {Array<{tileX: number, tileY: number, bitmap: ImageBitmap}>} tiles
+   * @param {Array<{x: number, y: number, bitmap: ImageBitmap}>} x, y are pixels tiles
    */
   drawTiles(tiles) {
     if (!tiles || tiles.length === 0) return;
@@ -71,9 +71,7 @@ export class TileCanvas {
     while (this.pendingTiles.length > 0) {
       const tile = this.pendingTiles.shift();
       if (tile && tile.bitmap) {
-        const dx = tile.tileX * TILE_SIZE;
-        const dy = tile.tileY * TILE_SIZE;
-        this.ctx.drawImage(tile.bitmap, dx, dy);
+        this.ctx.drawImage(tile.bitmap, tile.x, tile.y);
         if (typeof tile.bitmap.close === 'function') {
           tile.bitmap.close();
         }

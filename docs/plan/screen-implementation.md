@@ -101,7 +101,7 @@ Done as part of M0-4, docs only:
 ## M5: Phase 3 smoothness (stop and re-plan if two steps in a row do not improve the metric)
 - [x] M5-1 Step 24: `FlowControl` has no interval floor (live interval = governor fps, max 15; wall unchanged), window 8 frames / 2 MiB unacked (one frame always allowed), unacked frames expire after 2 s, an Ack wakes a live loop waiting for space; tile tracker coalesces updates meanwhile. Typing 5.0 -> 8.3 fps, scrolling 3.4 -> 4.5 (docs/EVALUATION.md)
 - [x] M5-2 Step 25: gateway per-viewer `resync`: no delta until a usable keyframe (new viewer unless the cached keyframe is the newest frame, overflowed viewer gets its queue emptied, agent reconnect); KeyframeReqs (viewer and gateway) 1/s per stream, a held one sent at the end of the second. Unit tests; not benchmarked (bench has one viewer, no gateway)
-- [ ] M5-3 Step 26 → 27 → 28: v2 rectangles in core (v1 decode kept), viewer draws v2, encoder merges tiles. Done: 26 (`Message.version`, `TileRec.w/h`, 14-byte records, golden + malformed + mutation fuzz tests)
+- [ ] M5-3 Step 26 → 27 → 28: v2 rectangles in core (v1 decode kept), viewer draws v2, encoder merges tiles. Done: 27 (viewer parses v1+v2 into pixel rects, draws at x,y; parser/mutation/draw tests), 26 (`Message.version`, `TileRec.w/h`, 14-byte records, golden + malformed + mutation fuzz tests)
 - [ ] M5-4 Step 29: encoder worker pool, reused codec state, capture/encode overlap
 - [ ] M5-5 Step 30: progressive text refinement when the governor has budget
 - [ ] M5-6 Step 32: viewer draw path (index loop; OffscreenCanvas only if the bench shows jank)
