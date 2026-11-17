@@ -68,7 +68,7 @@ Rule: cost proportional to change. A static desktop must cost almost nothing; a 
 
 ## Phase 3: Smoothness (measured performance, pulled forward by owner request)
 Each step quotes before/after numbers from Step 20. Stop and re-plan if two steps in a row do not improve the target metric.
-- [ ] Step 24: [screen] Pacing: remove the 200 ms floor; target frame interval from configured fps (default 15 live, 1 wall); in-flight window in bytes, not 3 frames; coalesce updates instead of waiting (fixes I-SCREEN-8; touches F43)
+- [x] Step 24 (M5-1): [screen] Pacing: remove the 200 ms floor; target frame interval from configured fps (default 15 live, 1 wall); in-flight window in bytes, not 3 frames; coalesce updates instead of waiting (fixes I-SCREEN-8; touches F43)
 - [ ] Step 25: [screen] Per-viewer catch-up: new or lagging viewer gets the cached keyframe; agent keyframe requests rate-limited to 1/s (fixes I-SCREEN-12; touches F43, F45)
 - [ ] Step 26: [screen] Protocol v2 rectangle records (`x,y,w,h` in pixels) in core with v1 decode kept, fuzz and golden tests (fixes I-SCREEN-10 part 1; touches F43, F47) [update docs/PROTOCOL.md; keep v1 until viewers are updated]
 - [ ] Step 27: [screen] Viewer parses and draws v2 rectangles (fixes I-SCREEN-10 part 2; touches F43)

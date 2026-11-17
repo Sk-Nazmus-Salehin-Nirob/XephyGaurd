@@ -130,7 +130,7 @@ bool AgentStateMachine::on_view_start(uint32_t stream_id, const std::string& mod
   }
 
   encoder_ = std::make_unique<FrameEncoder>(cfg);
-  flow_ = std::make_unique<FlowControl>(3);
+  flow_ = std::make_unique<FlowControl>();
   tracker_.reset();
 
   state_ = AgentState::Streaming;
@@ -248,6 +248,10 @@ void AgentStateMachine::on_incoming_message(const uint8_t* data, size_t len) {
 
   if (msg.type == MsgType::Ack) {
     flow_->on_ack(msg.seq, now_ms);
+    if (mode_ != "wall") {  // a live loop waiting for window space continues at once (wall pauses stay)
+      wall_wake_ = true;
+      wake_cv_.notify_all();
+    }
   } else if (msg.type == MsgType::KeyframeReq) {
     flow_->reset();
     if (tracker_) {
@@ -321,7 +325,7 @@ void AgentStateMachine::capture_loop() {
             wall_sent_ = false;
           }
           if (mode_ != "wall" && flow_ && !flow_->can_send(now_ms)) {
-            pause_ms = 10;
+            pause_ms = 100;  // an Ack, a keyframe request or stop ends it early; lost frames expire after 2 s
           } else if (mode_ == "live" && last_frame_ms_ != 0) {
             const uint64_t interval = static_cast<uint64_t>(governor_.min_interval_ms());
             if (now_ms - last_frame_ms_ < interval) pause_ms = static_cast<int>(interval - (now_ms - last_frame_ms_));
@@ -458,7 +462,7 @@ void AgentStateMachine::capture_loop() {
           wire_data = encode(msg);
 
           tracker_->mark_sent();
-          flow_->on_sent(seq_, now_ms);
+          flow_->on_sent(seq_, now_ms, wire_data.size());
           last_frame_ms_ = now_ms;
           ++gov_frames_;
           if (keyframe) {

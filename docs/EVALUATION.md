@@ -117,4 +117,14 @@ production defaults (JPEG q85, governor budget 8 %, floor 2 fps), 10 s per movin
 
 Same run with WebP q85 method 4 (not the default): scrolling 28.6 % and video 24.6 % at the 2 fps floor, quality 0.5; WebP cannot meet the budget on moving content. Not measured: real Windows capture (M4-7 not compiled locally), integrated-GPU PC, real desktop content. Smoothness (>= 15 fps) is Phase 3 (M5).
 
+#### M5-1 pacing without the 200 ms floor, byte window (Step 24)
+Same setup as M4-9 (Xvfb, `taskset -c 0`, JPEG q85, 10 s). Window: 8 frames / 2 MiB unacknowledged, lost frames expire after 2 s.
+
+| Workload | fps before -> after | CPU % before -> after | notes |
+|---|---|---|---|
+| typing | 5.0 -> 8.3 | 4.0 -> 6.2 | the 200 ms floor was the cap; synthetic typing 4.9 -> 5.9 fps |
+| scrolling | 3.4 -> 4.5 | 7.3 -> 9.3 | governor settles at 3.6 fps; 10 s includes its descent from 15 fps |
+| video-like | 3.2 -> 3.9 | 7.4 -> 9.7 | same |
+| drag (Xvfb) | 0.5 -> 1.3 | 22.6 -> 22.5 | cost is 49 captures/s of the painter's full-screen puts, not the pacing (bench limit, see baseline) |
+
 Moving content is unchanged (scrolling, video-like stay near 44 %): its cost is the encoder, not the capture (M4-5, M5-3, M5-4).
