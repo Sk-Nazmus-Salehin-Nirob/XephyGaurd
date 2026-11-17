@@ -260,21 +260,98 @@ scenarios:
     expect: { blocked_only: true }
   - id: screen.view_without_token
     layer: screen
-    title: Watch a PC's screen through the dashboard path without a lease token
+    title: Watch a PC's screen through the dashboard path without a lease token (the gateway must close the socket, 1008, with no data)
     run: |-
-      curl -sk -o /dev/null -w '%{http_code}' --max-time 8 -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' 'https://@CCC@/screen-gw/view?stream_id=1&mode=live'
-    blocked_if: { stdout_not_in: ["101", "200"] }
+      python3 - '' <<'PY'
+      import socket, ssl, struct, os, sys
+      msg = sys.argv[1].encode()
+      ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+      try:
+          s = ctx.wrap_socket(socket.create_connection(("@CCC@", 443), 8), server_hostname="@CCC@"); s.settimeout(10)
+          s.sendall(b"GET /screen-gw/view HTTP/1.1\r\nHost: @CCC@\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n")
+          buf = b""
+          while b"\r\n\r\n" not in buf:
+              buf += s.recv(1)
+          code = buf.split(b" ")[1].decode()
+          if code != "101":
+              print("refused http", code); sys.exit()
+          if msg:
+              mask = os.urandom(4)
+              hdr = bytes([0x81, 0x80 | len(msg)]) if len(msg) < 126 else bytes([0x81, 0x80 | 126]) + struct.pack(">H", len(msg))
+              s.sendall(hdr + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(msg)))
+          def need(n):
+              d = b""
+              while len(d) < n:
+                  c = s.recv(n - len(d))
+                  if not c: raise EOFError
+                  d += c
+              return d
+          while True:
+              b0, b1 = need(2)
+              n = b1 & 0x7f
+              if n == 126: n = struct.unpack(">H", need(2))[0]
+              elif n == 127: n = struct.unpack(">Q", need(8))[0]
+              data = need(n)
+              if b0 & 0x0f == 8:
+                  print("refused ws close", struct.unpack(">H", data[:2])[0] if len(data) >= 2 else 0); break
+              if b0 & 0x0f == 2:
+                  print("open: data received"); break
+      except (EOFError, ConnectionError):
+          print("refused connection closed")
+      except Exception as e:
+          print("error", type(e).__name__)
+      PY
+    blocked_if: { stdout_contains: "refused" }
     expect: { blocked_only: true }
   - id: screen.view_forged_jwt
     layer: screen
-    title: Watch a PC's screen with a lease token signed with a guessed secret
+    title: Watch a PC's screen with a lease token signed with a guessed secret, sent as the first WebSocket message
     run: |-
       b64() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
       h=$(printf '{"alg":"HS256","typ":"JWT"}' | b64)
       p=$(printf '{"iss":"xephyguard-ccc","aud":"xephyguard-gateway","jti":"redteam-1","exp":4102444800,"stream_id":1,"pc_id":1,"mode":"live","student_id":1,"lab_session_id":1,"audit_id":1}' | b64)
       sig=$(printf '%s.%s' "$h" "$p" | openssl dgst -sha256 -hmac secret -binary | b64)
-      curl -sk -o /dev/null -w '%{http_code}' --max-time 8 -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "https://@CCC@/screen-gw/view?token=$h.$p.$sig"
-    blocked_if: { stdout_not_in: ["101", "200"] }
+      tok=$h.$p.$sig
+      python3 - "{\"type\":\"auth\",\"token\":\"$tok\"}" <<'PY'
+      import socket, ssl, struct, os, sys
+      msg = sys.argv[1].encode()
+      ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+      try:
+          s = ctx.wrap_socket(socket.create_connection(("@CCC@", 443), 8), server_hostname="@CCC@"); s.settimeout(10)
+          s.sendall(b"GET /screen-gw/view HTTP/1.1\r\nHost: @CCC@\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n")
+          buf = b""
+          while b"\r\n\r\n" not in buf:
+              buf += s.recv(1)
+          code = buf.split(b" ")[1].decode()
+          if code != "101":
+              print("refused http", code); sys.exit()
+          if msg:
+              mask = os.urandom(4)
+              hdr = bytes([0x81, 0x80 | len(msg)]) if len(msg) < 126 else bytes([0x81, 0x80 | 126]) + struct.pack(">H", len(msg))
+              s.sendall(hdr + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(msg)))
+          def need(n):
+              d = b""
+              while len(d) < n:
+                  c = s.recv(n - len(d))
+                  if not c: raise EOFError
+                  d += c
+              return d
+          while True:
+              b0, b1 = need(2)
+              n = b1 & 0x7f
+              if n == 126: n = struct.unpack(">H", need(2))[0]
+              elif n == 127: n = struct.unpack(">Q", need(8))[0]
+              data = need(n)
+              if b0 & 0x0f == 8:
+                  print("refused ws close", struct.unpack(">H", data[:2])[0] if len(data) >= 2 else 0); break
+              if b0 & 0x0f == 2:
+                  print("open: data received"); break
+      except (EOFError, ConnectionError):
+          print("refused connection closed")
+      except Exception as e:
+          print("error", type(e).__name__)
+      PY
+    blocked_if: { stdout_contains: "refused" }
     expect: { blocked_only: true }
   - id: screen.read_agent_key
     layer: screen
