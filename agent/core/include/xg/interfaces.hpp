@@ -206,6 +206,16 @@ struct ServicePlatform {
     std::unique_ptr<IIpcServer> ipc;
 };
 
+/// Per-user OS settings the helper applies inside the session (adapters only, never in apps/).
+class IHelperSystem {
+public:
+    virtual ~IHelperSystem() = default;
+    /// Windows: HKCU DisableTaskMgr during Test mode. Other platforms: no-op.
+    virtual void set_taskmgr_disabled(bool /*disabled*/) {}
+    /// Sets (non-empty) or clears (empty) the user's system proxy PAC URL. Idempotent.
+    virtual void set_user_proxy(const std::string& pac_url) = 0;
+};
+
 /// Everything the per-session helper needs.
 struct HelperPlatform {
     std::unique_ptr<IWindowMonitor> window;
@@ -213,6 +223,7 @@ struct HelperPlatform {
     std::unique_ptr<IInputTimingMonitor> input;     // Windows low-level hook (timing only); Linux: nullptr
     std::unique_ptr<IStudentUi> ui;
     std::unique_ptr<IIpcClient> ipc;
+    std::unique_ptr<IHelperSystem> system;
     /// Measures the clipboard right now (features only). Used when a paste is observed.
     std::function<bool(PasteInfo&)> probe_clipboard;
 };

@@ -18,141 +18,6 @@
 
 #ifdef _WIN32
 #include <windows.h>
-namespace {
-void set_user_taskmgr_disabled(bool disabled) {
-    HKEY hk = nullptr;
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
-                        0, nullptr, 0, KEY_SET_VALUE, nullptr, &hk, nullptr) == ERROR_SUCCESS) {
-        if (disabled) {
-            DWORD one = 1;
-            RegSetValueExW(hk, L"DisableTaskMgr", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&one), sizeof(one));
-        } else {
-            RegDeleteValueW(hk, L"DisableTaskMgr");
-        }
-        RegCloseKey(hk);
-    }
-}
-
-void notify_wininet_proxy_changed() {
-    using InternetSetOptionWFn = BOOL(WINAPI*)(void*, DWORD, void*, DWORD);
-    if (HMODULE lib = LoadLibraryW(L"wininet.dll")) {
-        auto fn = reinterpret_cast<InternetSetOptionWFn>(reinterpret_cast<void*>(GetProcAddress(lib, "InternetSetOptionW")));
-        if (fn) {
-            constexpr DWORD kSettingsChanged = 39;  // INTERNET_OPTION_SETTINGS_CHANGED
-            constexpr DWORD kRefresh = 37;          // INTERNET_OPTION_REFRESH
-            fn(nullptr, kSettingsChanged, nullptr, 0);
-            fn(nullptr, kRefresh, nullptr, 0);
-        }
-        FreeLibrary(lib);
-    }
-    SendNotifyMessageW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, reinterpret_cast<LPARAM>(L"Internet Settings"));
-}
-
-void set_user_proxy_pac(const std::string& pac_url) {
-    static std::mutex mu;
-    static std::string applied_pac;
-    std::lock_guard lk(mu);
-    if (pac_url == applied_pac) return;
-
-    const wchar_t* subkey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
-    auto to_wide = [](const std::string& s) -> std::wstring {
-        if (s.empty()) return {};
-        int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-        if (n <= 1) return {};
-        std::wstring out(size_t(n - 1), L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, out.data(), n);
-        return out;
-    };
-
-    if (!pac_url.empty()) {
-        const std::wstring wurl = to_wide(pac_url);
-        if (wurl.empty()) return;
-        HKEY hk = nullptr;
-        if (RegCreateKeyExW(HKEY_CURRENT_USER, subkey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hk, nullptr) ==
-            ERROR_SUCCESS) {
-            RegSetValueExW(hk, L"AutoConfigURL", 0, REG_SZ, reinterpret_cast<const BYTE*>(wurl.c_str()),
-                           DWORD((wurl.size() + 1) * sizeof(wchar_t)));
-            RegCloseKey(hk);
-            applied_pac = pac_url;
-            notify_wininet_proxy_changed();
-        }
-        return;
-    }
-
-    if (!applied_pac.empty()) {
-        const std::wstring expected = to_wide(applied_pac);
-        HKEY hk = nullptr;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, subkey, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, &hk) == ERROR_SUCCESS) {
-            wchar_t buf[1024] = {};
-            DWORD type = 0;
-            DWORD bytes = sizeof(buf);
-            if (RegQueryValueExW(hk, L"AutoConfigURL", nullptr, &type, reinterpret_cast<BYTE*>(buf), &bytes) ==
-                    ERROR_SUCCESS &&
-                type == REG_SZ && expected == buf) {
-                RegDeleteValueW(hk, L"AutoConfigURL");
-            }
-            RegCloseKey(hk);
-        }
-        applied_pac.clear();
-        notify_wininet_proxy_changed();
-    }
-}
-
-struct TaskMgrGuard {
-    ~TaskMgrGuard() {
-        set_user_taskmgr_disabled(false);
-        set_user_proxy_pac({});
-    }
-};
-}  // namespace
-#else
-#include <fcntl.h>
-#include <sys/wait.h>
-#include <unistd.h>
-namespace {
-void run_gsettings(const char* key, const char* val) {
-    pid_t pid = ::fork();
-    if (pid == 0) {
-        int devnull = ::open("/dev/null", O_RDWR);
-        if (devnull >= 0) {
-            ::dup2(devnull, 0);
-            ::dup2(devnull, 1);
-            ::dup2(devnull, 2);
-            ::close(devnull);
-        }
-        ::execlp("gsettings", "gsettings", "set", "org.gnome.system.proxy", key, val, static_cast<char*>(nullptr));
-        _exit(127);
-    }
-    if (pid > 0) {
-        int status = 0;
-        ::waitpid(pid, &status, 0);
-    }
-}
-
-void set_user_proxy_pac(const std::string& pac_url) {
-    static std::mutex mu;
-    static std::string applied_pac;
-    std::lock_guard lk(mu);
-    if (pac_url == applied_pac) return;
-    if (!std::getenv("DBUS_SESSION_BUS_ADDRESS")) {
-        applied_pac = pac_url;
-        return;
-    }
-    if (!pac_url.empty()) {
-        run_gsettings("autoconfig-url", pac_url.c_str());
-        run_gsettings("mode", "auto");
-        applied_pac = pac_url;
-    } else if (!applied_pac.empty()) {
-        run_gsettings("mode", "none");
-        run_gsettings("autoconfig-url", "");
-        applied_pac.clear();
-    }
-}
-
-struct TaskMgrGuard {
-    ~TaskMgrGuard() { set_user_proxy_pac({}); }
-};
-}  // namespace
 #endif
 
 using namespace xg;
@@ -269,8 +134,16 @@ bool linux_screen_ready() {
 
 int helper_main() {
     log::init("", log::Level::info, true);
-    TaskMgrGuard taskmgr_guard;
     auto plat = make_helper_platform();
+    // Undo per-user settings (Task Manager lockdown, PAC) when the helper exits.
+    struct SettingsGuard {
+        IHelperSystem* sys;
+        ~SettingsGuard() {
+            if (!sys) return;
+            sys->set_taskmgr_disabled(false);
+            sys->set_user_proxy({});
+        }
+    } settings_guard{plat->system.get()};
     HelperState st;
     KeyStatsAggregator keys(5);
     std::mutex keys_mu;
@@ -555,16 +428,14 @@ int helper_main() {
                     st.want_clipboard = c.value("clipboard", false);
                     st.want_keys = c.value("keys", false);
                     st.mode = j.value("mode", "always_on");
-#ifdef _WIN32
-                    set_user_taskmgr_disabled(st.mode == "test");
-#endif
-                    if (j.contains("proxy_pac_url") && j["proxy_pac_url"].is_string()) {
-                        set_user_proxy_pac(j["proxy_pac_url"].get<std::string>());
+                    if (plat->system) plat->system->set_taskmgr_disabled(st.mode == "test");  // no-op on Linux
+                    if (j.contains("proxy_pac_url") && j["proxy_pac_url"].is_string() && plat->system) {
+                        plat->system->set_user_proxy(j["proxy_pac_url"].get<std::string>());
                     }
                 }
                 apply_config();
             } else if (t == "clear_proxy_pac") {
-                set_user_proxy_pac({});
+                if (plat->system) plat->system->set_user_proxy({});
             } else if (t == "indicator") {
                 {
                     std::lock_guard lk(st.mu);

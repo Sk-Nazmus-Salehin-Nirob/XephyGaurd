@@ -33,6 +33,7 @@ std::unique_ptr<HelperPlatform> make_helper_platform() {
     p->input = nullptr;  // the root service reads key timing from evdev on Linux
     p->ui = lnx::make_student_ui();
     p->ipc = lnx::make_ipc_client();
+    p->system = lnx::make_helper_system();
     p->probe_clipboard = [](PasteInfo& out) { return lnx::probe_clipboard(out); };
     return p;
 }

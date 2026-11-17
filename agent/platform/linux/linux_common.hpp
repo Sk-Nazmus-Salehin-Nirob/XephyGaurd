@@ -74,6 +74,7 @@ std::unique_ptr<IIpcClient> make_ipc_client();
 std::unique_ptr<IWindowMonitor> make_window_monitor();
 std::unique_ptr<IClipboardMonitor> make_clipboard_monitor();
 std::unique_ptr<IStudentUi> make_student_ui();
+std::unique_ptr<IHelperSystem> make_helper_system();
 /// Helper-only: measure the current CLIPBOARD content (features only). Used for paste probes.
 bool probe_clipboard(PasteInfo& out);
 
