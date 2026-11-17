@@ -76,8 +76,8 @@ Each step quotes before/after numbers from Step 20. Stop and re-plan if two step
 - [x] Step 29 (M5-4a pool + reused state in `FrameEncoder`, M5-4b governor-driven 2nd worker, M5-4c capture/encode overlap; not benchmarked): [screen] Encoder worker pool (1 thread by default, 2 only while the CPU governor has headroom; no new dependency), reused WebP/JPEG state, capture and encode overlap (fixes I-SCREEN-10 part 4; touches F43)
 - [x] Step 30 (compile-checked only): [screen] Progressive refinement: fast lossy first, then re-send static regions at high quality so text becomes sharp, only when the governor has spare budget (fixes I-SCREEN-10 part 5; touches F43)
 - [x] Step 31: [screen] X11 capture uses Damage rectangles, skips capture when none, drops the per-pixel alpha loop (fixes I-SCREEN-11; touches F43, F47, F95)
-- [ ] Step 32: [screen] Viewer draw path: index loop instead of `shift()`, one `OffscreenCanvas` worker if the benchmark shows main-thread jank (fixes I-SCREEN-27; touches F43)
-- [ ] Step 33: [screen] Viewer auto-reconnect with backoff; page supplies a fresh token through a callback (fixes I-SCREEN-17; touches F43)
+- [x] Step 32 (head index only, not run): [screen] Viewer draw path: index loop instead of `shift()`, one `OffscreenCanvas` worker if the benchmark shows main-thread jank (fixes I-SCREEN-27; touches F43)
+- [x] Step 33 (not run): [screen] Viewer auto-reconnect with backoff; page supplies a fresh token through a callback (fixes I-SCREEN-17; touches F43)
 - [ ] Step 34: [agent] Cursor position at up to 30 Hz from the helper, drawn on a viewer overlay (fixes I-SCREEN-23; touches F95, F43) [update docs/PROTOCOL.md if fields change]
 - [ ] Step 35: [screen] Raise `kMaxTiles` limit per message and send per-monitor frames with `monitor_id`; viewer monitor selector (fixes I-SCREEN-21, I-SCREEN-22 part 1; touches F43)
 - [ ] Step 36: [screen] Windows DXGI: capture every output (fixes I-SCREEN-22 part 2; touches F43, F95) (compile-checked only)

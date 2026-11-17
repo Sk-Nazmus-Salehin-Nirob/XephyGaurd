@@ -246,14 +246,24 @@ export class ScreenViewer {
     this.lastAppliedSeq = 0;
     this.waitingForKeyframe = true;
     this.frameQueue = [];
+    this.queueHead = 0; // index of the next frame to draw; the array is compacted now and then (no shift())
     this.drainPromise = null;
     this.generation = 0; // bumped on connect/disconnect: late decodes of an old socket are discarded
   }
 
   resetQueue() {
     this.generation++;
-    this.frameQueue.length = 0;
+    this.clearQueue();
     this.drainPromise = null;
+  }
+
+  clearQueue() {
+    this.frameQueue.length = 0;
+    this.queueHead = 0;
+  }
+
+  queuedFrames() {
+    return this.frameQueue.length - this.queueHead;
   }
 
   connect(url) {
@@ -261,29 +271,36 @@ export class ScreenViewer {
     if (!targetUrl) {
       throw new Error('No WebSocket URL provided to ScreenViewer.connect()');
     }
+    this.cancelReconnect();
     if (this.ws) {
       this.disconnect();
     }
+    this.lastUrl = targetUrl;
     this.waitingForKeyframe = true;
     this.resetQueue();
-    this.ws = new WebSocket(targetUrl);
-    this.ws.binaryType = 'arraybuffer';
+    const ws = new WebSocket(targetUrl);
+    this.ws = ws;
+    ws.binaryType = 'arraybuffer';
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
       this.waitingForKeyframe = true;
       this.requestKeyframe(0, 0);
       if (this.options.onOpen) this.options.onOpen();
     };
 
-    this.ws.onclose = () => {
-      if (this.options.onClose) this.options.onClose();
+    ws.onclose = (ev) => {
+      if (this.options.onClose) this.options.onClose(ev);
+      if (this.ws === ws) { // not closed by disconnect() or replaced by connect()
+        this.ws = null;
+        this.scheduleReconnect(ev && ev.code);
+      }
     };
 
-    this.ws.onerror = (err) => {
+    ws.onerror = (err) => {
       if (this.options.onError) this.options.onError(err);
     };
 
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
         // Control JSON message
         try {
@@ -301,6 +318,48 @@ export class ScreenViewer {
   }
 
   /**
+   * Auto-reconnect (Step 33). On when options.getUrl is given (it returns the next WebSocket URL with a fresh
+   * token, sync or async; a falsy result or a throw counts as a failed attempt) or options.autoReconnect === true
+   * (reuses the last URL). Backoff 1 s, 2 s, 4 s ... 30 s with jitter; reset by the first frame of a connection.
+   * Policy closes (1008) are final. options.onReconnect(attempt, delayMs) is told about each wait.
+   */
+  scheduleReconnect(code) {
+    if (code === 1008 || (!this.options.getUrl && this.options.autoReconnect !== true)) return;
+    const attempt = (this.reconnectAttempts = (this.reconnectAttempts || 0) + 1);
+    const base = Math.min(30000, 1000 * 2 ** Math.min(attempt - 1, 5));
+    const delay = Math.round(base * (0.8 + Math.random() * 0.4));
+    if (this.options.onReconnect) this.options.onReconnect(attempt, delay);
+    const epoch = this.reconnectEpoch = this.reconnectEpoch || 0;
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      let url = this.lastUrl;
+      if (this.options.getUrl) {
+        try {
+          url = await this.options.getUrl();
+        } catch {
+          url = null;
+        }
+      }
+      if (epoch !== this.reconnectEpoch || this.ws) return; // disconnect()/connect() ran while waiting
+      if (!url) {
+        this.scheduleReconnect();
+        return;
+      }
+      try {
+        this.connect(url);
+      } catch {
+        this.scheduleReconnect();
+      }
+    }, delay);
+  }
+
+  cancelReconnect() {
+    this.reconnectEpoch = (this.reconnectEpoch || 0) + 1;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  /**
    * Takes one binary message from the socket: parses it, ACKs it on receipt (not on paint, so a slow
    * decode never stalls the agent's send window) and queues it. Returns the promise of the running
    * drain, which settles when the queue is empty.
@@ -312,15 +371,16 @@ export class ScreenViewer {
     if (!msg || msg.type !== MsgType.Frame) {
       return this.drainPromise || Promise.resolve(); // reject malformed message without throwing
     }
+    this.reconnectAttempts = 0;
     this.sendAck(msg.streamId, msg.monitorId, msg.seq);
     if (this.stats) msg.receivedAt = this.stats.recordReceived(data.byteLength);
 
     // A keyframe or full frame repaints everything, so frames queued before it are stale.
     if (msg.flags & (Flags.KEY | Flags.FULL)) {
-      this.frameQueue.length = 0;
-    } else if (this.frameQueue.length >= MAX_QUEUED_FRAMES) {
+      this.clearQueue();
+    } else if (this.queuedFrames() >= MAX_QUEUED_FRAMES) {
       // Behind by more than a delta chain can recover from: drop it and ask for a fresh keyframe.
-      this.frameQueue.length = 0;
+      this.clearQueue();
       if (this.stats) this.stats.queueDrops++;
       this.waitingForKeyframe = true;
       this.requestKeyframeLimited(msg.streamId, msg.monitorId);
@@ -335,9 +395,15 @@ export class ScreenViewer {
       const gen = this.generation;
       this.drainPromise = (async () => {
         try {
-          while (this.frameQueue.length > 0 && gen === this.generation) {
+          while (this.queueHead < this.frameQueue.length && gen === this.generation) {
+            const next = this.frameQueue[this.queueHead];
+            this.frameQueue[this.queueHead++] = undefined; // release the frame's memory
+            if (this.queueHead >= 16 && this.queueHead * 2 >= this.frameQueue.length) {
+              this.frameQueue.splice(0, this.queueHead); // compact
+              this.queueHead = 0;
+            }
             try {
-              await this.applyFrame(this.frameQueue.shift(), gen);
+              await this.applyFrame(next, gen);
             } catch {
               // a throwing onFrame callback must not stop the queue
             }
@@ -470,6 +536,8 @@ export class ScreenViewer {
   }
 
   disconnect() {
+    this.cancelReconnect();
+    this.reconnectAttempts = 0;
     this.resetQueue();
     if (this.ws) {
       this.ws.close();
