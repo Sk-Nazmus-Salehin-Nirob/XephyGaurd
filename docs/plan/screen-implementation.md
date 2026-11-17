@@ -72,7 +72,7 @@ Done as part of M0-4, docs only:
 - [x] M3-2 Step 21: gateway `/metrics`, viewer debug stats overlay
 - [x] M3-3 Step 20a: `bench/stream_bench.cpp` (`xgstreambench`): real streamer loop on synthetic 1080p workloads (idle, static, typing, scrolling, drag, video), CPU/wake-ups, pinned-core use via `taskset -c 0`; smoke ctest
 - [x] M3-3b1 Step 20b: `xgstreambench --stdio` sends every wire message with its capture time on stdout and takes gateway messages on stdin (one workload per run, row on stderr)
-- [ ] M3-3b2 Step 20b: `gateway/cmd/screenbench` bridges that to the real gateway (`-dev-insecure`) and a headless viewer (parses, checks tile signatures, ACKs; no pixel decode): latency p50/p95, viewer frames, drops
+- [x] M3-3b2 Step 20b: `gateway/cmd/screenbench` bridges that to the real gateway (`-dev-insecure`) and a headless viewer (parses, checks tile signatures, ACKs; no pixel decode): latency p50/p95, viewer frames, drops
 - [ ] M3-3b3 Step 20b: CPU-only profile: the bench against the real X11 capture on Xvfb (software rendering), pinned core
 - [ ] M3-4 eval-10: `eval/harness/screen_bench.py` wrapper
 - [ ] M3-5 Step 22: baseline numbers into docs/EVALUATION.md
