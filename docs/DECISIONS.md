@@ -23,3 +23,4 @@
 | 19 | Analysis SQL backtick-quotes column names (`keys`, `lines`, `usage`, `user`) | MySQL reserved words; SQLite tests could not catch it, found against MySQL 8.4 |
 | 20 | mitmproxy runs as dedicated uid/gid 1500 with the CA at its default confdir | unprivileged proxy that can still read the 0600 CA bundle |
 | 21 | nginx config uses `listen … ssl http2` (not `http2 on;`) and the image drops Debian's default site | compatible with nginx 1.22 in the Debian-based app image |
+| 22 | Agent **actor core**: one core thread owns all agent state; platform watchers, uplink, realtime and workers only post typed messages to a bounded mailbox, and read back immutable snapshots | removes the data-race class behind I-AGENT-7 by construction; core logic is testable by feeding messages (approved by owner 2026-11-17, docs/plan/agent.md) |
