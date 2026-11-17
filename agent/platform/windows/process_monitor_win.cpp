@@ -291,8 +291,20 @@ public:
 
     bool watch(std::function<void(const ProcessInfo&)>) override { return false; }
 
-    bool kill(int64_t pid) override {
+    bool kill(int64_t pid, int64_t expected_start) override {
         if (pid <= 4) return false;
+        // Open the process once and check its creation time on that handle: the handle pins the process, so a
+        // reused pid is never terminated (F35).
+        HANDLE h = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, DWORD(pid));
+        if (!h) return false;
+        if (expected_start != 0) {
+            FILETIME c{}, e{}, k{}, u{};
+            const int64_t st = GetProcessTimes(h, &c, &e, &k, &u) ? ((int64_t(c.dwHighDateTime) << 32) | c.dwLowDateTime) : 0;
+            if (st != expected_start) {
+                CloseHandle(h);
+                return false;
+            }
+        }
         // Collect direct child processes first so wrapper CLIs/apps don't leave worker children alive.
         std::vector<DWORD> children;
         HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -306,12 +318,8 @@ public:
             }
             CloseHandle(snap);
         }
-        HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, DWORD(pid));
-        bool killed_main = false;
-        if (h) {
-            killed_main = TerminateProcess(h, 1) != FALSE;
-            CloseHandle(h);
-        }
+        const bool killed_main = TerminateProcess(h, 1) != FALSE;
+        CloseHandle(h);
         for (DWORD child_pid : children) {
             if (HANDLE ch = OpenProcess(PROCESS_TERMINATE, FALSE, child_pid)) {
                 TerminateProcess(ch, 1);

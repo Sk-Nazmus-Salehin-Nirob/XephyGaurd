@@ -5,6 +5,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -169,18 +170,37 @@ public:
         return true;
     }
 
-    bool kill(int64_t pid) override {
+    bool kill(int64_t pid, int64_t expected_start) override {
         if (pid <= 1) return false;
+#ifdef SYS_pidfd_open
+        // pidfd first, then check the start time: if it matches, the pidfd is that very process, and every
+        // signal below goes to it or fails; a reused pid can never be hit (F35).
+        if (const int pfd = int(::syscall(SYS_pidfd_open, pid_t(pid), 0)); pfd >= 0) {
+            ProcessInfo t;
+            if (!read_proc(pid, t, false) || (expected_start != 0 && t.start_time != expected_start) ||
+                ::syscall(SYS_pidfd_send_signal, pfd, SIGTERM, nullptr, 0) != 0) {
+                ::close(pfd);
+                return false;
+            }
+            std::thread([pfd] {
+                pollfd p{pfd, POLLIN, 0};  // readable once the process has exited
+                if (::poll(&p, 1, 1500) == 0) ::syscall(SYS_pidfd_send_signal, pfd, SIGKILL, nullptr, 0);
+                ::close(pfd);
+            }).detach();
+            return true;
+        }
+#endif
         ProcessInfo target;
         const bool had_info = read_proc(pid, target, false);
+        if (expected_start != 0 && (!had_info || target.start_time != expected_start)) return false;
         if (::kill(pid_t(pid), SIGTERM) != 0) return false;
         // Escalate if the same process (matching start_time) ignores SIGTERM.
-        const int64_t expected_start = target.start_time;
-        std::thread([pid, had_info, expected_start] {
+        const int64_t seen_start = target.start_time;
+        std::thread([pid, had_info, seen_start] {
             std::this_thread::sleep_for(std::chrono::milliseconds(1500));
             ProcessInfo check;
             if (!read_proc(pid, check, false)) return;
-            if (had_info && expected_start != 0 && check.start_time != expected_start) return;
+            if (had_info && seen_start != 0 && check.start_time != seen_start) return;
             ::kill(pid_t(pid), SIGKILL);
         }).detach();
         return true;

@@ -14,7 +14,12 @@ public:
     std::vector<int64_t> killed;
     std::vector<ProcessInfo> snapshot() override { return procs; }
     bool watch(std::function<void(const ProcessInfo&)>) override { return false; }
-    bool kill(int64_t pid) override { killed.push_back(pid); return true; }
+    bool kill(int64_t pid, int64_t expected_start = 0) override {
+        for (const auto& p : procs)
+            if (p.pid == pid && expected_start != 0 && p.start_time != expected_start) return false;  // pid reused
+        killed.push_back(pid);
+        return true;
+    }
     void stop() override {}
 };
 

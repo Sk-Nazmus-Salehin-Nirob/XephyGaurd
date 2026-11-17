@@ -468,3 +468,18 @@ TEST_CASE("a flooding helper is rate limited per connection (I-AGENT-16)") {
     h.agent->on_helper_message(other, R"({"t":"window","app":"code","title":"x"})");
     CHECK(h.of(ev::window_focus).size() == got + 1);  // other peers are unaffected
 }
+
+TEST_CASE("kill by pid only hits the process the CCC saw, not a reused pid (F35)") {
+    Harness h;
+    h.agent->apply_policy(Policy::default_for(Mode::practice));
+    h.procs->procs = {{77, 1, "/usr/bin/cursor", "cursor", "", "alice", 1, 5000}};
+    h.agent->handle_command({"c_snap", "rescan", {{"what", "processes"}}});
+    REQUIRE(h.of(ev::process_snapshot).back().data["list"][0]["start"] == 5000);
+    // pid 77 now belongs to a new process (start 6000): a kill carrying the old start time must not hit it.
+    h.procs->procs = {{77, 1, "/usr/bin/bash", "bash", "", "alice", 1, 6000}};
+    h.agent->handle_command({"k1", "kill", {{"pid", 77}, {"start_time", 5000}}});
+    CHECK(h.procs->killed.empty());
+    CHECK(h.of(ev::command_result).back().data["detail"]["processes"][0]["killed"] == false);
+    h.agent->handle_command({"k2", "kill", {{"pid", 77}, {"start_time", 6000}}});
+    CHECK(h.procs->killed == std::vector<int64_t>{77});
+}

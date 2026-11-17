@@ -67,7 +67,7 @@ Response: `{ack_seq, server_time_ms, policy_version, signatures_version, isolate
 | `agent_started` | `version, previous_exit (clean\|unclean), os, hostname` |
 | `agent_stopping` | `reason, uptime_s` (clean shutdown announcement) |
 | `process_start` / `process_stop` | `pid, ppid, exe, user, rss_mb, rule_id` — only for processes matching signatures; no command lines |
-| `process_snapshot` | `hash, count, added[], removed[]` (executable names) |
+| `process_snapshot` | `hash, count, added[], removed[]` (executable names), `list[]` (`pid, ppid, exe, name, user, rss_mb, cpu_pct, net_kbps, net_conns, start, rule_id`; `start` = OS start tick that identifies the process together with `pid`) |
 | `rule_hit` | `rule_id, severity, category, description, subject, actions[], result, context, mode, session_id, user` |
 | `listening_port` | `port, address, process, pid, rule_id, probed` |
 | `window_focus` | `app, title` (title filtered by policy: off / app_only / full) |
@@ -97,7 +97,7 @@ signs the agent's own channel. Event name `command`, data `{id, type, args}`:
 |---|---|---|
 | `policy_updated` | – | re-fetch policy/signatures now (mode switch, override, publish) |
 | `message` | `text, title?, urgent?` | notification in the user session |
-| `kill` | `pid` or `exe` | terminate (exempt system processes are never killed) |
+| `kill` | `pid` (+ optional `start_time` from `process_snapshot.list[].start`) or `exe` | terminate (exempt system processes are never killed); with `start_time` only that exact process, never a reused pid |
 | `isolate_notice` | `isolated` | tell the student network access was paused/restored |
 | `rescan` | `what` ∈ extensions, artifacts, processes, all | immediate scan |
 | `ping`, `flush` | – | flush the queue now |

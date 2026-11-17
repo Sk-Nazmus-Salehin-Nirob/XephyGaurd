@@ -24,7 +24,9 @@ public:
     /// Optional push notifications of exec events (netlink proc connector / ETW). Returns false if
     /// unsupported; the agent then relies on periodic snapshots only.
     virtual bool watch(std::function<void(const ProcessInfo&)> on_exec) = 0;
-    virtual bool kill(int64_t pid) = 0;
+    /// Terminates `pid`. With `expected_start` != 0 it acts only if that pid still has this start time
+    /// (ProcessInfo::start_time), checked race-free (pidfd / process handle), so a reused pid is never hit.
+    virtual bool kill(int64_t pid, int64_t expected_start = 0) = 0;
     virtual void stop() = 0;
 };
 

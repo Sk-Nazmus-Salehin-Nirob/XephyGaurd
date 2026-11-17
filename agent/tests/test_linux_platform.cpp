@@ -460,4 +460,23 @@ TEST_CASE("isolation ruleset keeps IPv4 and IPv6 CCC addresses reachable (I-AGEN
     CHECK(xg::lnx::nft_isolation_rules({"203.0.113.5"}).find("accept\n") == std::string::npos);
 }
 
+TEST_CASE("Linux kill refuses a pid whose start time changed (F35)", "[linux]") {
+    auto pm = xg::lnx::make_process_monitor();
+    const pid_t child = ::fork();
+    if (child == 0) {
+        ::pause();
+        _exit(0);
+    }
+    int64_t start = 0;
+    for (const auto& p : pm->snapshot())
+        if (p.pid == child) start = p.start_time;
+    REQUIRE(start != 0);
+    CHECK_FALSE(pm->kill(child, start + 1));  // wrong start: untouched
+    CHECK(::kill(child, 0) == 0);
+    CHECK(pm->kill(child, start));
+    int status = 0;
+    REQUIRE(::waitpid(child, &status, 0) == child);
+    CHECK(WIFSIGNALED(status));
+}
+
 #endif  // _WIN32

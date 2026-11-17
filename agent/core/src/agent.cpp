@@ -181,7 +181,8 @@ void Agent::handle_rule_hit(const RuleHit& hit, const std::string& subject, json
         if (!wants_kill || pid <= 0 || !plat_.processes) return nullptr;
         const auto exe = normalize_exe(jr::str(context, "exe"));
         if (pol.kill_exempt.contains(exe)) return json{{"pid", pid}, {"killed", false}, {"reason", "exempt"}};
-        const bool ok = plat_.processes->kill(pid);
+        const auto* known = tracker_.get(pid);
+        const bool ok = plat_.processes->kill(pid, known ? known->start_time : 0);
         log::info("action: kill pid {} ({}) for {} -> {}", pid, exe, hit.rule_id, ok ? "ok" : "failed");
         return json{{"pid", pid}, {"killed", ok}};
     };
@@ -296,6 +297,7 @@ void Agent::process_snapshot() {
                         {"cpu_pct", p.cpu_pct},
                         {"net_kbps", p.net_kbps},
                         {"net_conns", p.net_conns},
+                        {"start", p.start_time},
                         {"rule_id", rule_id}});
     }
     // Only names (no command lines) and bounded process table; the hash lets the CCC detect divergence.
@@ -1199,18 +1201,21 @@ void Agent::handle_command(const protocol::Command& cmd) {
     } else if (cmd.type == "kill") {
         json killed = json::array();
         const Policy& pol = policy_;
-        std::vector<int64_t> pids;
-        if (cmd.args.contains("pid") && cmd.args["pid"].is_number_integer()) pids.push_back(cmd.args["pid"].get<int64_t>());
-        if (cmd.args.contains("exe") && cmd.args["exe"].is_string() && plat_.processes) {
-            const auto exe = normalize_exe(cmd.args["exe"].get<std::string>());
-            for (const auto& p : plat_.processes->snapshot())
-                if (normalize_exe(p.exe_path.empty() ? p.name : p.exe_path) == exe) pids.push_back(p.pid);
+        // (pid, start time, exe): the start time pins the exact process the CCC saw (F35); a pid that was reused
+        // since the instructor's process list was taken is left alone.
+        struct Target { int64_t pid; int64_t start; std::string exe; };
+        std::vector<Target> targets;
+        auto exe_of = [](const ProcessInfo& p) { return normalize_exe(p.exe_path.empty() ? p.name : p.exe_path); };
+        if (const int64_t pid = jr::i64(cmd.args, "pid", 0, 1); pid > 0) {
+            const auto* p = tracker_.get(pid);
+            targets.push_back({pid, jr::i64(cmd.args, "start_time", p ? p->start_time : 0), p ? exe_of(*p) : ""});
         }
-        for (auto pid : pids) {
-            std::string exe;
-            if (auto* p = tracker_.get(pid)) exe = normalize_exe(p->exe_path.empty() ? p->name : p->exe_path);
-            const bool ok = !pol.kill_exempt.contains(exe) && plat_.processes && plat_.processes->kill(pid);
-            killed.push_back({{"pid", pid}, {"exe", exe}, {"killed", ok}});
+        if (const auto want = normalize_exe(jr::str(cmd.args, "exe")); !want.empty() && plat_.processes)
+            for (const auto& p : plat_.processes->snapshot())
+                if (exe_of(p) == want) targets.push_back({p.pid, p.start_time, want});
+        for (const auto& t : targets) {
+            const bool ok = !pol.kill_exempt.contains(t.exe) && plat_.processes && plat_.processes->kill(t.pid, t.start);
+            killed.push_back({{"pid", t.pid}, {"exe", t.exe}, {"killed", ok}});
         }
         notify_student("XephyGuard", "A program was closed by your instructor.", false);
         next_run_.erase("proc");
