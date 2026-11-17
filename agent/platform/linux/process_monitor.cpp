@@ -147,10 +147,17 @@ public:
             while (running_) {
                 pollfd pfd{fd_, POLLIN, 0};
                 if (::poll(&pfd, 1, 500) <= 0) continue;
-                ssize_t n = ::recv(fd_, buf, sizeof buf, 0);
+                sockaddr_nl from{};
+                socklen_t from_len = sizeof from;
+                ssize_t n = ::recvfrom(fd_, buf, sizeof buf, 0, reinterpret_cast<sockaddr*>(&from), &from_len);
                 if (n <= 0) continue;
+                // Only the kernel (nl_pid 0) may speak on this socket (I-AGENT-27).
+                if (from_len < sizeof from || from.nl_family != AF_NETLINK || from.nl_pid != 0) continue;
                 for (auto* h = reinterpret_cast<nlmsghdr*>(buf); NLMSG_OK(h, size_t(n)); h = NLMSG_NEXT(h, n)) {
+                    // The payload must hold a whole cn_msg + proc_event before we read it.
+                    if (h->nlmsg_len < NLMSG_LENGTH(sizeof(cn_msg) + sizeof(proc_event))) continue;
                     auto* cn = reinterpret_cast<cn_msg*>(NLMSG_DATA(h));
+                    if (cn->id.idx != CN_IDX_PROC || cn->id.val != CN_VAL_PROC || cn->len < sizeof(proc_event)) continue;
                     auto* ev = reinterpret_cast<proc_event*>(cn->data);
                     if (ev->what != PROC_EVENT_EXEC) continue;
                     ProcessInfo p;
