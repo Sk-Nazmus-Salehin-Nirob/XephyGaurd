@@ -47,7 +47,7 @@ Privacy and capture:
 
 ## Phase 2: Tooling and measurement
 - [x] Step 17: [screen] `go mod tidy`, `go vet`, `go test -race` as one documented command in docs/DEVELOPMENT.md (fixes I-SCREEN-32 part; touches F45)
-- [ ] Step 18: [screen] Remove tracked `gateway/gateway.exe` and ignore `*.exe` (fixes I-SCREEN-31; touches F45) [APPROVAL: deletes a tracked file]
+- [x] Step 18: [screen] Remove tracked `gateway/gateway.exe` and ignore `*.exe` (fixes I-SCREEN-31; touches F45) [APPROVAL: deletes a tracked file]
 - [ ] Step 19: [screen] CI jobs for Go tests, viewer tests and `xgtests` (fixes I-SCREEN-32 part; touches F43, F45) [APPROVAL: CI edit]
 - [ ] Step 20: [screen] Headless benchmark `bench/stream_bench`: synthetic 1080p workloads (typing, scrolling, window drag, video-like), real encoder, real gateway, headless viewer counting decoded frames; prints fps, bytes/s, encode ms p50/p95, latency p50/p95, drops, keyframes, **CPU-seconds per streamed second and per frame, wake-ups per second, and an idle (not viewed) phase**; runs on one pinned core (`taskset -c 0`) and in a CPU-only profile (Xvfb with software rendering) as the worst case; an integrated-GPU run needs a real PC and a Windows run needs a real Windows PC, both "not run" until then (fixes none; touches F43, F45, F47)
 - [ ] Step 21: [screen] Gateway `/metrics` (plain text) and a viewer stats overlay (fps, latency, kbit/s) behind a debug flag (fixes I-SCREEN-25; touches F43, F45)
