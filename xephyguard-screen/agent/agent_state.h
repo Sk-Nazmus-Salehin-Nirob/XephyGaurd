@@ -13,6 +13,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -77,6 +78,8 @@ public:
 
 private:
   void capture_loop();
+  void encode_loop();  // live mode: encodes the staged frame while capture_loop() captures the next one
+  bool masked_locked(uint64_t now_ms);  // privacy check; caller holds mutex_
   void wall_pause();  // waits wall_interval_ms_ unless stopped or a keyframe request arrives
   void pause_for(int ms);  // waits ms unless stopped or a keyframe request arrives
   std::vector<uint8_t> wall_unchanged_locked() const;
@@ -110,8 +113,15 @@ private:
   int wall_interval_ms_ = 5000;
   std::condition_variable_any wake_cv_;
 
+  // Live mode pipeline: capture_loop() stages at most one captured frame (its tiles are already in tracker_); the
+  // encode thread takes it, builds and sends it while the capture thread captures the next one. Guarded by mutex_.
+  std::optional<Frame> staged_;
+  std::condition_variable_any slot_cv_;  // staged_ filled or taken, or stop
+  std::atomic<uint64_t> enc_cpu_us_{0};  // the encode thread's own CPU time, for the governor
+
   std::atomic<bool> running_{false};
   std::thread capture_thread_;
+  std::thread encode_thread_;
 };
 
 }  // namespace xg

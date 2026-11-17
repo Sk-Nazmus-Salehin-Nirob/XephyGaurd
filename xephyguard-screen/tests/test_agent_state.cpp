@@ -341,3 +341,59 @@ TEST_CASE("AgentStateMachine: an idle live view gets the second encoder worker f
   CHECK(workers == 2);  // near 0 % CPU, not throttled
   REQUIRE(agent.on_view_stop());
 }
+
+TEST_CASE("AgentStateMachine: the encode thread keeps the delta chain ordered (seq +1, base_seq = previous seq)") {
+  auto capture = std::make_shared<xg::FakeCapture>(640, 360);
+  std::mutex m;
+  std::vector<xg::Message> frames;
+  xg::AgentStateMachine agent(capture, xg::EncoderConfig{}, nullptr);
+  agent.set_frame_sender([&](const std::vector<uint8_t>& data) {
+    auto msg = xg::decode(data.data(), data.size());
+    if (!msg.has_value() || msg->type != xg::MsgType::Frame) return;
+    { std::lock_guard<std::mutex> lock(m); frames.push_back(*msg); }
+    xg::Message ack{};
+    ack.type = xg::MsgType::Ack; ack.seq = msg->seq; ack.stream_id = msg->stream_id;
+    auto b = xg::encode(ack);
+    agent.on_incoming_message(b.data(), b.size());
+  });
+  REQUIRE(agent.on_view_start(11, "live"));
+  for (int i = 0; i < 300; ++i) {
+    { std::lock_guard<std::mutex> lock(m); if (frames.size() >= 8) break; }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  REQUIRE(agent.on_view_stop());
+  std::lock_guard<std::mutex> lock(m);
+  REQUIRE(frames.size() >= 8);
+  CHECK((frames[0].flags & xg::Flags::KEY) != 0);
+  for (size_t i = 1; i < frames.size(); ++i) {
+    CHECK(frames[i].seq == frames[i - 1].seq + 1);
+    if (!(frames[i].flags & xg::Flags::KEY)) CHECK(frames[i].base_seq == frames[i - 1].seq);
+  }
+}
+
+TEST_CASE("AgentStateMachine: no picture is sent once the mask is on, even if one was being encoded") {
+  auto capture = std::make_shared<xg::FakeCapture>(1280, 720);
+  std::atomic<bool> masked{false};
+  std::atomic<int> pictures_while_masked{0}, pictures{0};
+  xg::AgentStateMachine agent(capture, xg::EncoderConfig{}, nullptr);
+  agent.set_privacy_checker([&] { return masked.load(); });
+  agent.set_frame_sender([&](const std::vector<uint8_t>& data) {
+    auto msg = xg::decode(data.data(), data.size());
+    if (!msg.has_value() || msg->type != xg::MsgType::Frame) return;
+    const bool placeholder = (msg->flags & (xg::Flags::MASKED | xg::Flags::SECURE)) != 0;
+    if (!placeholder) {
+      ++pictures;
+      if (masked.load()) ++pictures_while_masked;
+    }
+    xg::Message ack{};
+    ack.type = xg::MsgType::Ack; ack.seq = msg->seq; ack.stream_id = msg->stream_id;
+    auto b = xg::encode(ack);
+    agent.on_incoming_message(b.data(), b.size());
+  });
+  REQUIRE(agent.on_view_start(12, "live"));
+  for (int i = 0; i < 200 && pictures.load() < 3; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  masked.store(true);
+  std::this_thread::sleep_for(std::chrono::milliseconds(600));
+  CHECK(pictures_while_masked.load() == 0);
+  REQUIRE(agent.on_view_stop());
+}

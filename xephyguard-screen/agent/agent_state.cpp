@@ -133,9 +133,12 @@ bool AgentStateMachine::on_view_start(uint32_t stream_id, const std::string& mod
   flow_ = std::make_unique<FlowControl>();
   tracker_.reset();
 
+  staged_.reset();
+  enc_cpu_us_.store(0);
   state_ = AgentState::Streaming;
   running_.store(true);
 
+  if (mode == "live") encode_thread_ = std::thread(&AgentStateMachine::encode_loop, this);
   capture_thread_ = std::thread(&AgentStateMachine::capture_loop, this);
   return true;
 }
@@ -145,10 +148,15 @@ bool AgentStateMachine::on_view_stop() {
   if (capture_) capture_->interrupt_wait();  // the capture thread may be blocked waiting for a screen change
   { std::lock_guard<std::recursive_mutex> lock(mutex_); }  // a wall_pause() between its check and its wait sees it
   wake_cv_.notify_all();
+  slot_cv_.notify_all();
 
   if (capture_thread_.joinable()) {
     capture_thread_.join();
   }
+  if (encode_thread_.joinable()) {
+    encode_thread_.join();
+  }
+  staged_.reset();
 
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   if (capture_) {
@@ -271,13 +279,28 @@ void AgentStateMachine::on_incoming_message(const uint8_t* data, size_t len) {
   }
 }
 
+bool AgentStateMachine::masked_locked(uint64_t now_ms) {
+  if (privacy_filter_) return privacy_filter_->check_masked(now_ms);
+  if (privacy_checker_) {
+    try {
+      return privacy_checker_();
+    } catch (...) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void AgentStateMachine::capture_loop() {
   // Never sleep while holding mutex_: std::recursive_mutex is not fair, so the loop would re-take it at once and
   // starve state(), on_incoming_message() and set_privacy_filter() for seconds while masked or paused.
   bool asked_full = false;  // request_full() sent and no frame has come back yet
   set_current_thread_idle_priority();  // capture + encode run only on CPU time nobody else wants (best effort)
-  // The budget covers this thread plus the encoder's helper threads (worker_cpu_seconds).
-  auto gov_cpu_now = [this] { return current_thread_cpu_seconds() + (encoder_ ? encoder_->worker_cpu_seconds() : 0.0); };
+  // The budget covers this thread, the encode thread and the encoder's helper threads (worker_cpu_seconds).
+  auto gov_cpu_now = [this] {
+    return current_thread_cpu_seconds() + static_cast<double>(enc_cpu_us_.load()) / 1e6 +
+           (encoder_ ? encoder_->worker_cpu_seconds() : 0.0);
+  };
   double gov_cpu0 = gov_cpu_now();
   uint64_t gov_t0 = get_now_ms();
   while (running_.load()) {
@@ -289,7 +312,6 @@ void AgentStateMachine::capture_loop() {
       if (now_ms - gov_t0 >= 1000) {  // the governor measures this thread's own CPU time once per second
         const double cpu = gov_cpu_now();
         governor_.update(cpu - gov_cpu0, static_cast<double>(now_ms - gov_t0) / 1000.0, gov_frames_);
-        if (encoder_) encoder_->set_workers(mode_ == "live" ? governor_.workers() : 1);
         gov_frames_ = 0;
         gov_cpu0 = cpu;
         gov_t0 = now_ms;
@@ -297,16 +319,7 @@ void AgentStateMachine::capture_loop() {
       if (state_ == AgentState::PausedDisconnected) {
         pause_ms = 50;
       } else {
-        bool masked = false;
-        if (privacy_filter_) {
-          masked = privacy_filter_->check_masked(now_ms);
-        } else if (privacy_checker_) {
-          try {
-            masked = privacy_checker_();
-          } catch (...) {
-            masked = true;
-          }
-        }
+        const bool masked = masked_locked(now_ms);
 
         if (masked) {
           if (state_ != AgentState::PausedMasked) {
@@ -339,6 +352,12 @@ void AgentStateMachine::capture_loop() {
     if (pause_ms > 0) {
       pause_for(pause_ms);  // stop and keyframe requests end it early
       continue;
+    }
+
+    if (mode_ == "live") {  // one frame may wait for the encoder; capture the next one only after it was taken
+      std::unique_lock<std::recursive_mutex> lock(mutex_);
+      slot_cv_.wait(lock, [&] { return !running_.load() || !staged_.has_value(); });
+      if (!running_.load()) break;
     }
 
     Frame frame;
@@ -456,18 +475,22 @@ void AgentStateMachine::capture_loop() {
             continue;
           }
 
+          if (mode_ == "live") {  // the encode thread builds and sends it while the next frame is captured
+            staged_ = std::move(frame);
+            slot_cv_.notify_all();
+            continue;
+          }
+
           bool keyframe = flow_->needs_keyframe();
           ++seq_;
           uint32_t base = keyframe ? 0 : last_sent_seq_;
 
-          encoder_->set_quality_scale(std::min(flow_->quality_scale(), mode_ == "live" ? governor_.quality_scale() : 1.0));
+          encoder_->set_quality_scale(std::min(flow_->quality_scale(), 1.0));
           auto msg = encoder_->build(frame, pending, stream_id_, seq_, base, keyframe);
           wire_data = encode(msg);
 
           tracker_->mark_sent();
           flow_->on_sent(seq_, now_ms, wire_data.size());
-          last_frame_ms_ = now_ms;
-          ++gov_frames_;
           if (keyframe) {
             flow_->note_keyframe_sent();
           }
@@ -497,6 +520,66 @@ void AgentStateMachine::capture_loop() {
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  }
+}
+
+void AgentStateMachine::encode_loop() {
+  set_current_thread_idle_priority();  // same rule as the capture thread
+  while (true) {
+    Frame frame;
+    std::vector<uint32_t> pending;
+    uint32_t seq = 0, base = 0;
+    bool keyframe = false;
+    double scale = 1.0;
+    int workers = 1;
+    {
+      std::unique_lock<std::recursive_mutex> lock(mutex_);
+      slot_cv_.wait(lock, [&] { return !running_.load() || staged_.has_value(); });
+      if (!running_.load()) return;
+      frame = std::move(*staged_);
+      staged_.reset();
+      slot_cv_.notify_all();  // the capture thread may capture the next frame now
+      if (!tracker_ || !flow_ || !encoder_) continue;
+      if (state_ != AgentState::Streaming) {  // masked, secure or disconnected since it was captured: send nothing
+        flow_->reset();
+        tracker_->force_all_pending();
+        continue;
+      }
+      keyframe = flow_->needs_keyframe();
+      if (tracker_->pending().empty() && !keyframe) continue;
+      pending = tracker_->pending();
+      tracker_->mark_sent();
+      seq = ++seq_;
+      base = keyframe ? 0 : last_sent_seq_;
+      last_sent_seq_ = seq;
+      if (keyframe) flow_->note_keyframe_sent();
+      scale = std::min(flow_->quality_scale(), governor_.quality_scale());
+      workers = governor_.workers();
+      last_frame_ms_ = get_now_ms();
+      ++gov_frames_;
+    }
+
+    // No lock while encoding: this is the slow part the capture thread now overlaps.
+    encoder_->set_workers(workers);  // only this thread calls build(), as set_workers() requires
+    encoder_->set_quality_scale(scale);
+    const std::vector<uint8_t> wire_data = encode(encoder_->build(frame, pending, stream_id_, seq, base, keyframe));
+
+    FrameSender sender;
+    {
+      std::lock_guard<std::recursive_mutex> lock(mutex_);
+      const uint64_t now_ms = get_now_ms();
+      // Privacy: a mask that began while this frame was encoding must stop it; the picture is dropped and the
+      // viewer gets a keyframe after the mask lifts.
+      if (!flow_ || !tracker_ || state_ != AgentState::Streaming || masked_locked(now_ms)) {
+        if (flow_) flow_->reset();
+        if (tracker_) tracker_->force_all_pending();
+        continue;
+      }
+      flow_->on_sent(seq, now_ms, wire_data.size());
+      sender = sender_;
+    }
+    if (sender && !wire_data.empty()) sender(wire_data);
+    enc_cpu_us_.store(static_cast<uint64_t>(current_thread_cpu_seconds() * 1e6));
   }
 }
 
