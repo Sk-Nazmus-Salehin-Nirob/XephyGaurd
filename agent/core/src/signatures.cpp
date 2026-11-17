@@ -1,5 +1,6 @@
 #include "xg/signatures.hpp"
 
+#include "xg/json_read.hpp"
 #include "xg/util.hpp"
 
 namespace xg {
@@ -40,7 +41,7 @@ std::vector<std::string> strs(const json& j, const char* key, bool lower = true,
 std::string str(const json& j, const char* key) {
     return j.contains(key) && j[key].is_string() ? j[key].get<std::string>() : std::string{};
 }
-Severity sev(const json& j) { return parse_severity(j.value("severity", std::string("medium"))); }
+Severity sev(const json& j) { return parse_severity(jr::str(j, "severity", "medium")); }
 }  // namespace
 
 SignatureSet SignatureSet::from_json(const json& j, std::string* err) {
@@ -49,7 +50,7 @@ SignatureSet SignatureSet::from_json(const json& j, std::string* err) {
         if (err) *err = "signature bundle is not an object";
         return s;
     }
-    s.version = j.value("version", std::string("0"));
+    s.version = jr::str(j, "version", "0");
     try {
         for (const auto& r : j.value("processes", json::array())) {
             ProcessRule p;
