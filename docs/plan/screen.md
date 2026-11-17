@@ -90,7 +90,7 @@ Each step quotes before/after numbers from Step 20. Stop and re-plan if two step
 - [ ] Step 41: [screen] Pin libwebp / libjpeg-turbo by commit hash and document the CMake patch (fixes I-SCREEN-33; touches F47)
 
 ## Phase 5: Structure (moves only)
-- [ ] Step 42: [screen] Split `gateway/relay.go` into `stream.go`, `agent_handler.go`, `viewer_handler.go` (move only) before Phase 3 gateway changes if the diff gets large (fixes none; touches F45)
+- [x] Step 42: [screen] Split `gateway/relay.go` into `stream.go`, `agent_handler.go`, `viewer_handler.go` (move only) before Phase 3 gateway changes if the diff gets large (fixes none; touches F45)
 
 ## Phase 6: Duplication and dead code
 - Step 43 moved to Phase 0 (decided: retire F47, DECISIONS #25).

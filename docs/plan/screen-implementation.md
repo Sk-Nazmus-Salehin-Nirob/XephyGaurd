@@ -31,7 +31,7 @@ Done as part of M0-4, docs only:
 ## M0: groundwork (no behaviour change)
 - [x] M0-1 Step 17 + commands: `go mod tidy`, document the three screen commands in docs/DEVELOPMENT.md; run all three and record the pass/fail baseline
 - [x] M0-2 Step 18: remove tracked `gateway/gateway.exe`, ignore `*.exe`
-- [ ] M0-3 Step 42: split `gateway/relay.go` into `stream.go`, `agent_handler.go`, `viewer_handler.go` (move only; most later gateway steps touch it)
+- [x] M0-3 Step 42: split `gateway/relay.go` into `stream.go`, `agent_handler.go`, `viewer_handler.go` (move only; most later gateway steps touch it)
 - [ ] M0-4 docs: apply the corrections above to plan/server.md and plan/agent.md
 
 ## M1: Phase 0 architecture (order matters: old path keeps working until Step 62)

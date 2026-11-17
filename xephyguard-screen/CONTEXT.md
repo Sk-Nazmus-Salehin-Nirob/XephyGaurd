@@ -69,7 +69,7 @@
 ### What exists now
 - **Gateway (`gateway/`):**
   - `gateway/auth_iface.go`: Fixed contract defining `Authenticator` interface (`AuthViewer` and `AuthAgent`).
-  - `gateway/relay.go`: High-performance WebSocket relay using `github.com/coder/websocket`.
+  - `gateway/stream.go`, `agent_handler.go`, `viewer_handler.go`: High-performance WebSocket relay using `github.com/coder/websocket` (streams and routes, agent side, viewer side).
     - `/agent`: Authenticated with `AuthAgent`, bidirectional binary streaming and text control frame handling.
     - `/view`: Authenticated with `AuthViewer`, pairs by `stream_id`, enforces maximum 2 viewers per stream.
     - Bounded channels per viewer (capacity 8): on queue overflow, drops oldest message and issues `KEYFRAME_REQ` (msg type 4) to the agent.
