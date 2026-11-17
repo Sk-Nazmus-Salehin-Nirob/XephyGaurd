@@ -57,29 +57,7 @@ class ViewTokenController extends Controller
         $pcId = (int) $sessionPc->pc_id;
         $streamId = $pcId;
 
-        $cfg = config('services.screen_gateway');
-        $now = time();
-        $ttl = max(5, (int) ($cfg['ttl'] ?? 30));
-        $exp = $now + $ttl; // 30 second lease
-        $jti = bin2hex(random_bytes(16));
-
-        $payload = [
-            'iss' => $cfg['issuer'],
-            'aud' => $cfg['audience'],
-            'sub' => (string) $user->id,
-            'student_id' => (int) $student->id,
-            'lab_session_id' => (int) $session->id,
-            'pc_id' => $pcId,
-            'stream_id' => $streamId,
-            'mode' => $mode,
-            'iat' => $now,
-            'nbf' => $now,
-            'exp' => $exp,
-            'jti' => $jti,
-        ];
-
-        $token = $this->encodeJwt($payload, $cfg);
-
+        $this->requireSecret();
         $audit = ScreenViewAudit::create([
             'instructor_id' => $user->id,
             'student_id' => $student->id,
@@ -89,6 +67,8 @@ class ViewTokenController extends Controller
             'mode' => $mode,
             'started_at' => now(),
         ]);
+        [$token, $exp] = $this->leaseToken($audit);
+        $cfg = config('services.screen_gateway');
 
         return response()->json([
             'token' => $token,
@@ -137,29 +117,7 @@ class ViewTokenController extends Controller
         // The stream is the PC's id. Never taken from the request.
         $streamId = (int) $pc->id;
 
-        $cfg = config('services.screen_gateway');
-        $now = time();
-        $ttl = max(5, (int) ($cfg['ttl'] ?? 30));
-        $exp = $now + $ttl; // 30 second lease
-        $jti = bin2hex(random_bytes(16));
-
-        $payload = [
-            'iss' => $cfg['issuer'],
-            'aud' => $cfg['audience'],
-            'sub' => (string) $user->id,
-            'student_id' => (int) ($student?->id ?? 0),
-            'lab_session_id' => (int) ($session?->id ?? 0),
-            'pc_id' => (int) $pc->id,
-            'stream_id' => $streamId,
-            'mode' => $mode,
-            'iat' => $now,
-            'nbf' => $now,
-            'exp' => $exp,
-            'jti' => $jti,
-        ];
-
-        $token = $this->encodeJwt($payload, $cfg);
-
+        $this->requireSecret();
         $audit = ScreenViewAudit::create([
             'instructor_id' => $user->id,
             'student_id' => $student?->id,
@@ -169,6 +127,8 @@ class ViewTokenController extends Controller
             'mode' => $mode,
             'started_at' => now(),
         ]);
+        [$token, $exp] = $this->leaseToken($audit);
+        $cfg = config('services.screen_gateway');
 
         return response()->json([
             'token' => $token,
@@ -216,28 +176,7 @@ class ViewTokenController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $cfg = config('services.screen_gateway');
-        $now = time();
-        $ttl = max(5, (int) ($cfg['ttl'] ?? 30));
-        $exp = $now + $ttl;
-        $jti = bin2hex(random_bytes(16));
-
-        $payload = [
-            'iss' => $cfg['issuer'],
-            'aud' => $cfg['audience'],
-            'sub' => (string) $user->id,
-            'student_id' => (int) ($audit->student_id ?? 0),
-            'lab_session_id' => (int) ($audit->lab_session_id ?? 0),
-            'pc_id' => (int) $audit->pc_id,
-            'stream_id' => (int) $audit->stream_id,
-            'mode' => $audit->mode,
-            'iat' => $now,
-            'nbf' => $now,
-            'exp' => $exp,
-            'jti' => $jti,
-        ];
-
-        $token = $this->encodeJwt($payload, $cfg);
+        [$token, $exp] = $this->leaseToken($audit);
 
         return response()->json([
             'token' => $token,
@@ -270,12 +209,48 @@ class ViewTokenController extends Controller
         ]);
     }
 
+    /**
+     * Signs a lease for the audited view (docs/PROTOCOL.md "Screen view lease"). `audit_id`, `sub` (the
+     * user who opened the view) and `lab_session_id` let the gateway revoke it; a renewal keeps all three.
+     *
+     * @return array{0: string, 1: int} token and expiry (unix time)
+     */
+    private function leaseToken(ScreenViewAudit $audit): array
+    {
+        $cfg = config('services.screen_gateway');
+        $now = time();
+        $exp = $now + max(5, (int) ($cfg['ttl'] ?? 30));
+
+        $token = $this->encodeJwt([
+            'iss' => $cfg['issuer'],
+            'aud' => $cfg['audience'],
+            'sub' => (string) $audit->instructor_id,
+            'audit_id' => (int) $audit->id,
+            'student_id' => (int) ($audit->student_id ?? 0),
+            'lab_session_id' => (int) ($audit->lab_session_id ?? 0),
+            'pc_id' => (int) $audit->pc_id,
+            'stream_id' => (int) $audit->stream_id,
+            'mode' => $audit->mode,
+            'iat' => $now,
+            'nbf' => $now,
+            'exp' => $exp,
+            'jti' => bin2hex(random_bytes(16)),
+        ], $cfg);
+
+        return [$token, $exp];
+    }
+
+    private function requireSecret(): void
+    {
+        abort_if((string) config('services.screen_gateway.secret', '') === '', Response::HTTP_INTERNAL_SERVER_ERROR,
+            'Screen gateway secret is not configured');
+    }
+
     private function encodeJwt(array $payload, array $cfg): string
     {
-        $secret = (string) ($cfg['secret'] ?? '');
-        abort_if($secret === '', Response::HTTP_INTERNAL_SERVER_ERROR, 'Screen gateway secret is not configured');
+        $this->requireSecret();
 
-        return JWT::encode($payload, $secret, 'HS256');
+        return JWT::encode($payload, (string) $cfg['secret'], 'HS256');
     }
 
     private function resolveGatewayUrl(Request $request, array $cfg): string

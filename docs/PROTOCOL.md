@@ -128,7 +128,7 @@ Messages from the gateway are capped at 64 KiB per WebSocket message (fragments 
 
 ## Screen view lease (dashboard → gateway)
 `POST /api/screen/pc/{pc}/token`, `POST /api/screen/{student}/token` and `POST /api/screen/{audit}/renew` return an
-HS256 JWT (30 s) with `iss`, `aud`, `sub` (user id), `pc_id`, `stream_id`, `student_id`, `lab_session_id`, `mode`,
+HS256 JWT (30 s) with `iss`, `aud`, `sub` (user who opened the view, kept on renewal), `audit_id`, `pc_id`, `stream_id`, `student_id`, `lab_session_id`, `mode`,
 `iat`, `nbf`, `exp`, `jti`. `stream_id` is always the PC's id (the stream the agent opens) and is set by the server;
 a client-sent `stream_id` is ignored. A renewed token keeps the audit's `pc_id`; an audit without one is not renewed.
 The gateway rejects (401) a token without `exp`, with a zero `stream_id` or `pc_id`, with `pc_id != stream_id`, or

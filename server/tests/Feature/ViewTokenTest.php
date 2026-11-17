@@ -116,6 +116,7 @@ class ViewTokenTest extends TestCase
         $this->assertSame($session->id, $decoded->lab_session_id);
         $this->assertSame($pc->id, $decoded->pc_id);
         $this->assertSame($pc->id, $decoded->stream_id);
+        $this->assertSame($res->json('audit_id'), $decoded->audit_id);
         $this->assertSame('live', $decoded->mode);
         $this->assertNotEmpty($decoded->jti);
         $this->assertSame(30, $decoded->exp - $decoded->iat);
@@ -332,6 +333,32 @@ class ViewTokenTest extends TestCase
         $claims = JWT::decode($renew->json('token'), new Key(config('services.screen_gateway.secret'), 'HS256'));
         $this->assertSame($pc->id, $claims->pc_id);
         $this->assertSame($pc->id, $claims->stream_id);
+        $this->assertSame($auditId, $claims->audit_id);
+        $this->assertSame((string) $instructor->id, $claims->sub);
+    }
+
+    public function test_admin_renewal_keeps_the_viewer_as_sub(): void
+    {
+        $this->bootLab();
+        $instructor = $this->user('instructor');
+        $admin = $this->user('admin');
+        [$pc] = $this->enrolledPc('192.168.10.47', 'PC-ADMRENEW');
+
+        $auditId = $this->actingAs($instructor)->postJson("/api/screen/pc/{$pc->id}/token")->json('audit_id');
+        $renew = $this->actingAs($admin)->postJson("/api/screen/{$auditId}/renew")->assertOk();
+        $claims = JWT::decode($renew->json('token'), new Key(config('services.screen_gateway.secret'), 'HS256'));
+        $this->assertSame((string) $instructor->id, $claims->sub);
+    }
+
+    public function test_missing_secret_writes_no_audit(): void
+    {
+        $this->bootLab();
+        $instructor = $this->user('instructor');
+        [$pc] = $this->enrolledPc('192.168.10.48', 'PC-NOSECRET');
+        config(['services.screen_gateway.secret' => '']);
+
+        $this->actingAs($instructor)->postJson("/api/screen/pc/{$pc->id}/token")->assertStatus(500);
+        $this->assertDatabaseCount('screen_view_audits', 0);
     }
 
     public function test_audit_without_pc_cannot_be_renewed(): void
