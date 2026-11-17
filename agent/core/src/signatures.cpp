@@ -161,6 +161,7 @@ SignatureSet SignatureSet::from_json(const json& j, std::string* err) {
             s.web.browsers = strs(w, "browsers", true, true);
             s.web.browser_title_suffixes = strs(w, "browser_title_suffixes");
             s.web.telemetry_domains = strs(w, "telemetry_domains");
+            s.web.ai_tab_severity = parse_severity(jr::str(w, "ai_tab_severity", "medium"));
             for (const auto& [proc, dom] : jr::obj(w, "process_domains").items())
                 if (dom.is_string() && !dom.get<std::string>().empty())
                     s.web.process_domains[normalize_exe(proc)] = to_lower(dom.get<std::string>());

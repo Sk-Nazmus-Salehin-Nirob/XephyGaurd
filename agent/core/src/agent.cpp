@@ -772,10 +772,12 @@ void Agent::on_helper_message(const IIpcServer::Peer& peer, const std::string& l
         sink_->emit(ev::window_focus, std::move(wf));
 
         if (!ai_site.empty()) {
-            RuleHit hit{"web.ai_tab", "browser_ai", "Active AI browser tab: " + ai_site, Severity::high};
+            // Severity from the bundle (default medium): the title only corroborates the proxy's domain decision.
+            RuleHit hit{"web.ai_tab", "browser_ai", "Active AI browser tab: " + ai_site, rules_.web().ai_tab_severity};
             handle_rule_hit(hit, app + ":" + ai_site,
                             // Title follows title_capture like window_focus (ETHICS: no raw titles by default).
-                            json{{"app", app}, {"title", filtered_title}, {"ai_site", ai_site}, {"user", user}});
+                            json{{"app", app}, {"title", filtered_title}, {"ai_site", ai_site}, {"user", user},
+                                 {"signal", "window_title"}});
         }
     } else if (t == "paste") {
         if (!pol.collect.clipboard) return;

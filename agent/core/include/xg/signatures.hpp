@@ -82,6 +82,7 @@ struct WebHints {
     std::vector<std::string> browser_title_suffixes;  // lowercase, e.g. " - google chrome"
     std::vector<std::string> telemetry_domains;       // substrings of hosts that never raise AI alerts
     std::map<std::string, std::string> process_domains;  // normalized exe -> domain when a flow has no SNI
+    Severity ai_tab_severity = Severity::medium;  // title-only hits corroborate the proxy's decision (F76)
 };
 
 /// Orders bundle versions "YYYY.MM.DD[-HHMMSS][-digest]" (CCC / compile_signatures.py) by date and time.

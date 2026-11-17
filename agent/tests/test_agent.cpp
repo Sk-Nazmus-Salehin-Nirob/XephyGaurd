@@ -483,3 +483,16 @@ TEST_CASE("kill by pid only hits the process the CCC saw, not a reused pid (F35)
     h.agent->handle_command({"k2", "kill", {{"pid", 77}, {"start_time", 6000}}});
     CHECK(h.procs->killed == std::vector<int64_t>{77});
 }
+
+TEST_CASE("title-only AI tab hits use the bundle severity and are marked as a title signal (F76)") {
+    Harness h;
+    auto p = Policy::default_for(Mode::test);
+    p.collect.window = true;
+    h.agent->apply_policy(p);
+    IIpcServer::Peer peer{7, 1000, 555, "alice"};
+    h.agent->on_helper_message(peer, R"({"t":"window","app":"chrome","title":"ChatGPT - Google Chrome"})");
+    auto hits = h.of(ev::rule_hit);
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].data["severity"] == "medium");  // default when the bundle does not say otherwise
+    CHECK(hits[0].data["context"]["signal"] == "window_title");
+}
