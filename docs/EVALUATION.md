@@ -103,4 +103,18 @@ Synthetic 1080p capture, Release, `taskset -c 0`, 5 s per workload, `xgstreamben
 
 JPEG costs 4-6x less CPU than WebP on moving content; WebP at low effort saves about 25 % CPU over method 4 but doubles the bytes and stays 3-4x JPEG. The synthetic scrolling pattern is noise-like, so its byte counts are a worst case. Not measured: real desktop content, integrated-GPU PC, Windows.
 
+#### M4-9 acceptance run (Phase 3a low-power targets)
+Release, `taskset -c 0`, `xgstreambench --capture x11` on Xvfb 1920x1080 (real X11 capture, software rendering = the CPU-only profile),
+production defaults (JPEG q85, governor budget 8 %, floor 2 fps), 10 s per moving workload, 30 s static and idle, dev machine 2026-11-18.
+
+| Workload | fps | kB/s | CPU % of a core | Wake-ups/s | governor fps / q / level | target |
+|---|---|---|---|---|---|---|
+| idle (nobody viewing) | 0 | 0 | 0.0 | 0.0 | - | < 2 wake-ups/s: **met** |
+| static (viewed) | 0.07 | 42 | 0.3 | 5.5 | 15 / 1.00 / 0 | near 0 %: met (5.5/s = 4 safety re-reads + privacy check) |
+| typing | 5.0 | 141 | 4.0 | 88 | 15 / 1.00 / 0 | <= 8 %: met, not throttled |
+| scrolling | 3.4 | 2552 | 7.3 | 58 | 2.7 / 1.00 / 13 | <= 8 %: **met**, settles at 2.7 fps |
+| video-like | 3.2 | 1728 | 7.4 | 52 | 3.2 / 1.00 / 12 | <= 8 %: **met**, settles at 3.2 fps |
+
+Same run with WebP q85 method 4 (not the default): scrolling 28.6 % and video 24.6 % at the 2 fps floor, quality 0.5; WebP cannot meet the budget on moving content. Not measured: real Windows capture (M4-7 not compiled locally), integrated-GPU PC, real desktop content. Smoothness (>= 15 fps) is Phase 3 (M5).
+
 Moving content is unchanged (scrolling, video-like stay near 44 %): its cost is the encoder, not the capture (M4-5, M5-3, M5-4).

@@ -96,7 +96,7 @@ Done as part of M0-4, docs only:
 - [x] M4-7 Step 56: DXGI copies only dirty + move-destination rects (clamped to the screen) GPU -> staging -> persistent shadow, pointer-only frames are NoChange, `request_full()` re-sends the shadow; the device was already created on the adapter that owns the output; GDI capped at 5 fps (NoChange until the slot, interruptible wait). Not compiled locally (no MinGW); CI syntax loop now covers `capture/win_*.cpp` (M4-7b)
 - [x] M4-8a Step 57 [agent]: heartbeat `usage.screen` {fps, kbps} from the relay's sent counters since the last heartbeat, {cpu_pct, level} from the source helper's `screen_cost` (every 10 s while viewed, numbers clamped, dropped after 30 s); PROTOCOL.md, ETHICS.md row (numbers only)
 - [x] M4-8b Step 57 [server]: ingest keeps only the four numbers of `usage.screen` (clamped), PC drawer shows "Streaming: 6.5 fps · 820 kbit/s · 5.9 % CPU · throttle 3" while a stream ran in the last heartbeat (`pc.screen_cost`)
-- [ ] M4-9 Step 58: acceptance run (idle < 2 wake-ups/s, live <= 8 % of one core)
+- [x] M4-9 Step 58: acceptance run on Xvfb, pinned core, JPEG default (docs/EVALUATION.md): idle 0.0 wake-ups/s, static 0.3 %, typing 4.0 %, scrolling 7.3 % at 2.7 fps, video 7.4 % at 3.2 fps. Windows, iGPU not run
 
 ## M5: Phase 3 smoothness (stop and re-plan if two steps in a row do not improve the metric)
 - [ ] M5-1 Step 24: pacing without the 200 ms floor, byte-based in-flight window
