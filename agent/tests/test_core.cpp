@@ -398,3 +398,21 @@ TEST_CASE("event queue hard cap evicts oldest non-tamper events when low-value o
     }
     fs::remove_all(dir);
 }
+
+TEST_CASE("known model-store walk honours max_files and max_depth (I-AGENT-29)") {
+    const fs::path home = fs::temp_directory_path() / ("xg-store-" + random_hex(4));
+    fs::create_directories(home / ".ollama/models/a/b/c/d/e");
+    for (int i = 0; i < 50; ++i) write_file_atomic((home / ".ollama/models" / ("blob" + std::to_string(i))).string(), "x");
+    json sig = test::sample_signatures();
+    sig["artifacts"]["rules"].push_back({{"id", "store.ollama"}, {"severity", "high"}, {"dirs", {"~/.ollama/models"}}});
+    sig["artifacts"]["scan"] = {{"roots", json::array()}, {"max_depth", 2}, {"max_files", 10}, {"skip_dirs", json::array()}};
+    RuleEngine re(SignatureSet::from_json(sig));
+    std::atomic<bool> stop{false};
+    const auto res = scan_artifacts(re, {home.string()}, stop);
+    CHECK(res.truncated);
+    CHECK(res.files_visited <= 11);
+    bool found = false;
+    for (const auto& a : res.found) found = found || a.rule_id == "store.ollama";
+    CHECK(found);  // the store is still reported
+    fs::remove_all(home);
+}
