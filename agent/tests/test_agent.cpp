@@ -351,6 +351,26 @@ TEST_CASE("policy screen.privacy_rules parse, round-trip, and a malformed list r
     }
 }
 
+TEST_CASE("policy screen encoding: defaults to JPEG, takes valid values, ignores invalid ones") {
+    auto d = Policy::from_json(json::object());
+    CHECK(d.screen_codec == "jpeg");
+    CHECK(d.screen_quality == 85);
+    CHECK(d.screen_webp_method == 1);
+    std::string err;
+    auto p = Policy::from_json(json{{"screen", {{"codec", "webp"}, {"quality", 60}, {"webp_method", 0}}}}, &err);
+    CHECK(err.empty());
+    CHECK(p.screen_codec == "webp");
+    CHECK(p.screen_quality == 60);
+    CHECK(p.screen_webp_method == 0);
+    auto rt = Policy::from_json(p.to_json());
+    CHECK(rt.screen_codec == "webp");
+    CHECK(rt.screen_quality == 60);
+    auto bad = Policy::from_json(json{{"screen", {{"codec", "h264"}, {"quality", 1000}, {"webp_method", "x"}}}}, &err);
+    CHECK(bad.screen_codec == "jpeg");
+    CHECK(bad.screen_quality == 85);
+    CHECK(bad.screen_webp_method == 1);
+}
+
 TEST_CASE("policy network_lock parses known values and falls back to off") {
     CHECK(Policy::from_json(json{{"network_lock", "strict"}}).network_lock == NetworkLock::strict);
     CHECK(Policy::from_json(json{{"network_lock", "OBSERVE"}}).network_lock == NetworkLock::observe);

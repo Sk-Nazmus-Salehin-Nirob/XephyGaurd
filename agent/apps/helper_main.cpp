@@ -1,6 +1,7 @@
 // xephyguard-helper: runs inside each logged-in user session. Collects what only the session can see
 // (focused window, clipboard sizes, key timing on Windows), shows the transparency indicator and
 // student notices, and forwards everything to the service over authenticated local IPC.
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <fstream>
@@ -424,6 +425,15 @@ int helper_main() {
                     }
                     if (bad) rules = {MaskRule{{}, ".*"}};  // match every title
                     screen_streamer.set_mask_rules(std::move(rules));
+                    // Encoder settings: the service already validated them; anything odd keeps the default.
+                    const auto& sc = j["screen"];
+                    ScreenEncoding enc;
+                    if (sc.contains("codec") && sc["codec"].is_string()) enc.webp = sc["codec"].get<std::string>() == "webp";
+                    if (sc.contains("quality") && sc["quality"].is_number_integer())
+                        enc.quality = static_cast<int>(std::clamp<int64_t>(sc["quality"].get<int64_t>(), 10, 100));
+                    if (sc.contains("webp_method") && sc["webp_method"].is_number_integer())
+                        enc.webp_method = static_cast<int>(std::clamp<int64_t>(sc["webp_method"].get<int64_t>(), 0, 6));
+                    screen_streamer.set_encoding(enc);
                 }
                 uint32_t pc_id = 0;
                 try { pc_id = static_cast<uint32_t>(std::stoul(pc_id_str)); } catch (...) {}

@@ -74,6 +74,19 @@ struct ScreenStreamer::Impl {
     std::function<void(bool)> on_viewing_changed;
     WindowSource window_source;
     std::vector<MaskRule> mask_rules;
+    ScreenEncoding encoding;
+    std::shared_ptr<FrameOut> out;  // kept so a settings change can rebuild the state machine
+    void make_sm_locked(std::shared_ptr<ScreenCapture> capture) {
+        EncoderConfig cfg{};
+        cfg.codec = encoding.webp ? Codec::Webp : Codec::Jpeg;
+        cfg.quality_text = std::clamp(encoding.quality, 10, 100);
+        cfg.webp_method = std::clamp(encoding.webp_method, 0, 6);
+        // Called on the capture thread; the IPC client serialises writes with the helper's other messages.
+        sm = std::make_unique<AgentStateMachine>(std::move(capture), cfg, [o = out](const std::vector<uint8_t>& d) {
+            (*o)(std::string_view(reinterpret_cast<const char*>(d.data()), d.size()));
+        });
+        install_filter_locked();  // always: with no window source the filter masks everything
+    }
     // The filter is rebuilt (not mutated) when the rules change; the state machine swaps it under its own lock.
     void install_filter_locked() {
         if (sm) sm->set_privacy_filter(make_filter(window_source, mask_rules));
@@ -108,6 +121,16 @@ void ScreenStreamer::set_mask_rules(std::vector<MaskRule> rules) {
     impl_->install_filter_locked();
 }
 
+void ScreenStreamer::set_encoding(const ScreenEncoding& enc) {
+    std::lock_guard lk(impl_->mu);
+    if (impl_->encoding == enc) return;
+    impl_->encoding = enc;
+    if (impl_->sm && !impl_->sm->is_thread_running()) {  // armed, not capturing: rebuild now
+        auto capture = impl_->factory();
+        if (capture) impl_->make_sm_locked(std::move(capture));
+    }
+}
+
 bool ScreenStreamer::start(uint32_t stream_id, FrameOut out, std::function<void(bool)> on_viewing_changed) {
     if (stream_id == 0 || !out) return false;
     std::lock_guard lk(impl_->mu);
@@ -116,14 +139,8 @@ bool ScreenStreamer::start(uint32_t stream_id, FrameOut out, std::function<void(
     impl_->sm.reset();
     auto capture = impl_->factory();
     if (!capture) return false;
-    EncoderConfig cfg{};
-    cfg.quality_text = 85;
-    cfg.codec = Codec::Webp;
-    // Called on the capture thread; the IPC client serialises writes with the helper's other messages.
-    impl_->sm = std::make_unique<AgentStateMachine>(capture, cfg, [out = std::move(out)](const std::vector<uint8_t>& d) {
-        out(std::string_view(reinterpret_cast<const char*>(d.data()), d.size()));
-    });
-    impl_->install_filter_locked();  // always: with no window source the filter masks everything
+    impl_->out = std::make_shared<FrameOut>(std::move(out));
+    impl_->make_sm_locked(std::move(capture));
     impl_->stream_id = stream_id;
     impl_->on_viewing_changed = std::move(on_viewing_changed);
     return true;

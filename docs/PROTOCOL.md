@@ -51,6 +51,12 @@ frame, no pixels). The server reads the list from `data/screen/privacy_rules.yam
 drops entries that would make the agent reject the policy (bad type, over 256 bytes, no field, invalid regex), keeps at most
 128, and omits `screen` when the list is empty or unreadable.
 
+`policy.screen.codec` (`"jpeg"` | `"webp"`, default `jpeg`), `policy.screen.quality` (integer 10..100, default 85) and
+`policy.screen.webp_method` (integer 0..6, default 1; WebP only) set how screen tiles are encoded (cost only, not what is
+shown; measured in docs/EVALUATION.md M4-5). All optional; a missing or invalid value keeps the default and never rejects
+the policy. The service passes them to the helper in `config.screen`; a view in progress keeps its settings. The server
+does not send them yet (agent defaults apply).
+
 `policy.network_lock` (`off` | `observe` | `strict`, default `off`, DECISIONS #23) is applied only when
 `proxy_mode` is `proxy_only` and the mode is not `always_on`. `observe` drops QUIC (UDP 443) to public
 addresses; `strict` drops every public destination except the CCC. If the local rules disappear the agent
@@ -203,7 +209,7 @@ and replays it once when a lease arrives (the viewer's request can beat the comm
 only inside a lease, stops by itself when `ttl_s` lapses or the service link drops, and a gateway request alone never
 starts it (screen Step 15).
 `screen_rx` data is one gateway message. The helper's `config` carries only
-`screen.enabled` and `screen.privacy_rules` (mask rules, see the policy section): no gateway address, port or token reaches the student session (screen Step 61); the helper opens
+`screen.enabled`, `screen.privacy_rules` (mask rules, see the policy section) and `screen.codec`/`quality`/`webp_method`: no gateway address, port or token reaches the student session (screen Step 61); the helper opens
 no network connection for the screen.
 
 ## Proxy → CCC (internal)

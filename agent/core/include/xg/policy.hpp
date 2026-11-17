@@ -62,6 +62,11 @@ struct Policy {
         std::string process, title_regex;
     };
     std::vector<MaskRule> screen_mask_rules;
+    /// Screen tile encoding (`screen.codec` "jpeg"|"webp", `screen.quality` 10..100, `screen.webp_method` 0..6).
+    /// Optional; a missing or invalid value keeps the default (no effect on what is shown, only on cost).
+    std::string screen_codec = "jpeg";
+    int screen_quality = 85;
+    int screen_webp_method = 1;
 
     static Policy default_for(Mode m);
     static Policy from_json(const json& j, std::string* err = nullptr);

@@ -228,3 +228,26 @@ TEST_CASE("streamer never starts without a CCC lease and stops by itself when th
     s.on_gateway_message(control(MsgType::KeyframeReq, 0, 42));
     CHECK_FALSE(s.is_capturing());
 }
+
+TEST_CASE("streamer encodes JPEG by default and WebP after set_encoding, from the next view on", "[screen]") {
+    auto first_codec = [](Rig& r) -> int {
+        std::lock_guard lk(r.mu);
+        for (const auto& f : r.frames)
+            if (auto m = decode(reinterpret_cast<const uint8_t*>(f.data()), f.size()); m && m->type == MsgType::Frame && !m->tiles.empty())
+                return static_cast<int>(m->tiles[0].codec);
+        return -1;
+    };
+    Rig r;
+    REQUIRE(r.start(9));
+    r.s.on_gateway_message(control(MsgType::KeyframeReq, 0, 9));
+    REQUIRE(Rig::eventually([&] { return first_codec(r) >= 0; }));
+    CHECK(first_codec(r) == static_cast<int>(Codec::Jpeg));
+
+    r.s.on_gateway_message(control(MsgType::Status, 0, 9));  // view ends
+    r.s.set_encoding(ScreenEncoding{true, 70, 0});
+    { std::lock_guard lk(r.mu); r.frames.clear(); }
+    r.s.on_gateway_message(control(MsgType::KeyframeReq, 0, 9));
+    REQUIRE(Rig::eventually([&] { return first_codec(r) >= 0; }));
+    CHECK(first_codec(r) == static_cast<int>(Codec::Webp));
+    r.s.stop();
+}

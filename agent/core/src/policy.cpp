@@ -210,6 +210,21 @@ Policy Policy::from_json(const json& j, std::string* err) {
             }
             p.screen_mask_rules = std::move(rules);
         }
+        if (j.contains("screen") && j["screen"].is_object()) {
+            const auto& s = j["screen"];
+            if (s.contains("codec") && s["codec"].is_string()) {
+                const auto c = s["codec"].get<std::string>();
+                if (c == "jpeg" || c == "webp") p.screen_codec = c;
+            }
+            auto int_in = [&](const char* k, int lo, int hi, int& out) {
+                if (s.contains(k) && s[k].is_number_integer()) {
+                    const auto v = s[k].get<int64_t>();
+                    if (v >= lo && v <= hi) out = static_cast<int>(v);
+                }
+            };
+            int_in("quality", 10, 100, p.screen_quality);
+            int_in("webp_method", 0, 6, p.screen_webp_method);
+        }
     } catch (const std::exception& e) {
         if (err) *err = e.what();
     }
@@ -259,7 +274,7 @@ json Policy::to_json() const {
             json a = json::array();
             for (const auto& m : screen_mask_rules) a.push_back({{"process", m.process}, {"title_regex", m.title_regex}});
             return a;
-        }()}}},
+        }()}, {"codec", screen_codec}, {"quality", screen_quality}, {"webp_method", screen_webp_method}}},
     };
 }
 

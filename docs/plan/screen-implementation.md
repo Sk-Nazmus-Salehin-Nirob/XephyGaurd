@@ -89,7 +89,7 @@ Done as part of M0-4, docs only:
 - [x] M4-3c Step 55: pause while the display is blanked (X11 DPMS, Xext already linked) or on the secure desktop (Windows lock); the placeholder goes out once per pause plus once per `KeyframeReq` (was every 100 ms), the pause is an interruptible 250 ms wait. DPMS test skips on Xvfb (no DPMS): X11 blank path not run. Linux lock screen detection (logind `LockedHint`) needs D-Bus, a new dependency: owner decision, not done
 - [x] M4-4 Step 53 [agent]: idle priority for capture/encode threads: `core/thread_priority` (Linux `SCHED_IDLE`, fallback nice 19 per thread; Windows background mode, fallback below normal) called at the top of the capture loop. Bench typing on a core with a busy loop: 4.8 -> 0.2 fps (yields fully; check against the 2 fps floor in M4-6). Windows branch not compiled locally (no MinGW here), CI MSVC job builds it
 - [x] M4-5a Step 54: encoder `webp_method` (advanced WebP API), bench `--codec/--quality/--webp-method`; measured in docs/EVALUATION.md (JPEG 4-6x cheaper than WebP on moving content)
-- [ ] M4-5b Step 54 [agent]: JPEG default in the helper; `codec`, `quality`, `webp_method` config values
+- [x] M4-5b Step 54 [agent]: JPEG q85 default in the helper (was WebP method 4); optional policy `screen.codec`/`quality`/`webp_method` (invalid keeps the default) passed to the helper in `config`, applied from the next view (PROTOCOL.md). Server does not send them yet
 - [ ] M4-6 Step 52: CPU governor (budget 8 %, floor 2 fps); server setting + PROTOCOL.md policy field
 - [ ] M4-7 Step 56: Windows dirty-rect copy, right adapter, GDI cap 5 fps (compile-checked only)
 - [ ] M4-8 Step 57 [agent]: streaming cost in heartbeat; ETHICS.md check

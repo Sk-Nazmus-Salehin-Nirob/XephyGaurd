@@ -27,6 +27,13 @@ using WindowSource = std::function<std::optional<ScreenWindow>()>;
 struct MaskRule {
     std::string app, title_regex;
 };
+/// How tiles are encoded (policy `screen.codec`, `screen.quality`, `screen.webp_method`; docs/EVALUATION.md M4-5).
+struct ScreenEncoding {
+    bool webp = false;    // false = JPEG (libjpeg-turbo), the cheapest on moving content
+    int quality = 85;     // 10..100
+    int webp_method = 1;  // 0..6, WebP only: low effort
+    bool operator==(const ScreenEncoding&) const = default;
+};
 
 class ScreenStreamer {
 public:
@@ -45,6 +52,8 @@ public:
     void set_window_source(WindowSource src);
     /// Replaces the windows to hide. Takes effect on a running stream. An invalid regex masks the screen.
     void set_mask_rules(std::vector<MaskRule> rules);
+    /// Replaces the encoder settings. A view in progress keeps its settings; the next one uses the new ones.
+    void set_encoding(const ScreenEncoding& enc);
 
     /// Arms the streamer for `stream_id`. Capture starts only when the gateway asks for a picture.
     /// A no-op if already armed for the same stream.
