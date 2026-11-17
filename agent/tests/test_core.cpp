@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 
 #include "fakes.hpp"
 #include "xg/artifact_scan.hpp"
@@ -258,6 +260,26 @@ TEST_CASE("config round trip") {
     CHECK(ok);
     CHECK(d.ccc_host == "192.168.10.2");
     CHECK(d.enrolled());
+    fs::remove(path);
+}
+
+TEST_CASE("config drops the old screen gateway token and address on save") {
+    auto path = (fs::temp_directory_path() / ("xg-" + random_hex(4) + ".toml")).string();
+    {
+        std::ofstream f(path);
+        f << "[ccc]\nhost = \"10.0.0.2\"\n[screen]\nenabled = false\nport = 8082\n"
+             "path = \"/agent\"\ntls = false\ntoken = \"old-shared-secret\"\n";
+    }
+    bool ok = false;
+    auto c = Config::load(path, &ok);
+    REQUIRE(ok);
+    CHECK_FALSE(c.screen_enabled);
+    REQUIRE(c.save(path));
+    std::ifstream in(path);
+    const std::string saved((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(saved.find("old-shared-secret") == std::string::npos);
+    CHECK(saved.find("port = 8082") == std::string::npos);
+    CHECK(Config::load(path, &ok).screen_enabled == false);
     fs::remove(path);
 }
 

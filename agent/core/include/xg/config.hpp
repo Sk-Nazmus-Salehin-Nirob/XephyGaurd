@@ -11,10 +11,6 @@ struct Config {
     std::string ccc_host;
     uint16_t api_port = 8443;          // mTLS agent endpoint (HTTPS + WSS)
     uint16_t http_port = 80;           // plain HTTP endpoint for /ca.crt download
-    uint16_t screen_port = 8082;       // screen gateway port (or 443 over TLS reverse proxy)
-    std::string screen_path = "/agent";
-    bool screen_tls = false;
-    std::string screen_token;
 #ifdef _WIN32
     bool screen_enabled = true;
 #else

@@ -1200,11 +1200,6 @@ void Agent::on_policy_fetched(const json& j) {
         log::error("policy: invalid policy from CCC: {}", err);
         return;
     }
-    const json& sc = jr::obj(j, "screen");
-    if (const auto port = jr::i64(sc, "port", 0, 1, 65535); port > 0) cfg_.screen_port = uint16_t(port);
-    if (const auto sp = jr::str(sc, "path"); !sp.empty()) cfg_.screen_path = sp;
-    if (const json* t = jr::field(sc, "tls"); t && t->is_boolean()) cfg_.screen_tls = t->get<bool>();
-    if (const json* t = jr::field(sc, "agent_token"); t && t->is_string()) cfg_.screen_token = t->get<std::string>();
     apply_policy(p);
     queue_->kv_set("policy", j["policy"].dump());
     if (j.contains("realtime") && j["realtime"].is_object()) {
