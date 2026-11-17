@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <cstring>
 #include <unordered_map>
 #include <vector>
@@ -174,6 +175,8 @@ std::string query_user_name(HANDLE h) {
 class ProcessMonitor final : public IProcessMonitor {
 public:
     std::vector<ProcessInfo> snapshot() override {
+        // The agent core is the only caller (DECISIONS #22); the lock keeps the cache safe if that changes.
+        std::lock_guard lk(snap_mu_);
         HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if (snap == INVALID_HANDLE_VALUE) return {};
 
@@ -327,6 +330,7 @@ private:
         uint64_t estats_bytes = 0;
         uint64_t other_io_bytes = 0;
     };
+    std::mutex snap_mu_;  // guards cache_, counters_ and the last-sample fields
     std::unordered_map<int64_t, ProcessInfo> cache_;
     std::unordered_map<int64_t, PidCounters> counters_;
     uint64_t last_sys_ticks_ = 0;

@@ -70,6 +70,8 @@ public:
     ~ProcessMonitor() override { stop(); }
 
     std::vector<ProcessInfo> snapshot() override {
+        // The agent core is the only caller (DECISIONS #22); the lock keeps the cache safe if that changes.
+        std::lock_guard lk(snap_mu_);
         std::vector<ProcessInfo> out;
         std::unordered_map<int64_t, ProcessInfo> next;
         std::unordered_map<int64_t, uint64_t> next_cpu;
@@ -185,6 +187,7 @@ public:
     }
 
 private:
+    std::mutex snap_mu_;  // guards cache_, cpu_ticks_, last_sys_ticks_
     std::unordered_map<int64_t, ProcessInfo> cache_;
     std::unordered_map<int64_t, uint64_t> cpu_ticks_;
     uint64_t last_sys_ticks_ = 0;
