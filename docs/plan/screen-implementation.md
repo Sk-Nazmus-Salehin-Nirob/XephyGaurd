@@ -76,7 +76,7 @@ Done as part of M0-4, docs only:
 - [x] M3-3b3 Step 20b: CPU-only profile: the bench against the real X11 capture on Xvfb (software rendering), pinned core
 - [x] M3-3c `screenbench` flags `-capture synthetic|x11` and `-cpu N` (taskset on the streamer only), needed by the eval wrapper
 - [x] M3-4 eval-10: `eval/harness/screen_bench.py` wrapper
-- [ ] M3-5 Step 22: baseline numbers into docs/EVALUATION.md
+- [x] M3-5 Step 22: baseline numbers into docs/EVALUATION.md
 - [ ] M3-6 Step 23 / eval-11: screen red-team scenarios
 
 ## M4: Phase 3a low power (each step records before/after from the bench)
