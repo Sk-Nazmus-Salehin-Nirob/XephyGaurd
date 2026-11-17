@@ -335,3 +335,29 @@ TEST_CASE("Policy reload replaces work_dirs instead of accumulating stale direct
     REQUIRE(second.work_dirs.size() == 1);
     CHECK(second.work_dirs[0] == "/tmp/lab-c");
 }
+
+#ifndef _WIN32
+#include <sys/stat.h>
+TEST_CASE("write_file_atomic creates secrets 0600 from the start and leaves no temp file (I-AGENT-14)") {
+    const fs::path dir = fs::temp_directory_path() / ("xgw-" + random_hex(4));
+    fs::create_directories(dir);
+    const auto old_mask = ::umask(0);  // a permissive umask must not widen anything
+    const std::string secret = (dir / "agent.toml").string(), pub = (dir / "ca.crt").string();
+    REQUIRE(write_file_atomic(secret, "token = \"x\"\n", FileMode::secret));
+    REQUIRE(write_file_atomic(pub, "cert\n"));
+    ::umask(old_mask);
+    struct stat st{};
+    REQUIRE(::stat(secret.c_str(), &st) == 0);
+    CHECK((st.st_mode & 0777) == 0600);
+    REQUIRE(::stat(pub.c_str(), &st) == 0);
+    CHECK((st.st_mode & 0777) == 0644);
+    // Overwrite keeps content atomic; a planted symlink at the old fixed temp name is never followed.
+    fs::create_symlink("/etc/passwd", secret + ".tmp");
+    REQUIRE(write_file_atomic(secret, "v2", FileMode::secret));
+    CHECK(read_file(secret) == "v2");
+    size_t files = 0;
+    for (const auto& e : fs::directory_iterator(dir)) files += e.path().filename().string().find(".tmp.") != std::string::npos;
+    CHECK(files == 0);
+    fs::remove_all(dir);
+}
+#endif

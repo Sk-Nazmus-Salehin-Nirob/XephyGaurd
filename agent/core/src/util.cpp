@@ -10,6 +10,14 @@
 #include <fstream>
 #include <sstream>
 
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <cerrno>
+#endif
+
 namespace xg {
 
 std::string to_lower(std::string_view s) {
@@ -122,11 +130,38 @@ std::string read_file(const std::string& path, bool* ok) {
     return ss.str();
 }
 
-bool write_file_atomic(const std::string& path, const std::string& content) {
+bool write_file_atomic(const std::string& path, const std::string& content, FileMode mode) {
     namespace fs = std::filesystem;
     std::error_code ec;
     auto parent = fs::path(path).parent_path();
     if (!parent.empty()) fs::create_directories(parent, ec);
+#ifndef _WIN32
+    // Unique temp name, created exclusively (no pre-planted file or symlink is followed) with the final mode,
+    // so a secret is never readable by others, not even between write and rename (I-AGENT-14).
+    const mode_t perm = mode == FileMode::secret ? 0600 : 0644;
+    const std::string tmp = path + ".tmp." + random_hex(6);
+    const int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, perm);
+    if (fd < 0) return false;
+    bool ok = ::fchmod(fd, perm) == 0;  // the umask may have narrowed it; never widens beyond `perm`
+    for (size_t off = 0; ok && off < content.size();) {
+        const ssize_t n = ::write(fd, content.data() + off, content.size() - off);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) ok = false;
+        else off += size_t(n);
+    }
+    ok = ok && ::fsync(fd) == 0;
+    ok = (::close(fd) == 0) && ok;
+    if (!ok || ::rename(tmp.c_str(), path.c_str()) != 0) {
+        ::unlink(tmp.c_str());
+        return false;
+    }
+    if (const int dfd = ::open(parent.empty() ? "." : parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC); dfd >= 0) {
+        ::fsync(dfd);
+        ::close(dfd);
+    }
+    return true;
+#else
+    (void)mode;
     std::string tmp = path + ".tmp";
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
@@ -137,6 +172,7 @@ bool write_file_atomic(const std::string& path, const std::string& content) {
     fs::rename(tmp, path, ec);
     if (ec) { fs::remove(tmp, ec); return false; }
     return true;
+#endif
 }
 
 std::string parse_tls_sni(const uint8_t* buf, size_t len) {

@@ -35,7 +35,11 @@ std::string expand_path(std::string_view path, std::string_view home);
 std::string hex_encode(const unsigned char* data, size_t len);
 std::string random_hex(size_t bytes);
 std::string read_file(const std::string& path, bool* ok = nullptr);
-bool write_file_atomic(const std::string& path, const std::string& content);
+/// Who may read a file the agent writes. `secret`: owner only (0600 on POSIX); `shared`: world-readable 0644
+/// (CA cert, browser policies). The temp file is created with this mode from the start (never wider), fsynced,
+/// then renamed over `path`. On Windows the mode is not applied yet (plan step 11, DACL).
+enum class FileMode { shared, secret };
+bool write_file_atomic(const std::string& path, const std::string& content, FileMode mode = FileMode::shared);
 /// Extracts the lowercase TLS ClientHello SNI hostname (extension 0x0000), or empty if absent.
 std::string parse_tls_sni(const uint8_t* data, size_t len);
 /// True for passive telemetry/experiment subdomains that must not raise AI alerts.

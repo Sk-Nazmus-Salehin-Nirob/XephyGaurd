@@ -114,11 +114,7 @@ bool Config::save(const std::string& path) const {
     ss << "# XephyGuard agent configuration. Managed by the agent; edit only with administrator rights.\n"
        << "# Changes to this file are reported to the CCC as a tamper event.\n\n"
        << t << "\n";
-    if (!write_file_atomic(path, ss.str())) return false;
-#ifndef _WIN32
-    ::chmod(path.c_str(), 0600);
-#endif
-    return true;
+    return write_file_atomic(path, ss.str(), FileMode::secret);  // holds the bearer and screen tokens
 }
 
 }  // namespace xg
