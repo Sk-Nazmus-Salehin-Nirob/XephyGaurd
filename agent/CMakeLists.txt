@@ -17,7 +17,7 @@ include(cmake/Dependencies.cmake)
 if(MSVC)
   add_compile_options(/W4 /permissive- /utf-8)
 else()
-  add_compile_options(-Wall -Wextra -Wpedantic -Wno-missing-field-initializers)
+  add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wno-missing-field-initializers)
 endif()
 
 # ---------------------------------------------------------------- core library
