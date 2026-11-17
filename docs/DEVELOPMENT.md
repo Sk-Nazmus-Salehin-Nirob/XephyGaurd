@@ -16,6 +16,12 @@ Development happens on Linux. Each component builds and tests on its own.
 Dependencies of the agent: OpenSSL 3, SQLite3, pthreads (system); nlohmann/json, toml++ and Catch2 are
 fetched by CMake and pinned. Optional: X11 + Xfixes for the Linux helper.
 
+Agent sanitizers (GCC/Clang, no extra dependencies): configure a separate build dir with
+`-DXG_SANITIZE=address,undefined` or `-DXG_SANITIZE=thread`, then build and `ctest` as usual. On Linux 6.x
+kernels ThreadSanitizer can abort with "unexpected memory mapping" (also during Catch2 test discovery at link
+time); run both the build and the tests under `setarch -R`. Last run (2026-11-17, actor core): both clean,
+67/67 tests, 0 TSAN warnings.
+
 ## Running the agent against a local CCC (no Docker)
 1. In `server/`: `php artisan serve --port=8000` and `php artisan reverb:start --port=8081`
    (set `REVERB_PORT=8081`).

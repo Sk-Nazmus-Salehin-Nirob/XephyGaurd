@@ -12,6 +12,17 @@ endif()
 option(XG_BUILD_TESTS "Build unit tests" ON)
 option(XG_WITH_X11 "Build X11 window/clipboard/indicator support into the Linux helper" ON)
 
+set(XG_SANITIZE "" CACHE STRING "Sanitizers for GCC/Clang builds: empty, address,undefined, or thread")
+if(XG_SANITIZE AND NOT MSVC)
+  if(XG_SANITIZE STREQUAL "thread" OR XG_SANITIZE STREQUAL "address,undefined" OR XG_SANITIZE STREQUAL "address"
+     OR XG_SANITIZE STREQUAL "undefined")
+    add_compile_options(-fsanitize=${XG_SANITIZE} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${XG_SANITIZE})
+  else()
+    message(FATAL_ERROR "XG_SANITIZE must be address,undefined or thread (got '${XG_SANITIZE}')")
+  endif()
+endif()
+
 include(cmake/Dependencies.cmake)
 
 if(MSVC)
