@@ -60,3 +60,15 @@ def test_ccc_placeholder_is_filled_and_validated():
         except ValueError:
             continue
         raise AssertionError(bad)
+
+
+def test_screen_scenarios_are_present_and_judged_by_blocked_if():
+    sc = {s["id"]: s for s in yaml.safe_load((ROOT / "scenarios" / "linux.yaml").read_text())["scenarios"]}
+    for sid in ["screen.agent_spoof_fingerprint", "screen.agent_spoof_verify_header", "screen.gateway_port_8082",
+                "screen.view_without_token", "screen.view_forged_jwt", "screen.read_agent_key", "screen.agent_wrong_stream",
+                "screen.viewer_injection", "screen.lease_expiry", "screen.idle_pc_view"]:
+        assert sid in sc, sid
+        if sc[sid].get("run"):
+            assert sc[sid]["blocked_if"], sid
+        else:
+            assert sc[sid]["layer"] == "manual", sid

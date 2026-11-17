@@ -52,7 +52,7 @@ Privacy and capture:
 - [x] Step 20 (part a M3-3; part b M3-3b1..3b3): [screen] Headless benchmark `bench/stream_bench`: synthetic 1080p workloads (typing, scrolling, window drag, video-like), real encoder, real gateway, headless viewer counting decoded frames; prints fps, bytes/s, encode ms p50/p95, latency p50/p95, drops, keyframes, **CPU-seconds per streamed second and per frame, wake-ups per second, and an idle (not viewed) phase**; runs on one pinned core (`taskset -c 0`) and in a CPU-only profile (Xvfb with software rendering) as the worst case; an integrated-GPU run needs a real PC and a Windows run needs a real Windows PC, both "not run" until then (fixes none; touches F43, F45, F47)
 - [x] Step 21: [screen] Gateway `/metrics` (plain text) and a viewer stats overlay (fps, latency, kbit/s) behind a debug flag (fixes I-SCREEN-25; touches F43, F45)
 - [x] Step 22: [screen] Run the benchmark on the dev machine and record the baseline in docs/EVALUATION.md (numbers only, no fixes) (fixes none; touches F43)
-- [ ] Step 23: [eval] Screen red-team scenarios (spoofed agent header, wrong `stream_id`, viewer message injection, lease expiry, idle-PC view) in `eval/scenarios` (fixes none; touches F43, F45) [CROSS: eval plan]
+- [x] Step 23: [eval] Screen red-team scenarios (spoofed agent header, wrong `stream_id`, viewer message injection, lease expiry, idle-PC view) in `eval/scenarios` (fixes none; touches F43, F45) [CROSS: eval plan]
 
 ## Phase 3a: Low power and CPU-only PCs (runs before Phase 3; owner requirement)
 Rule: cost proportional to change. A static desktop must cost almost nothing; a busy one is capped by a budget. Nothing here may require a discrete GPU, NVENC, or any vendor library.

@@ -24,6 +24,9 @@ python3 eval/harness/redteam.py table --out eval/results/run1
 Outcome per scenario: **blocked** (the attempt failed on the PC), **detected** (the CCC recorded a
 matching alert or blocked network event within `--wait` seconds), **missed** (bypass). Times have
 1-second resolution.
+The `screen.*` scenarios attack the screen gateway from the PC and need `--ccc <host the PC reaches the CCC at>` (skipped without it); they raise no CCC
+alert by design (`expect: blocked_only`), so their outcome is blocked or missed. The checked-in gateway tests cover the ones that need a token or certificate.
+Not run against a real stack yet: the curl and JWT parts were only tried against a local gateway (forged token 401, correctly signed 101).
 
 *Development smoke run (agent-only scenarios on the build machine, no gateway):* 6/6 agent scenarios
 detected in < 1 s; the network scenarios were reported as bypasses, as expected without the gateway.
