@@ -74,6 +74,32 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: agent-windows, path: installers/windows/XephyGuard-Setup-*.exe }
 
+  screen-gateway:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: xephyguard-screen/gateway/go.mod, cache-dependency-path: xephyguard-screen/gateway/go.sum }
+      - run: cd xephyguard-screen/gateway && go vet ./... && go test -race ./...
+
+  screen-viewer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: cd xephyguard-screen && node --test viewer
+
+  screen-core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxfixes-dev libxext-dev libxdamage-dev libxrandr-dev
+      # The build dir must sit inside xephyguard-screen/ (the fixture test writes ../tests/fixtures/*.bin).
+      - run: cmake -S xephyguard-screen -B xephyguard-screen/build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build xephyguard-screen/build -j4
+      - run: ctest --test-dir xephyguard-screen/build --output-on-failure
+
   server:
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: server } }
