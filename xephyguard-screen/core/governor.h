@@ -19,10 +19,14 @@ public:
   double cpu_pct() const { return cpu_pct_; }        // last measured, percent of one core
   double budget_pct() const { return budget_; }
   int level() const;                                  // 0 = not throttled, higher = more throttled
+  // Encoder threads to use (screen Step 29): 2 only while not throttled and well under the budget, else 1. The
+  // caller must pass CPU time that includes the helper threads, so the extra worker is paid for from the budget.
+  int workers() const { return workers_; }
   int min_interval_ms() const { return static_cast<int>(1000.0 / fps_); }
 
 private:
   double budget_, max_fps_, floor_fps_;
   double fps_, quality_ = 1.0, cpu_pct_ = 0.0;
+  int workers_ = 1;
 };
 }  // namespace xg

@@ -74,7 +74,7 @@ void AgentStateMachine::set_cpu_budget_pct(double pct) {
 
 StreamStats AgentStateMachine::stream_stats() const {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return {governor_.fps(), governor_.quality_scale(), governor_.cpu_pct(), governor_.budget_pct(), governor_.level()};
+  return {governor_.fps(), governor_.quality_scale(), governor_.cpu_pct(), governor_.budget_pct(), governor_.level(), governor_.workers()};
 }
 
 void AgentStateMachine::wall_pause() {
@@ -276,7 +276,9 @@ void AgentStateMachine::capture_loop() {
   // starve state(), on_incoming_message() and set_privacy_filter() for seconds while masked or paused.
   bool asked_full = false;  // request_full() sent and no frame has come back yet
   set_current_thread_idle_priority();  // capture + encode run only on CPU time nobody else wants (best effort)
-  double gov_cpu0 = current_thread_cpu_seconds();
+  // The budget covers this thread plus the encoder's helper threads (worker_cpu_seconds).
+  auto gov_cpu_now = [this] { return current_thread_cpu_seconds() + (encoder_ ? encoder_->worker_cpu_seconds() : 0.0); };
+  double gov_cpu0 = gov_cpu_now();
   uint64_t gov_t0 = get_now_ms();
   while (running_.load()) {
     uint64_t now_ms = get_now_ms();
@@ -285,8 +287,9 @@ void AgentStateMachine::capture_loop() {
     {
       std::lock_guard<std::recursive_mutex> lock(mutex_);
       if (now_ms - gov_t0 >= 1000) {  // the governor measures this thread's own CPU time once per second
-        const double cpu = current_thread_cpu_seconds();
+        const double cpu = gov_cpu_now();
         governor_.update(cpu - gov_cpu0, static_cast<double>(now_ms - gov_t0) / 1000.0, gov_frames_);
+        if (encoder_) encoder_->set_workers(mode_ == "live" ? governor_.workers() : 1);
         gov_frames_ = 0;
         gov_cpu0 = cpu;
         gov_t0 = now_ms;

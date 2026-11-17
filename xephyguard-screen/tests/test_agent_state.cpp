@@ -326,3 +326,18 @@ TEST_CASE("AgentStateMachine: a secure-desktop pause sends its placeholder once,
   REQUIRE(agent.on_view_stop());
   CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(200));
 }
+
+TEST_CASE("AgentStateMachine: an idle live view gets the second encoder worker from the governor") {
+  auto capture = std::make_shared<StaticScreenCapture>();
+  xg::AgentStateMachine agent(capture, xg::EncoderConfig{}, nullptr);
+  agent.set_frame_sender([&](const std::vector<uint8_t>&) {});
+  CHECK(agent.stream_stats().workers == 1);
+  REQUIRE(agent.on_view_start(7, "live"));
+  int workers = 0;
+  for (int i = 0; i < 400 && workers != 2; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    workers = agent.stream_stats().workers;
+  }
+  CHECK(workers == 2);  // near 0 % CPU, not throttled
+  REQUIRE(agent.on_view_stop());
+}

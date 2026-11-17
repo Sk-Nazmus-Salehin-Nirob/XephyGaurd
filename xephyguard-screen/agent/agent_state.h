@@ -33,6 +33,7 @@ using FrameSender = std::function<void(const std::vector<uint8_t>& data)>;
 struct StreamStats {
   double fps_cap = 0, quality_scale = 1, cpu_pct = 0, budget_pct = 0;
   int level = 0;
+  int workers = 1;  // encoder threads the governor allows now
 };
 using PrivacyChecker = std::function<bool()>;
 
