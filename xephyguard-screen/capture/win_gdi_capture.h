@@ -22,6 +22,7 @@ public:
   bool wait_for_change(int timeout_ms) override;
   void interrupt_wait() override;
   void request_full() override { full_pending_ = true; }
+  bool cursor_position(int& x, int& y) override;  // GetCursorPos on the primary desktop (compile-checked only)
 
   static constexpr int kMaxFps = 5;
 

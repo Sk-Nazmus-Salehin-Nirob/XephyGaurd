@@ -123,6 +123,8 @@ private:
   std::atomic<bool> running_{false};
   std::thread capture_thread_;
   std::thread encode_thread_;
+  std::thread cursor_thread_;  // live mode: pointer position up to 30 Hz (Step 34)
+  void cursor_loop();
 };
 
 }  // namespace xg

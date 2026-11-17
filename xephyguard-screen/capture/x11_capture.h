@@ -6,6 +6,7 @@
 #include <X11/extensions/XShm.h>
 #include <X11/extensions/Xdamage.h>
 #include <X11/extensions/Xrandr.h>
+#include <mutex>
 #include <vector>
 
 namespace xg {
@@ -24,6 +25,8 @@ public:
   bool wait_for_change(int timeout_ms) override;
   void interrupt_wait() override;
   void request_full() override { damage_all_ = true; }
+  /// Uses its own X connection (opened on first call), so it never races the capture thread's Display.
+  bool cursor_position(int& x, int& y) override;
 
   /// SysV shared memory id of the capture image (-1 when none); for tests.
   int shm_segment_id() const { return shminfo_.shmaddr ? shminfo_.shmid : -1; }
@@ -39,6 +42,8 @@ private:
   bool display_blanked();
 
   Display* display_ = nullptr;
+  std::mutex cursor_mu_;
+  Display* cursor_display_ = nullptr;  // second connection, only for cursor_position(); guarded by cursor_mu_
   int screen_ = 0;
   Window root_ = 0;
   XImage* shm_image_ = nullptr;

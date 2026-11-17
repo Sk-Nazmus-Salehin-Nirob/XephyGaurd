@@ -312,7 +312,32 @@ void X11Capture::stop() {
   running_ = false;
 }
 
+bool X11Capture::cursor_position(int& x, int& y) {
+  std::lock_guard<std::mutex> lock(cursor_mu_);
+  if (width_ <= 0 || height_ <= 0) return false;  // not initialised
+  if (!cursor_display_) {
+    cursor_display_ = XOpenDisplay(std::getenv("DISPLAY"));
+    if (!cursor_display_) return false;
+  }
+  Window root_ret, child_ret;
+  int rx = 0, ry = 0, wx = 0, wy = 0;
+  unsigned int mask = 0;
+  if (!XQueryPointer(cursor_display_, DefaultRootWindow(cursor_display_), &root_ret, &child_ret, &rx, &ry, &wx, &wy,
+                     &mask))
+    return false;
+  x = std::max(0, std::min(rx, width_ - 1));
+  y = std::max(0, std::min(ry, height_ - 1));
+  return true;
+}
+
 void X11Capture::cleanup() {
+  {
+    std::lock_guard<std::mutex> lock(cursor_mu_);
+    if (cursor_display_) {
+      XCloseDisplay(cursor_display_);
+      cursor_display_ = nullptr;
+    }
+  }
   running_ = false;
   if (display_) {
     if (damage_) {

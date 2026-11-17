@@ -337,6 +337,13 @@ func (st *Stream) fanOutLocked(data []byte, now time.Time) (overflows int, keyRe
 		if v.resync && isDelta {
 			continue
 		}
+		if !isFrame { // cursor position etc.: best effort, never empties a viewer's queue or breaks its delta chain
+			select {
+			case v.ch <- data:
+			default:
+			}
+			continue
+		}
 		select {
 		case v.ch <- data:
 			if isKey {

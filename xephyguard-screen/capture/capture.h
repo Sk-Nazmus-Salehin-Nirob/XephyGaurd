@@ -35,5 +35,8 @@ public:
   /// Capture thread only: the next capture() must return Ok with the whole screen (a new viewer or a lifted privacy
   /// mask needs a picture even though nothing changed). Captures that return Ok on every call ignore it.
   virtual void request_full() {}
+  /// Thread-safe (called from the cursor thread while the capture thread runs): the pointer position in screen
+  /// pixels, false when unknown. Position only, never the cursor image.
+  virtual bool cursor_position(int& x, int& y) { (void)x; (void)y; return false; }
 };
 }

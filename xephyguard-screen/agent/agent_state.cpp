@@ -139,7 +139,10 @@ bool AgentStateMachine::on_view_start(uint32_t stream_id, const std::string& mod
   state_ = AgentState::Streaming;
   running_.store(true);
 
-  if (mode == "live") encode_thread_ = std::thread(&AgentStateMachine::encode_loop, this);
+  if (mode == "live") {
+    encode_thread_ = std::thread(&AgentStateMachine::encode_loop, this);
+    cursor_thread_ = std::thread(&AgentStateMachine::cursor_loop, this);
+  }
   capture_thread_ = std::thread(&AgentStateMachine::capture_loop, this);
   return true;
 }
@@ -156,6 +159,9 @@ bool AgentStateMachine::on_view_stop() {
   }
   if (encode_thread_.joinable()) {
     encode_thread_.join();
+  }
+  if (cursor_thread_.joinable()) {
+    cursor_thread_.join();
   }
   staged_.reset();
 
@@ -223,7 +229,8 @@ void AgentStateMachine::on_privacy_mask_changed(bool masked) {
 
 void AgentStateMachine::send_cursor(uint16_t x, uint16_t y, const std::vector<uint8_t>& shape_data) {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
-  if (!sender_ || state_ == AgentState::Idle) return;
+  // Privacy: the pointer is shown only while the picture is (not while masked, on the secure desktop or paused).
+  if (!sender_ || state_ != AgentState::Streaming || masked_locked(get_now_ms())) return;
 
   Message msg{};
   msg.type = MsgType::Cursor;
@@ -526,6 +533,25 @@ void AgentStateMachine::capture_loop() {
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  }
+}
+
+void AgentStateMachine::cursor_loop() {
+  set_current_thread_idle_priority();
+  int last_x = -1, last_y = -1;
+  uint64_t last_move_ms = 0;
+  while (running_.load()) {
+    int x = 0, y = 0;
+    if (capture_ && capture_->cursor_position(x, y) && (x != last_x || y != last_y)) {
+      send_cursor(static_cast<uint16_t>(x), static_cast<uint16_t>(y));
+      last_x = x;
+      last_y = y;
+      last_move_ms = get_now_ms();
+    }
+    // 33 ms (30 Hz) while the pointer moves, 100 ms once it has been still for a second.
+    const auto wait = std::chrono::milliseconds(get_now_ms() - last_move_ms < 1000 ? 33 : 100);
+    std::unique_lock<std::recursive_mutex> lock(mutex_);
+    wake_cv_.wait_for(lock, wait, [&] { return !running_.load(); });
   }
 }
 

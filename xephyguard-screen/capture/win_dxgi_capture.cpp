@@ -310,5 +310,13 @@ void WinDxgiCapture::cleanup() {
   changed_.clear();
 }
 
+bool WinDxgiCapture::cursor_position(int& x, int& y) {
+  POINT pt;
+  if (!GetCursorPos(&pt)) return false;
+  x = std::max(0, std::min(static_cast<int>(pt.x), width_ - 1));
+  y = std::max(0, std::min(static_cast<int>(pt.y), height_ - 1));
+  return true;
+}
+
 }  // namespace xg
 #endif

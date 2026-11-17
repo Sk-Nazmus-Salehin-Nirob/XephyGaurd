@@ -368,6 +368,11 @@ export class ScreenViewer {
    */
   handleBinaryFrame(data) {
     const msg = parseMessage(data);
+    if (msg && msg.type === MsgType.Cursor) { // pointer position only (Step 34): width/height carry x/y, no ACK
+      if (this.tileCanvas) this.tileCanvas.setCursor(msg.width, msg.height);
+      if (this.options.onCursor) this.options.onCursor(msg.width, msg.height);
+      return this.drainPromise || Promise.resolve();
+    }
     if (!msg || msg.type !== MsgType.Frame) {
       return this.drainPromise || Promise.resolve(); // reject malformed message without throwing
     }

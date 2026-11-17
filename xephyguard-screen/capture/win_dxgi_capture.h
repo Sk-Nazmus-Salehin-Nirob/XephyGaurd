@@ -17,6 +17,7 @@ public:
   CaptureStatus capture(Frame& out) override;
   void stop() override;
   void request_full() override { full_pending_ = true; }
+  bool cursor_position(int& x, int& y) override;  // GetCursorPos on the primary desktop (compile-checked only)
 
 private:
   void cleanup();

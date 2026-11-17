@@ -30,6 +30,8 @@ personal messages, file contents, microphone or camera. Keystrokes and clipboard
 numbers on the PC (`agent/core/src/keystats.cpp`, `paste.cpp`) and the originals are discarded
 immediately.
 
+Live view pointer position (screen Step 34): two numbers (x, y), up to 30 per second, sent only during a staff-requested live view and never while the screen is masked; not stored, no cursor image, not logged.
+
 ## Screen privacy mask
 A live screen view never shows the content of windows on the CCC's privacy list (password managers, online banking,
 private browser windows and similar; the list is set by the lab admins, not built into the agent). While the focused

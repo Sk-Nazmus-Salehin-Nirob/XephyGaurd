@@ -106,7 +106,7 @@ Done as part of M0-4, docs only:
 - [x] M5-5 Step 30: progressive text refinement when the governor has budget. Tiles sent below full quality (flow/governor scale < 1) are remembered (`refine_`); on a static screen with governor level 0, full flow quality and window room they are re-sent at full quality (`TileTracker::add_pending`). Compile-checked only, tests deferred
 - [x] M5-6 Step 32: viewer queue drained by a head index with periodic compaction (no `shift()`); OffscreenCanvas not done (no bench jank data). Not run, tests deferred
 - [x] M5-7 Step 33: `ScreenViewer` options `getUrl` (fresh token, sync/async) / `autoReconnect`, backoff 1..30 s with jitter, reset on first frame, 1008 is final, `onReconnect(attempt, delay)`. Not run, tests deferred
-- [ ] M5-8 Step 34 [agent]: cursor at up to 30 Hz, viewer overlay
+- [x] M5-8 Step 34 [agent]: cursor at up to 30 Hz (`ScreenCapture::cursor_position`: X11 own connection XQueryPointer, Windows GetCursorPos compile-checked only; `AgentStateMachine::cursor_loop`, live mode, position only, only while Streaming and not masked), viewer DOM overlay `TileCanvas::setCursor`, gateway relays non-frame messages best effort; PROTOCOL.md, ETHICS.md. Built, tests deferred; cursor_position/loop not run
 - [ ] M5-9 Step 35 → 36: multi-monitor frames and selector; Windows all outputs (compile-checked only)
 - [ ] M5-10 Step 37 [server]: dashboard wall uses real `mode=wall` streams; F26 demo stays
 - [ ] M5-11 Step 38: re-run bench against targets; decide the H.264 gate (needs owner, new dependency)
