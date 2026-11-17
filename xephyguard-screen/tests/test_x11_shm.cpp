@@ -110,3 +110,16 @@ TEST_CASE("X11 capture: wait_for_change blocks until a change, a timeout or inte
   cap.stop();
 }
 #endif
+
+TEST_CASE("X11 capture: the 1 s safety re-read of an unchanged screen reports NoChange, not a full frame") {
+  if (!disposable_display()) { MESSAGE("no disposable display; skipped"); return; }
+  xg::X11Capture cap;
+  if (!cap.initialize() || !cap.start()) { MESSAGE("X11 capture not available on this display; skipped"); return; }
+  xg::Frame f;
+  REQUIRE(cap.capture(f) == xg::CaptureStatus::Ok);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  while (cap.capture(f) == xg::CaptureStatus::Ok) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  std::this_thread::sleep_for(std::chrono::milliseconds(1100));  // the safety re-read is due
+  CHECK(cap.capture(f) == xg::CaptureStatus::NoChange);
+  cap.stop();
+}

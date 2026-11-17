@@ -33,6 +33,9 @@ private:
   /// Reads pending X events: damage rectangles go to pending_, a screen-size change sets lost_.
   void drain_events();
   void copy_rect(int x, int y, int w, int h);
+  /// Safety re-check: compares the screen read with the shadow and adds the changed rows as full-width bands.
+  void add_changed_bands();
+  bool row_differs(int row) const;
 
   Display* display_ = nullptr;
   int screen_ = 0;

@@ -187,6 +187,45 @@ void X11Capture::copy_rect(int x, int y, int w, int h) {
   }
 }
 
+bool X11Capture::row_differs(int row) const {
+  const uint8_t* src = reinterpret_cast<const uint8_t*>(shm_image_->data) +
+                       static_cast<size_t>(row) * static_cast<size_t>(shm_image_->bytes_per_line);
+  const uint8_t* dst = shadow_.data() + static_cast<size_t>(row) * static_cast<size_t>(width_) * 4;
+  uint32_t diff = 0;  // OR of all differences, no early exit, so the compiler vectorizes the loop
+  if (shm_image_->bits_per_pixel == 32) {
+    for (int i = 0; i < width_; ++i) {
+      uint32_t s, d;
+      std::memcpy(&s, src + i * 4, 4);
+      std::memcpy(&d, dst + i * 4, 4);
+      diff |= (s | 0xFF000000u) ^ d;
+    }
+  } else {
+    for (int i = 0; i < width_; ++i) {
+      diff |= static_cast<uint32_t>((src[i * 3] ^ dst[i * 4]) | (src[i * 3 + 1] ^ dst[i * 4 + 1]) |
+                                    (src[i * 3 + 2] ^ dst[i * 4 + 2]));
+    }
+  }
+  return diff != 0;
+}
+
+void X11Capture::add_changed_bands() {
+  int start = -1;
+  for (int row = 0; row <= height_; ++row) {
+    const bool changed = row < height_ && row_differs(row);
+    if (changed && start < 0) {
+      start = row;
+    } else if (!changed && start >= 0) {
+      if (pending_.size() >= kMaxDamageRects) {
+        damage_all_ = true;
+        pending_.clear();
+        return;
+      }
+      pending_.push_back({0, start, width_, row - start});
+      start = -1;
+    }
+  }
+}
+
 CaptureStatus X11Capture::capture(Frame& out) {
   if (!running_ || !display_ || !shm_image_) {
     return CaptureStatus::Error;
@@ -201,10 +240,11 @@ CaptureStatus X11Capture::capture(Frame& out) {
   }
 
   // Cost follows change: no damage since the last capture means no screen read at all. Every kSafetyRecheckMs the
-  // whole screen is re-read anyway, in case a compositor draws without reporting damage on the root window.
+  // whole screen is re-read anyway, in case a compositor draws without reporting damage on the root window; that
+  // read is compared with the shadow, and only rows that really differ are copied and reported (none: NoChange).
   const int64_t now = now_ms();
-  const bool recheck = !have_shadow_ || now - last_full_ms_ >= kSafetyRecheckMs;
-  if (!recheck && !damage_all_ && pending_.empty()) {
+  const bool recheck = have_shadow_ && now - last_full_ms_ >= kSafetyRecheckMs;
+  if (have_shadow_ && !recheck && !damage_all_ && pending_.empty()) {
     return CaptureStatus::NoChange;
   }
 
@@ -212,7 +252,14 @@ CaptureStatus X11Capture::capture(Frame& out) {
     return CaptureStatus::Error;
   }
 
-  const bool full = recheck || damage_all_;
+  if (recheck) {
+    last_full_ms_ = now;
+    if (!damage_all_) add_changed_bands();
+  }
+  const bool full = !have_shadow_ || damage_all_;
+  if (!full && pending_.empty()) {
+    return CaptureStatus::NoChange;
+  }
   out.dirty.clear();
   if (full) {
     copy_rect(0, 0, width_, height_);

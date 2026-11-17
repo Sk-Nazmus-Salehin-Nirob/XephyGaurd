@@ -78,5 +78,6 @@ Same setup as the baseline above (Release, `taskset -c 0`, Xvfb profile = real X
 | baseline (full copy + hash every 20 ms) | 21.3 | 138 | 4.6 | 44.7 | 47 captures/s of an unchanged screen |
 | M4-2a Damage events, damaged rectangles only (loop still sleeps 20 ms) | 3.2 | 50 | 5.6 | 44.8 | 0.66 ms per empty capture |
 | M4-2b capture loop blocks in `wait_for_change` (250 ms bound for the privacy check, 1 s safety re-read) | 2.7 | 7.4 | 5.1 | 44.0 | the 2.7 % is the 1 Hz safety re-read (8 MB read + hash), next in M4-3 |
+| M4-3b safety re-read compares with the shadow, reports only changed rows (none: NoChange, no copy, no hash) | 0.9 (30 s run; 1.2 before) | 5.5 (6.5 before) | 5.3 | - | 10 s rows include the one first keyframe (140 ms = 1.4 % of 10 s); 30 s run without it: about 0.7 % -> 0.45 % |
 
 Moving content is unchanged (scrolling, video-like stay near 44 %): its cost is the encoder, not the capture (M4-5, M5-3, M5-4).
