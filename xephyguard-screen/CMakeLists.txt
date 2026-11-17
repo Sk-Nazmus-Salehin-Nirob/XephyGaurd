@@ -34,6 +34,11 @@ target_include_directories(xxhash_lib PUBLIC third_party)
 # libjpeg-turbo
 find_package(TurboJPEG QUIET)
 if(NOT TurboJPEG_FOUND)
+  # libjpeg-turbo's GNUInstallDirs needs a cache entry (standalone build has none); the normal
+  # variable must stay set too, because a parent project may already hold an empty cache entry.
+  if(NOT DEFINED CACHE{CMAKE_INSTALL_DOCDIR})
+    set(CMAKE_INSTALL_DOCDIR "doc" CACHE PATH "Documentation directory")
+  endif()
   set(CMAKE_INSTALL_DOCDIR "doc")
   set(CMAKE_SKIP_INSTALL_RULES TRUE)
   set(ENABLE_SHARED OFF CACHE BOOL "" FORCE)
