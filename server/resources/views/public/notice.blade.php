@@ -18,7 +18,7 @@
   <div class="window-body notice-doc" style="padding:36px 40px">
     <div class="row" style="--gap:10px;margin-bottom:22px"><img src="images/logo-icon-only.svg" alt="" width="28" height="28" style="border-radius:7px"><b>XephyGuard</b><span class="chip plain" style="margin-left:auto">Student notice</span></div>
     <h1>This lab uses XephyGuard. Here is exactly what it does.</h1>
-    <p style="color:var(--text-2);max-width:68ch;font-size:15px">{{ !empty($text) ? $text : 'During tests, AI tools are blocked. Passwords and what you type are never collected. Your instructor can look at your screen only during a session, and you will see a notice while they do.' }}</p>
+    <p style="color:var(--text-2);max-width:68ch;font-size:15px">{{ !empty($text) ? $text : 'This computer is monitored by XephyGuard during lab time. We record which programs and websites are used and typing/paste statistics. We never record what you type, your clipboard text or your passwords. Lab staff can view this screen live and may save a screenshot as evidence; every view is logged.' }}</p>
     <h2>What is noticed, and when</h2>
     <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden"><table class="tbl matrix">
       <thead><tr><th>What</th><th>Outside class</th><th>Practice</th><th>Test or exam</th></tr></thead>
@@ -34,7 +34,7 @@
     <ul class="never">
       <li><svg class="i i-lg" aria-hidden="true"><use href="#i-keyboard"/></svg><b>Typed text</b><span>The keys you press are never recorded.</span></li>
       <li><svg class="i i-lg" aria-hidden="true"><use href="#i-clipboard"/></svg><b>Clipboard content</b><span>What you copy is never stored.</span></li>
-      <li><svg class="i i-lg" aria-hidden="true"><use href="#i-eyeoff"/></svg><b>Screen recordings</b><span>Screens are viewed live, never recorded.</span></li>
+      <li><svg class="i i-lg" aria-hidden="true"><use href="#i-eyeoff"/></svg><b>Screen recordings</b><span>No continuous recording. Staff can view a screen live and save a still as evidence; every view is logged.</span></li>
       <li><svg class="i i-lg" aria-hidden="true"><use href="#i-key"/></svg><b>Passwords</b><span>Credentials are never looked at.</span></li>
     </ul>
     <h2>A person decides</h2>

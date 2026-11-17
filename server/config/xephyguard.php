@@ -36,5 +36,6 @@ return [
     'retention_days_reports' => (int) env('XG_RETENTION_REPORT_DAYS', 1825),
     'notice_text' => env('XG_NOTICE_TEXT', 'This computer is monitored by XephyGuard during lab time. '.
         'We record which programs and websites are used and typing/paste statistics. We never record what '.
-        'you type, your clipboard text, your screen or your passwords.'),
+        'you type, your clipboard text or your passwords. Lab staff can view this screen live and may save a '.
+        'screenshot as evidence; every view is logged.'),
 ];
