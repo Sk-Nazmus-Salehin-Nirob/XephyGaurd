@@ -24,7 +24,8 @@ const (
 
 type Viewer struct {
 	id                uint64
-	mode              string // lease mode: live, snapshot or wall
+	mode              string       // lease mode: live, snapshot or wall
+	leaseExp          atomic.Int64 // lease end (unix nanoseconds); extended by an in-band renewal
 	ch                chan []byte
 	ctrlCh            chan []byte
 	conn              *websocket.Conn

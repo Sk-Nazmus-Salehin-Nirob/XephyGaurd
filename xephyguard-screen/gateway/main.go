@@ -78,6 +78,13 @@ func (g *GatewayAuthenticator) AuthViewer(r *http.Request) (ViewerGrant, error) 
 	return ViewerGrant{}, ErrMissingToken
 }
 
+func (g *GatewayAuthenticator) RenewViewer(token string) (ViewerGrant, error) {
+	if g.validator == nil {
+		return ViewerGrant{}, ErrMissingToken
+	}
+	return g.validator.ValidateToken(token)
+}
+
 func (g *GatewayAuthenticator) AuthAgent(r *http.Request) (string, uint32, error) {
 	if id, err := AgentCertFingerprint(r, g.trustedProxies); err == nil {
 		if g.pcs == nil {

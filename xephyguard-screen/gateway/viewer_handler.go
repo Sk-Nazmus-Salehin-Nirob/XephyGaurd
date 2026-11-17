@@ -38,6 +38,7 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 		ch:     make(chan []byte, kViewerQueueSize),
 		ctrlCh: make(chan []byte, 4),
 	}
+	v.leaseExp.Store(grant.Exp.UnixNano())
 	stream.viewers[viewerID] = v
 
 	// Only replay a cached keyframe and ask for a keyframe when a live agent is connected;
@@ -84,6 +85,9 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
+		// The socket closes when the lease ends unless the viewer renewed it in band (screen Step 5).
+		leaseTimer := time.NewTimer(time.Until(time.Unix(0, v.leaseExp.Load())))
+		defer leaseTimer.Stop()
 		var offlineTimer <-chan time.Time
 		if !hasAgent {
 			t := time.NewTimer(150 * time.Millisecond)
@@ -95,6 +99,13 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 			case <-ctx.Done():
 				return
 			case <-stream.ctx.Done():
+				return
+			case <-leaseTimer.C:
+				if left := time.Until(time.Unix(0, v.leaseExp.Load())); left > 0 {
+					leaseTimer.Reset(left)
+					continue
+				}
+				c.Close(kCloseLeaseExpired, "lease expired")
 				return
 			case <-offlineTimer:
 				offlineTimer = nil
@@ -154,6 +165,14 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
+		if msgType == websocket.MessageText {
+			if !s.renewViewerLease(v, grant, data) {
+				c.Close(websocket.StatusPolicyViolation, "lease renewal refused")
+				break
+			}
+			continue
+		}
+
 		if msgType == websocket.MessageBinary && len(data) >= kHeaderSize {
 			select {
 			case stream.agentOut <- data:
@@ -180,4 +199,36 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	}
 	v.closed.Store(true)
 	stream.mu.Unlock()
+}
+
+// kCloseLeaseExpired is the WebSocket close code sent when a viewer lease ends without renewal.
+const kCloseLeaseExpired websocket.StatusCode = 4001
+
+// renewViewerLease handles a text message from a viewer. Only {"type":"renew","token":"<jwt>"} is
+// accepted; the new token must grant the same stream, PC and mode. It extends the lease and sends
+// {"type":"lease","expires_at":<unix>}. Anything else returns false (the caller closes the socket).
+func (s *RelayServer) renewViewerLease(v *Viewer, orig ViewerGrant, data []byte) bool {
+	var msg struct {
+		Type  string `json:"type"`
+		Token string `json:"token"`
+	}
+	if len(data) > 4096 || json.Unmarshal(data, &msg) != nil || msg.Type != "renew" {
+		return false
+	}
+	g, err := s.auth.RenewViewer(msg.Token)
+	if err != nil || g.StreamID != orig.StreamID || g.PCID != orig.PCID || g.Mode != orig.Mode {
+		log.Printf("[Gateway Viewer] lease renewal refused stream_id=%d err=%v", orig.StreamID, err)
+		return false
+	}
+	v.leaseExp.Store(g.Exp.UnixNano())
+	if ack, err := json.Marshal(struct {
+		Type      string `json:"type"`
+		ExpiresAt int64  `json:"expires_at"`
+	}{"lease", g.Exp.Unix()}); err == nil {
+		select {
+		case v.ctrlCh <- ack:
+		default:
+		}
+	}
+	return true
 }

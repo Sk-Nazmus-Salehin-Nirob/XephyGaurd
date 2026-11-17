@@ -74,6 +74,11 @@ func (tv *TokenValidator) AuthViewer(r *http.Request) (ViewerGrant, error) {
 		tokenStr = r.URL.Query().Get("token")
 	}
 
+	return tv.ValidateToken(tokenStr)
+}
+
+// ValidateToken checks a viewer lease token (signature, claims, single use) and returns its grant.
+func (tv *TokenValidator) ValidateToken(tokenStr string) (ViewerGrant, error) {
 	if tokenStr == "" {
 		return ViewerGrant{}, ErrMissingToken
 	}

@@ -20,7 +20,16 @@ type FakeAuth struct {
 	agentID    string
 	agentPC    uint32 // 0: the agent's PC is its ?stream_id (default 100)
 	streamIDFn func(r *http.Request) (uint32, error)
-	mode       string // lease mode; default live
+	mode       string                                  // lease mode; default live
+	lease      time.Duration                           // lease length; default 1 min
+	renewFn    func(token string) (ViewerGrant, error) // nil: renewal refused
+}
+
+func (f *FakeAuth) RenewViewer(token string) (ViewerGrant, error) {
+	if f.renewFn == nil {
+		return ViewerGrant{}, errors.New("no renewal")
+	}
+	return f.renewFn(token)
 }
 
 func (f *FakeAuth) AuthViewer(r *http.Request) (ViewerGrant, error) {
@@ -42,7 +51,11 @@ func (f *FakeAuth) AuthViewer(r *http.Request) (ViewerGrant, error) {
 	if mode == "" {
 		mode = "live"
 	}
-	return ViewerGrant{StreamID: sid, PCID: sid, Mode: mode, Exp: time.Now().Add(time.Minute)}, nil
+	lease := f.lease
+	if lease == 0 {
+		lease = time.Minute
+	}
+	return ViewerGrant{StreamID: sid, PCID: sid, Mode: mode, Exp: time.Now().Add(lease)}, nil
 }
 
 func (f *FakeAuth) AuthAgent(r *http.Request) (string, uint32, error) {
