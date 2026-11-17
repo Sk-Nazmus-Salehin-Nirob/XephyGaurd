@@ -66,9 +66,17 @@ void AgentStateMachine::set_wall_interval_ms(int ms) {
 }
 
 void AgentStateMachine::wall_pause() {
+  int ms = 0;
+  {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    ms = wall_interval_ms_;
+  }
+  pause_for(ms);
+}
+
+void AgentStateMachine::pause_for(int ms) {
   std::unique_lock<std::recursive_mutex> lock(mutex_);
-  wake_cv_.wait_for(lock, std::chrono::milliseconds(wall_interval_ms_),
-                    [&] { return !running_.load() || wall_wake_; });
+  wake_cv_.wait_for(lock, std::chrono::milliseconds(ms), [&] { return !running_.load() || wall_wake_; });
   wall_wake_ = false;
 }
 
@@ -232,6 +240,13 @@ void AgentStateMachine::on_incoming_message(const uint8_t* data, size_t len) {
     }
     wall_sent_ = false;
     wall_wake_ = true;
+    if (sender_ && (state_ == AgentState::PausedMasked || state_ == AgentState::PausedSecure)) {
+      Message placeholder{};  // the placeholder went out once on entry; a new viewer needs it too
+      placeholder.type = MsgType::Frame;
+      placeholder.flags = state_ == AgentState::PausedMasked ? Flags::MASKED : Flags::SECURE;
+      placeholder.stream_id = stream_id_;
+      sender_(encode(placeholder));
+    }
     wake_cv_.notify_all();
     if (capture_) capture_->interrupt_wait();  // answer a new viewer now, not at the next wait timeout
   }
@@ -309,9 +324,10 @@ void AgentStateMachine::capture_loop() {
     if (status == CaptureStatus::SecureDesktop) {
       {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        const bool entering = state_ != AgentState::PausedSecure;
         state_ = AgentState::PausedSecure;
         wall_sent_ = false;
-        if (sender_) {
+        if (sender_ && entering) {  // once per pause (was every 100 ms)
           Message placeholder{};
           placeholder.type = MsgType::Frame;
           placeholder.flags = Flags::SECURE;
@@ -319,7 +335,7 @@ void AgentStateMachine::capture_loop() {
           sender_(encode(placeholder));
         }
       }
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      pause_for(250);  // secure desktop or blanked display: check again 4 times per second, stop ends it
       continue;
     }
 

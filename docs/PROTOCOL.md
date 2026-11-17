@@ -169,6 +169,10 @@ image changed. Otherwise the agent sends an "unchanged" Frame: the 28-byte heade
 `seq` = `base_seq` = the last thumbnail's `seq`. Viewers draw nothing for it; the gateway forwards it and does not cache it.
 A `KeyframeReq`, a lifted mask, a secure-desktop pause or a reconnect makes the next thumbnail a full one.
 
+Pauses (agent → viewer): a `MASKED` (8) or `SECURE` (16) placeholder frame (header only) is sent once when the pause
+begins and again for each `KeyframeReq` during it; nothing else is sent until it ends. `SECURE` covers the Windows
+secure desktop (lock screen, UAC) and, on X11, a blanked display (DPMS standby/suspend/off; not checked more than 4 times/s).
+
 Server → gateway revoke (CCC-internal, loopback only, never proxied by nginx): `POST http://127.0.0.1:8082/internal/revoke`
 with `Authorization: Bearer $XG_INTERNAL_TOKEN` and JSON `{"audit_id":N}`, `{"user_id":N}` and/or `{"lab_session_id":N}`
 (any non-zero field matches the lease's `audit_id`, `sub`, `lab_session_id`). Matching viewers are closed (4003 "lease

@@ -1,6 +1,7 @@
 #include "doctest.h"
 #if defined(__linux__)
 #include "x11_capture.h"
+#include <X11/extensions/dpms.h>
 #include <cstdlib>
 #include <sys/shm.h>
 #include <chrono>
@@ -121,5 +122,30 @@ TEST_CASE("X11 capture: the 1 s safety re-read of an unchanged screen reports No
   while (cap.capture(f) == xg::CaptureStatus::Ok) std::this_thread::sleep_for(std::chrono::milliseconds(50));
   std::this_thread::sleep_for(std::chrono::milliseconds(1100));  // the safety re-read is due
   CHECK(cap.capture(f) == xg::CaptureStatus::NoChange);
+  cap.stop();
+}
+
+TEST_CASE("X11 capture: a blanked display (DPMS off) pauses capture, and unblanking reads the whole screen") {
+  if (!disposable_display()) { MESSAGE("no disposable display; skipped"); return; }
+  Display* d = XOpenDisplay(nullptr);
+  REQUIRE(d);
+  int ev = 0, err = 0;
+  if (!DPMSQueryExtension(d, &ev, &err) || !DPMSCapable(d)) { XCloseDisplay(d); MESSAGE("no DPMS; skipped"); return; }
+  xg::X11Capture cap;
+  if (!cap.initialize() || !cap.start()) { XCloseDisplay(d); MESSAGE("X11 capture not available; skipped"); return; }
+  xg::Frame f;
+  REQUIRE(cap.capture(f) == xg::CaptureStatus::Ok);
+  DPMSEnable(d);
+  DPMSForceLevel(d, DPMSModeOff);
+  XSync(d, False);
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));  // past the 250 ms DPMS answer cache
+  CHECK(cap.capture(f) == xg::CaptureStatus::SecureDesktop);
+  DPMSForceLevel(d, DPMSModeOn);
+  XSync(d, False);
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  REQUIRE(cap.capture(f) == xg::CaptureStatus::Ok);
+  CHECK(f.full_dirty);
+  DPMSDisable(d);
+  XCloseDisplay(d);
   cap.stop();
 }

@@ -1,5 +1,6 @@
 #if defined(__linux__)
 #include "x11_capture.h"
+#include <X11/extensions/dpms.h>
 #include <poll.h>
 #include <sys/eventfd.h>
 #include <sys/ipc.h>
@@ -90,6 +91,11 @@ bool X11Capture::initialize() {
     damage_event_base_ = damage_event;
     damage_ = XDamageCreate(display_, root_, XDamageReportRawRectangles);
   }
+
+  int dpms_event, dpms_error;
+  dpms_ = DPMSQueryExtension(display_, &dpms_event, &dpms_error) && DPMSCapable(display_);
+  blanked_ = false;
+  dpms_checked_ms_ = -1000;
 
   // XRandR events for screen resize
   int r_event, r_error;
@@ -226,6 +232,17 @@ void X11Capture::add_changed_bands() {
   }
 }
 
+bool X11Capture::display_blanked() {
+  if (!dpms_) return false;
+  const int64_t now = now_ms();
+  if (now - dpms_checked_ms_ < 250) return blanked_;
+  dpms_checked_ms_ = now;
+  CARD16 level = DPMSModeOn;
+  BOOL enabled = False;
+  blanked_ = DPMSInfo(display_, &level, &enabled) && enabled && level != DPMSModeOn;
+  return blanked_;
+}
+
 CaptureStatus X11Capture::capture(Frame& out) {
   if (!running_ || !display_ || !shm_image_) {
     return CaptureStatus::Error;
@@ -237,6 +254,12 @@ CaptureStatus X11Capture::capture(Frame& out) {
   drain_events();
   if (lost_) {
     return CaptureStatus::Lost;
+  }
+  // Monitor off (DPMS standby/suspend/off): no screen read, and the first capture after it re-reads everything.
+  if (display_blanked()) {
+    pending_.clear();
+    damage_all_ = true;
+    return CaptureStatus::SecureDesktop;
   }
 
   // Cost follows change: no damage since the last capture means no screen read at all. Every kSafetyRecheckMs the

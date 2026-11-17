@@ -67,6 +67,7 @@ public:
 private:
   void capture_loop();
   void wall_pause();  // waits wall_interval_ms_ unless stopped or a keyframe request arrives
+  void pause_for(int ms);  // waits ms unless stopped or a keyframe request arrives
   std::vector<uint8_t> wall_unchanged_locked() const;
 
   std::shared_ptr<ScreenCapture> capture_;

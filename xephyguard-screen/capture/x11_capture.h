@@ -36,6 +36,7 @@ private:
   /// Safety re-check: compares the screen read with the shadow and adds the changed rows as full-width bands.
   void add_changed_bands();
   bool row_differs(int row) const;
+  bool display_blanked();
 
   Display* display_ = nullptr;
   int screen_ = 0;
@@ -45,6 +46,9 @@ private:
   bool shm_removed_ = false;  // IPC_RMID already done after attach
   Damage damage_ = 0;
   int damage_event_base_ = -1;
+  bool dpms_ = false;                     // the server has DPMS: a blanked display pauses capture
+  bool blanked_ = false;                  // last DPMS answer
+  int64_t dpms_checked_ms_ = -1000;       // asked at most every 250 ms (one X round trip)
   int wake_fd_ = -1;                      // eventfd for interrupt_wait(); lives as long as the object
   std::vector<Frame::Rect> pending_;      // damage since the last capture, clipped to the screen
   bool damage_all_ = false;               // too many rectangles, or none known: copy everything

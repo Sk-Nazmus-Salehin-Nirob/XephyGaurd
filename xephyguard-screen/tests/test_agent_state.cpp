@@ -302,3 +302,27 @@ TEST_CASE("AgentStateMachine: wall mode sends a static screen's thumbnail once, 
   REQUIRE(agent.on_view_stop());  // the pause ends at once
   CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(200));
 }
+
+TEST_CASE("AgentStateMachine: a secure-desktop pause sends its placeholder once, again only for a keyframe request") {
+  auto capture = std::make_shared<xg::FakeCapture>(128, 128);
+  std::atomic<int> secure{0};
+  xg::AgentStateMachine agent(capture, xg::EncoderConfig{}, nullptr);
+  agent.set_frame_sender([&](const std::vector<uint8_t>& data) {
+    auto msg = xg::decode(data.data(), data.size());
+    if (msg.has_value() && msg->type == xg::MsgType::Frame && (msg->flags & xg::Flags::SECURE)) ++secure;
+  });
+  REQUIRE(agent.on_view_start(7, "live"));  // initialize() clears the fake's secure flag: switch after it
+  capture->trigger_desktop_switch(true);
+  std::this_thread::sleep_for(std::chrono::milliseconds(600));
+  CHECK(agent.state() == xg::AgentState::PausedSecure);
+  CHECK(secure.load() == 1);  // was one every 100 ms
+
+  xg::Message req{};
+  req.type = xg::MsgType::KeyframeReq; req.stream_id = 7;
+  auto rb = xg::encode(req);
+  agent.on_incoming_message(rb.data(), rb.size());
+  CHECK(secure.load() == 2);  // a new viewer sees the banner too
+  const auto t0 = std::chrono::steady_clock::now();
+  REQUIRE(agent.on_view_stop());
+  CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(200));
+}
