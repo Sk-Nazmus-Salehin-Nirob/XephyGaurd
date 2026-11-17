@@ -6,6 +6,7 @@ use App\Models\Profile;
 use App\Models\Setting;
 use App\Services\NetworkPolicyWriter;
 use App\Services\PolicyBuilder;
+use App\Services\SessionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\BuildsLab;
 use Tests\TestCase;
@@ -59,7 +60,22 @@ class ScreenAndProxyPacTest extends TestCase
 
         $pol = app(PolicyBuilder::class)->forPc($pc);
         $this->assertSame('proxy_only', $pol['proxy_mode']);
-        $this->assertSame('http://192.168.10.2/proxy.pac', $pol['proxy_pac_url']);
+        $this->assertSame('https://192.168.10.2/proxy.pac', $pol['proxy_pac_url']);
+    }
+
+    public function test_proxy_pac_has_no_direct_fallback_for_pcs_in_a_test_session(): void
+    {
+        $lab = $this->bootLab();
+        [$pc] = $this->enrolledPc('192.168.10.21');
+        Setting::put('network_mode', 'proxy_only');
+        Setting::put('ccc_ip', '192.168.10.2');
+        $fromPc = fn () => $this->withServerVariables(['REMOTE_ADDR' => '192.168.10.21'])->get('/proxy.pac');
+
+        $fromPc()->assertOk()->assertSee('PROXY 192.168.10.2:8080; DIRECT', false);   // always-on: fallback kept
+        app(SessionManager::class)->start($lab, $this->profile('Test: AI blocked'), 'EXAM');
+        $fromPc()->assertOk()->assertSee('return "PROXY 192.168.10.2:8080";', false);  // test: fail closed
+        $this->withServerVariables(['REMOTE_ADDR' => '192.168.10.99'])->get('/proxy.pac')
+            ->assertSee('PROXY 192.168.10.2:8080; DIRECT', false);                        // unknown host: unchanged
     }
 
     public function test_always_on_udm14_populates_udm14_clients_and_saving_profile_writes_net_state(): void

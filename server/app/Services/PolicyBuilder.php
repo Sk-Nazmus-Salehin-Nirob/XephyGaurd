@@ -68,7 +68,7 @@ class PolicyBuilder
             'google_search_url' => Setting::get('google_search_url'),
             'proxy_mode' => Setting::get('network_mode', config('xephyguard.network_mode', 'gateway')),
             'proxy_pac_url' => (Setting::get('network_mode', config('xephyguard.network_mode', 'gateway')) === 'proxy_only' && Setting::get('ccc_ip'))
-                ? 'http://'.Setting::get('ccc_ip').'/proxy.pac'
+                ? 'https://'.Setting::get('ccc_ip').'/proxy.pac'  // lab CA: a LAN host cannot swap the PAC (F97)
                 : null,
         ], fn ($v) => $v !== null && $v !== []);
         $policy['session_id'] = $session?->id ?? 0;

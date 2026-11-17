@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Models\Lab;
+use App\Models\Pc;
 use App\Models\Setting;
 use App\Services\CertificateAuthority;
+use App\Services\PolicyBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -123,6 +125,11 @@ class PublicController extends Controller
             $js = "function FindProxyForURL(url, host) {\n  return \"DIRECT\";\n}\n";
         } else {
             $safeHost = addcslashes($host, '\\"');
+            // A PC in a Test session (or isolated) gets no DIRECT fallback: if the proxy is unreachable its
+            // browser fails closed instead of going straight to the Internet (plan alternative F97).
+            $pc = Pc::query()->whereNull('retired_at')->where('ip', $request->ip())->first();
+            $strict = $pc && ($pc->isolated || app(PolicyBuilder::class)->effective($pc)['profile']->mode === 'test');
+            $fallback = $strict ? '' : '; DIRECT';
             $js = <<<JS
 function FindProxyForURL(url, host) {
   if (isPlainHostName(host) ||
@@ -134,7 +141,7 @@ function FindProxyForURL(url, host) {
       host === "{$safeHost}") {
     return "DIRECT";
   }
-  return "PROXY {$safeHost}:{$port}; DIRECT";
+  return "PROXY {$safeHost}:{$port}{$fallback}";
 }
 
 JS;
