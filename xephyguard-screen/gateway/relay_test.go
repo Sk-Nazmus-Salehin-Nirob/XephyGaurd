@@ -20,21 +20,29 @@ type FakeAuth struct {
 	agentID    string
 	agentPC    uint32 // 0: the agent's PC is its ?stream_id (default 100)
 	streamIDFn func(r *http.Request) (uint32, error)
+	mode       string // lease mode; default live
 }
 
-func (f *FakeAuth) AuthViewer(r *http.Request) (uint32, error) {
+func (f *FakeAuth) AuthViewer(r *http.Request) (ViewerGrant, error) {
 	if f.viewerErr != nil {
-		return 0, f.viewerErr
+		return ViewerGrant{}, f.viewerErr
 	}
+	sid := uint32(100)
 	if f.streamIDFn != nil {
-		return f.streamIDFn(r)
+		v, err := f.streamIDFn(r)
+		if err != nil {
+			return ViewerGrant{}, err
+		}
+		sid = v
+	} else if sidStr := r.URL.Query().Get("stream_id"); sidStr != "" {
+		v, _ := strconv.ParseUint(sidStr, 10, 32)
+		sid = uint32(v)
 	}
-	sidStr := r.URL.Query().Get("stream_id")
-	if sidStr != "" {
-		sid, _ := strconv.ParseUint(sidStr, 10, 32)
-		return uint32(sid), nil
+	mode := f.mode
+	if mode == "" {
+		mode = "live"
 	}
-	return 100, nil
+	return ViewerGrant{StreamID: sid, PCID: sid, Mode: mode, Exp: time.Now().Add(time.Minute)}, nil
 }
 
 func (f *FakeAuth) AuthAgent(r *http.Request) (string, uint32, error) {

@@ -24,6 +24,7 @@ const (
 
 type Viewer struct {
 	id                uint64
+	mode              string // lease mode: live, snapshot or wall
 	ch                chan []byte
 	ctrlCh            chan []byte
 	conn              *websocket.Conn
@@ -186,4 +187,12 @@ func (s *RelayServer) Routes() http.Handler {
 	mux.HandleFunc("/health", s.HandleHealth)
 	mux.HandleFunc("/screen-gw/health", s.HandleHealth)
 	return mux
+}
+
+// isKeyframe reports whether msg is a frame message with the KEY flag set.
+func isKeyframe(msg []byte) bool {
+	return len(msg) >= kHeaderSize &&
+		binary.LittleEndian.Uint16(msg[0:2]) == kMagic &&
+		msg[3] == kMsgTypeFrame &&
+		binary.LittleEndian.Uint16(msg[4:6])&1 != 0
 }

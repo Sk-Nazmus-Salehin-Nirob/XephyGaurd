@@ -131,6 +131,9 @@ Messages from the gateway are capped at 64 KiB per WebSocket message (fragments 
 HS256 JWT (30 s) with `iss`, `aud`, `sub` (user id), `pc_id`, `stream_id`, `student_id`, `lab_session_id`, `mode`,
 `iat`, `nbf`, `exp`, `jti`. `stream_id` is always the PC's id (the stream the agent opens) and is set by the server;
 a client-sent `stream_id` is ignored. A renewed token keeps the audit's `pc_id`; an audit without one is not renewed.
+The gateway rejects (401) a token without `exp`, with a zero `stream_id` or `pc_id`, with `pc_id != stream_id`, or
+with a `mode` other than `live`, `snapshot`, `wall` (no `student_id` fallback). A `snapshot` viewer gets one keyframe,
+then the gateway closes the socket (1000 "snapshot delivered").
 
 Gateway → server (CCC-internal, loopback): `GET /api/internal/screen/agent/{sha256 fingerprint}` with
 `Authorization: Bearer $XG_INTERNAL_TOKEN` returns `{"pc_id": N}` for an enrolled, unrevoked agent on a

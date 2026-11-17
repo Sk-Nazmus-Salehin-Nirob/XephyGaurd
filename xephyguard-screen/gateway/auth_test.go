@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"math/big"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -38,7 +39,9 @@ func TestAuthViewerValidationAndReplayPrevention(t *testing.T) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(30 * time.Second)),
 		},
 		StudentID: 42,
+		PCID:      42,
 		StreamID:  42,
+		Mode:      "live",
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -48,12 +51,12 @@ func TestAuthViewerValidationAndReplayPrevention(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("GET", "/view?token="+tokenStr, nil)
-	streamID, err := tv.AuthViewer(req)
+	grant, err := tv.AuthViewer(req)
 	if err != nil {
 		t.Fatalf("expected valid token to pass, got: %v", err)
 	}
-	if streamID != 42 {
-		t.Fatalf("expected streamID 42, got %d", streamID)
+	if grant.StreamID != 42 || grant.PCID != 42 || grant.Mode != "live" || !grant.Exp.Equal(claims.ExpiresAt.Time) {
+		t.Fatalf("unexpected grant %+v", grant)
 	}
 
 	// 2. Replay of same token -> MUST BE REJECTED
@@ -140,5 +143,45 @@ func TestAuthAgentMTLSFingerprint(t *testing.T) {
 	}
 	if fp != expectedFP {
 		t.Fatalf("expected fingerprint %s, got %s", expectedFP, fp)
+	}
+}
+
+func TestAuthViewerRejectsBadStreamPCAndMode(t *testing.T) {
+	secret := []byte("top-secret-signing-key-32-bytes!")
+	tv := NewTokenValidator(AuthConfig{JWTSecret: secret, Issuer: "iss", Audience: "aud"})
+	now := time.Now()
+	mk := func(jti string, pc, stream, student uint32, mode string, exp bool) *http.Request {
+		rc := jwt.RegisteredClaims{Issuer: "iss", Audience: jwt.ClaimStrings{"aud"}, ID: jti, IssuedAt: jwt.NewNumericDate(now)}
+		if exp {
+			rc.ExpiresAt = jwt.NewNumericDate(now.Add(30 * time.Second))
+		}
+		tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, ViewerClaims{
+			RegisteredClaims: rc, PCID: pc, StreamID: stream, StudentID: student, Mode: mode,
+		}).SignedString(secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return httptest.NewRequest("GET", "/view?token="+tok, nil)
+	}
+	cases := []struct {
+		name string
+		req  *http.Request
+	}{
+		{"zero stream, student fallback gone", mk("a", 0, 0, 9, "live", true)},
+		{"missing pc_id", mk("b", 0, 9, 0, "live", true)},
+		{"pc_id differs from stream_id", mk("c", 8, 9, 0, "live", true)},
+		{"unknown mode", mk("d", 9, 9, 0, "control", true)},
+		{"empty mode", mk("e", 9, 9, 0, "", true)},
+		{"no exp", mk("f", 9, 9, 0, "live", false)},
+	}
+	for _, c := range cases {
+		if g, err := tv.AuthViewer(c.req); err == nil {
+			t.Errorf("%s: accepted as %+v", c.name, g)
+		}
+	}
+	for _, mode := range []string{"live", "snapshot", "wall"} {
+		if g, err := tv.AuthViewer(mk("ok-"+mode, 9, 9, 0, mode, true)); err != nil || g.Mode != mode {
+			t.Errorf("mode %s: got %+v, %v", mode, g, err)
+		}
 	}
 }

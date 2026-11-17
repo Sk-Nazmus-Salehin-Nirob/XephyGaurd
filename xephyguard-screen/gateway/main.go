@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func envOrDefault(key, def string) string {
@@ -54,22 +55,27 @@ func NewGatewayAuthenticator(secret, issuer, audience string, devInsecure bool, 
 	}
 }
 
-func (g *GatewayAuthenticator) AuthViewer(r *http.Request) (uint32, error) {
+func (g *GatewayAuthenticator) AuthViewer(r *http.Request) (ViewerGrant, error) {
 	if g.validator != nil {
 		if r.URL.Query().Get("token") != "" || r.Header.Get("Authorization") != "" {
 			return g.validator.AuthViewer(r)
 		}
 	}
 	if !g.devInsecure {
-		return 0, ErrMissingToken
+		return ViewerGrant{}, ErrMissingToken
 	}
-	if sidStr := r.URL.Query().Get("stream_id"); sidStr != "" {
-		if parsed, err := strconv.ParseUint(sidStr, 10, 32); err == nil && parsed > 0 {
-			log.Printf("[Gateway Auth] DEV-INSECURE viewer stream_id=%d", parsed)
-			return uint32(parsed), nil
+	if sid := devStreamID(r); sid != 0 {
+		mode := r.URL.Query().Get("mode")
+		if mode == "" {
+			mode = "live"
 		}
+		if !validModes[mode] {
+			return ViewerGrant{}, ErrInvalidMode
+		}
+		log.Printf("[Gateway Auth] DEV-INSECURE viewer stream_id=%d mode=%s", sid, mode)
+		return ViewerGrant{StreamID: sid, PCID: sid, Mode: mode, Exp: time.Now().Add(time.Hour)}, nil
 	}
-	return 0, ErrMissingToken
+	return ViewerGrant{}, ErrMissingToken
 }
 
 func (g *GatewayAuthenticator) AuthAgent(r *http.Request) (string, uint32, error) {

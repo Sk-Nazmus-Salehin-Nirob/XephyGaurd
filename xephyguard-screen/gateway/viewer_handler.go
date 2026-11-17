@@ -11,18 +11,19 @@ import (
 )
 
 func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
-	streamID, err := s.auth.AuthViewer(r)
+	grant, err := s.auth.AuthViewer(r)
 	if err != nil {
 		http.Error(w, "Unauthorized viewer: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
+	streamID := grant.StreamID
 
 	stream := s.findStreamForViewer(streamID)
 
 	stream.mu.Lock()
 	hasAgent := stream.agentConn != nil
-	log.Printf("[Gateway Viewer Connect] remote=%s target_stream_id=%d has_agent=%v keyframe_cached=%v",
-		r.RemoteAddr, streamID, hasAgent, len(stream.lastKeyframe) > 0)
+	log.Printf("[Gateway Viewer Connect] remote=%s target_stream_id=%d mode=%s has_agent=%v keyframe_cached=%v",
+		r.RemoteAddr, streamID, grant.Mode, hasAgent, len(stream.lastKeyframe) > 0)
 	if len(stream.viewers) >= kMaxViewers {
 		stream.mu.Unlock()
 		http.Error(w, "Max viewers reached (max 2)", http.StatusTooManyRequests)
@@ -33,6 +34,7 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	viewerID := stream.nextViewerID
 	v := &Viewer{
 		id:     viewerID,
+		mode:   grant.Mode,
 		ch:     make(chan []byte, kViewerQueueSize),
 		ctrlCh: make(chan []byte, 4),
 	}
@@ -134,6 +136,11 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 				err := c.Write(writeCtx, websocket.MessageBinary, msg)
 				writeCancel()
 				if err != nil {
+					return
+				}
+				// A snapshot lease gets one full picture (a keyframe), then the view ends.
+				if v.mode == "snapshot" && isKeyframe(msg) {
+					c.Close(websocket.StatusNormalClosure, "snapshot delivered")
 					return
 				}
 			}
