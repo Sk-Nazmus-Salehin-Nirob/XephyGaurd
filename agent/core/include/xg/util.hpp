@@ -37,9 +37,12 @@ std::string random_hex(size_t bytes);
 std::string read_file(const std::string& path, bool* ok = nullptr);
 /// Who may read a file the agent writes. `secret`: owner only (0600 on POSIX); `shared`: world-readable 0644
 /// (CA cert, browser policies). The temp file is created with this mode from the start (never wider), fsynced,
-/// then renamed over `path`. On Windows the mode is not applied yet (plan step 11, DACL).
+/// then renamed over `path`. On Windows `secret` means a protected SYSTEM + Administrators only DACL.
 enum class FileMode { shared, secret };
 bool write_file_atomic(const std::string& path, const std::string& content, FileMode mode = FileMode::shared);
+/// Re-applies owner-only access to an existing secret (0600 / SYSTEM+Administrators protected DACL), e.g. for
+/// files written by older versions. Returns false if it could not.
+bool protect_secret_file(const std::string& path);
 /// Creates a new, empty directory only the caller can use (mkdtemp 0700 on POSIX) under the system temp dir.
 /// Returns an empty string on failure. Never reuses an existing directory.
 std::string make_private_temp_dir(const std::string& prefix);

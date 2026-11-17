@@ -35,6 +35,12 @@ std::string limit(const std::string& s, size_t n) { return s.size() > n ? s.subs
 
 Agent::Agent(Config cfg, std::string config_path, ServicePlatform& plat)
     : cfg_(std::move(cfg)), config_path_(std::move(config_path)), plat_(plat) {
+    // Files from older versions may still carry inherited (user-readable) permissions (I-AGENT-2).
+    for (const auto& secret : {config_path_, cfg_.key_file}) {
+        std::error_code ec;
+        if (!secret.empty() && fs::exists(secret, ec) && !protect_secret_file(secret))
+            log::warn("cannot restrict access to {}", secret);
+    }
     queue_ = std::make_unique<EventQueue>(join(cfg_.data_dir, "queue.db"));
     sink_ = queue_.get();
     uplink_ = std::make_unique<Uplink>(queue_.get(), view_, mailbox_, status_);

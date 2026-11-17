@@ -16,9 +16,53 @@
 #include <unistd.h>
 
 #include <cerrno>
+#else
+#include <windows.h>
+#include <aclapi.h>
+#include <sddl.h>
 #endif
 
 namespace xg {
+
+#ifdef _WIN32
+namespace {
+// Owner-only on Windows: SYSTEM and Administrators full control, inheritance from ProgramData cut off
+// (the installer grants Users read there, I-AGENT-2).
+constexpr const wchar_t* kSecretSddl = L"D:P(A;;FA;;;SY)(A;;FA;;;BA)";
+
+std::wstring widen(const std::string& s) {
+    if (s.empty()) return {};
+    const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), int(s.size()), nullptr, 0);
+    std::wstring w(size_t(n > 0 ? n : 0), L'\0');
+    if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.data(), int(s.size()), w.data(), n);
+    return w;
+}
+
+struct SecretSd {
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    SecretSd() { ConvertStringSecurityDescriptorToSecurityDescriptorW(kSecretSddl, SDDL_REVISION_1, &sd, nullptr); }
+    ~SecretSd() { if (sd) LocalFree(sd); }
+    SecretSd(const SecretSd&) = delete;
+    SecretSd& operator=(const SecretSd&) = delete;
+};
+}  // namespace
+#endif
+
+bool protect_secret_file(const std::string& path) {
+#ifndef _WIN32
+    return ::chmod(path.c_str(), 0600) == 0;
+#else
+    SecretSd s;
+    if (!s.sd) return false;
+    BOOL present = FALSE, defaulted = FALSE;
+    PACL dacl = nullptr;
+    if (!GetSecurityDescriptorDacl(s.sd, &present, &dacl, &defaulted) || !present) return false;
+    std::wstring w = widen(path);
+    return SetNamedSecurityInfoW(w.data(), SE_FILE_OBJECT,
+                                 DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, nullptr, nullptr,
+                                 dacl, nullptr) == ERROR_SUCCESS;
+#endif
+}
 
 std::string to_lower(std::string_view s) {
     std::string out(s);
@@ -161,16 +205,28 @@ bool write_file_atomic(const std::string& path, const std::string& content, File
     }
     return true;
 #else
-    (void)mode;
-    std::string tmp = path + ".tmp";
-    {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (!f) return false;
-        f << content;
-        if (!f.good()) return false;
+    // Unique temp created exclusively (CREATE_NEW) and, for secrets, with the protected owner-only DACL from
+    // the first byte; MoveFileEx keeps that DACL on the final name.
+    SecretSd s;
+    SECURITY_ATTRIBUTES sa{sizeof sa, mode == FileMode::secret ? s.sd : nullptr, FALSE};
+    if (mode == FileMode::secret && !s.sd) return false;
+    const std::wstring tmp = widen(path + ".tmp." + random_hex(6));
+    HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, &sa, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    bool ok = true;
+    for (size_t off = 0; ok && off < content.size();) {
+        DWORD n = 0;
+        const DWORD want = DWORD(std::min<size_t>(content.size() - off, 1u << 30));
+        ok = WriteFile(h, content.data() + off, want, &n, nullptr) && n > 0;
+        off += n;
     }
-    fs::rename(tmp, path, ec);
-    if (ec) { fs::remove(tmp, ec); return false; }
+    ok = ok && FlushFileBuffers(h);
+    ok = CloseHandle(h) && ok;
+    if (!ok || !MoveFileExW(tmp.c_str(), widen(path).c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        DeleteFileW(tmp.c_str());
+        return false;
+    }
+    (void)ec;
     return true;
 #endif
 }

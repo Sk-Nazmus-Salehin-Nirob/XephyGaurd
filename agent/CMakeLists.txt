@@ -39,7 +39,7 @@ target_link_libraries(xg_core PUBLIC nlohmann_json::nlohmann_json tomlplusplus::
                                      OpenSSL::SSL OpenSSL::Crypto SQLite::SQLite3 Threads::Threads)
 target_compile_definitions(xg_core PUBLIC XG_VERSION="${PROJECT_VERSION}")
 if(WIN32)
-  target_link_libraries(xg_core PUBLIC ws2_32 crypt32)
+  target_link_libraries(xg_core PUBLIC ws2_32 crypt32 advapi32)
   target_compile_definitions(xg_core PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
 endif()
 

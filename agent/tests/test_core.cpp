@@ -364,6 +364,16 @@ TEST_CASE("write_file_atomic creates secrets 0600 from the start and leaves no t
 }
 #endif
 
+#ifndef _WIN32
+TEST_CASE("protect_secret_file narrows an existing file to owner-only (I-AGENT-2)") {
+    const fs::path f = fs::temp_directory_path() / ("xg-sec-" + random_hex(4));
+    REQUIRE(write_file_atomic(f.string(), "token"));  // shared: 0644
+    REQUIRE(protect_secret_file(f.string()));
+    CHECK((fs::status(f).permissions() & fs::perms::all) == (fs::perms::owner_read | fs::perms::owner_write));
+    fs::remove(f);
+}
+#endif
+
 TEST_CASE("make_private_temp_dir never reuses a directory (I-AGENT-24)") {
     const auto a = make_private_temp_dir("xg-test-scan");
     const auto b = make_private_temp_dir("xg-test-scan");

@@ -339,29 +339,21 @@ int helper_main() {
     };
 
     ScreenStreamer screen_streamer;
+    // Screen settings come only from the service over IPC: the helper runs as the student and must never read
+    // agent.toml (it holds the PC's bearer token, I-AGENT-2). The last pushed settings restart the stream.
+    struct ScreenTarget {
+        bool valid = false;
+        std::string host, path, token, ca;
+        uint32_t pc_id = 0;
+        uint16_t port = 0;
+        bool tls = false;
+    } screen_target;
     auto check_screen_stream = [&]() {
-        bool ok = false;
-        std::string err;
-        Config cfg = Config::load(default_config_path(), &ok, &err);
-        if (!ok) return;
-        cfg_screen_enabled.store(cfg.screen_enabled);
-        const bool allow_screen = cfg.screen_enabled && linux_screen_ready();
-        if (!allow_screen) {
-            if (screen_streamer.is_running()) screen_streamer.stop();
-            return;
-        }
+        if (!screen_target.valid || !cfg_screen_enabled.load() || !linux_screen_ready()) return;
         if (screen_streamer.is_running()) return;
-        if (!cfg.ccc_host.empty() && !cfg.pc_id.empty()) {
-            uint32_t pc_id = 0;
-            try { pc_id = static_cast<uint32_t>(std::stoul(cfg.pc_id)); } catch (...) {}
-            if (pc_id > 0) {
-                screen_streamer.start(cfg.ccc_host, pc_id, cfg.screen_port, cfg.screen_path,
-                                      cfg.screen_tls || cfg.screen_port == 443, cfg.screen_token, cfg.ca_file,
-                                      on_viewing_changed);
-            }
-        }
+        const auto& t = screen_target;
+        screen_streamer.start(t.host, t.pc_id, t.port, t.path, t.tls, t.token, t.ca, on_viewing_changed);
     };
-    check_screen_stream();
 
     while (true) {
         if (!plat->ipc->connected()) {
@@ -413,6 +405,7 @@ int helper_main() {
                             s_ca = sc.value("ca_file", std::string());
                             s_tok = sc.value("agent_token", std::string());
                         }
+                        screen_target = {true, host, s_path, s_tok, s_ca, pc_id, s_port, s_tls || s_port == 443};
                         if (s_enabled && linux_screen_ready()) {
                             screen_streamer.start(host, pc_id, s_port, s_path, s_tls || s_port == 443, s_tok, s_ca,
                                                   on_viewing_changed);
