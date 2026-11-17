@@ -30,7 +30,7 @@ Gateway trust and authorisation:
 - [x] ~~Step 2: [screen] Agent auth by short-lived per-PC JWT~~ **Dropped** (DECISIONS #24): the mTLS cert is the agent identity; replaced by Steps 60 and 62 [CROSS: tell server Step 3 and agent Step 10 that the screen JWT is not needed]
 - [x] Step 3: [screen] Bind an agent connection to the stream of its cert's PC; drop frames whose header `stream_id` differs (fixes I-SCREEN-2; touches F45)
 - [x] Step 4: [screen] `AuthViewer` returns `{stream_id, mode, exp, pc_id}`; reject missing/zero `stream_id` and remove the `student_id` fallback; enforce `mode` (fixes I-SCREEN-6, I-SCREEN-24; touches F43, F45)
-- [ ] Step 5: [screen] Close viewer sockets at lease expiry and add loopback `POST /internal/revoke` (internal token) (fixes I-SCREEN-3; touches F43, F45) [CROSS: server calls revoke on stop, logout, session end]
+- [x] Step 5: [screen] Close viewer sockets at lease expiry and add loopback `POST /internal/revoke` (internal token) (fixes I-SCREEN-3; touches F43, F45) [CROSS: server calls revoke on stop, logout, session end]
 - [ ] Step 6: [screen] Viewer to agent messages: allow only `Ack` and `KeyframeReq`, exactly 28 bytes, stream id rewritten; viewer read limit 4 KB (fixes I-SCREEN-13; touches F45)
 - [ ] Step 7: [screen] Origin check against configured dashboard origins, `InsecureSkipVerify` removed (fixes I-SCREEN-15; touches F45)
 - [x] Step 8: (done with Step 3: the stream is fixed per connection) [screen] Fix the `stream` data race in `HandleAgent` (resolve the stream before the writer starts) (fixes I-SCREEN-19; touches F45)

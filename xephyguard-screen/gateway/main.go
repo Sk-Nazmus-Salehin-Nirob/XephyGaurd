@@ -148,6 +148,7 @@ func main() {
 
 	auth := NewGatewayAuthenticator(*secret, *issuer, *audience, *devInsecure, trusted, pcs)
 	relay := NewRelayServer(auth)
+	relay.internalToken = internalToken // enables POST /internal/revoke
 
 	server := &http.Server{
 		Addr:    *addr,

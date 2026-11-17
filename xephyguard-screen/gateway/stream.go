@@ -25,6 +25,7 @@ const (
 type Viewer struct {
 	id                uint64
 	mode              string       // lease mode: live, snapshot or wall
+	grant             ViewerGrant  // the lease it connected with (identity fields for revoke)
 	leaseExp          atomic.Int64 // lease end (unix nanoseconds); extended by an in-band renewal
 	ch                chan []byte
 	ctrlCh            chan []byte
@@ -61,12 +62,16 @@ type RelayServer struct {
 	auth    Authenticator
 	mu      sync.RWMutex
 	streams map[uint32]*Stream
+	// internalToken guards POST /internal/revoke; empty disables the endpoint.
+	internalToken string
+	revoked       *revocations
 }
 
 func NewRelayServer(auth Authenticator) *RelayServer {
 	return &RelayServer{
 		auth:    auth,
 		streams: make(map[uint32]*Stream),
+		revoked: newRevocations(),
 	}
 }
 
@@ -187,6 +192,7 @@ func (s *RelayServer) Routes() http.Handler {
 	mux.HandleFunc("/screen-gw/view", s.HandleView)
 	mux.HandleFunc("/health", s.HandleHealth)
 	mux.HandleFunc("/screen-gw/health", s.HandleHealth)
+	mux.HandleFunc("/internal/revoke", s.HandleRevoke) // loopback only; nginx never proxies /internal/
 	return mux
 }
 

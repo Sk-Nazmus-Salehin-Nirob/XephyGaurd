@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ type ViewerClaims struct {
 	StudentID    uint32 `json:"student_id"`
 	LabSessionID uint32 `json:"lab_session_id"`
 	PCID         uint32 `json:"pc_id"`
+	AuditID      uint64 `json:"audit_id"`
 	StreamID     uint32 `json:"stream_id"`
 	Mode         string `json:"mode"`
 }
@@ -122,5 +124,13 @@ func (tv *TokenValidator) ValidateToken(tokenStr string) (ViewerGrant, error) {
 	expiresAt := claims.ExpiresAt.Time
 	tv.used[claims.ID] = expiresAt
 
-	return ViewerGrant{StreamID: claims.StreamID, PCID: claims.PCID, Mode: claims.Mode, Exp: expiresAt}, nil
+	g := ViewerGrant{StreamID: claims.StreamID, PCID: claims.PCID, Mode: claims.Mode, Exp: expiresAt,
+		AuditID: claims.AuditID, LabSessionID: uint64(claims.LabSessionID)}
+	if uid, err := strconv.ParseUint(claims.Subject, 10, 64); err == nil {
+		g.UserID = uid
+	}
+	if claims.IssuedAt != nil {
+		g.IssuedAt = claims.IssuedAt.Time
+	}
+	return g, nil
 }

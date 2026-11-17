@@ -12,6 +12,11 @@ type ViewerGrant struct {
 	PCID     uint32
 	Mode     string // live, snapshot or wall
 	Exp      time.Time
+	// Who and what the lease is for; used by POST /internal/revoke (0 = unknown).
+	UserID       uint64
+	AuditID      uint64
+	LabSessionID uint64
+	IssuedAt     time.Time
 }
 
 type Authenticator interface {

@@ -16,6 +16,10 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized viewer: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
+	if s.revoked.blocks(grant) {
+		http.Error(w, "Unauthorized viewer: lease revoked", http.StatusUnauthorized)
+		return
+	}
 	streamID := grant.StreamID
 
 	stream := s.findStreamForViewer(streamID)
@@ -35,6 +39,7 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	v := &Viewer{
 		id:     viewerID,
 		mode:   grant.Mode,
+		grant:  grant,
 		ch:     make(chan []byte, kViewerQueueSize),
 		ctrlCh: make(chan []byte, 4),
 	}
@@ -75,7 +80,9 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.SetReadLimit(16 * 1024 * 1024)
-	v.conn = c
+	stream.mu.Lock()
+	v.conn = c // read under stream.mu by closeViewers
+	stream.mu.Unlock()
 	defer c.Close(websocket.StatusInternalError, "viewer closed")
 
 	ctx, cancel := context.WithCancel(r.Context())
@@ -216,7 +223,8 @@ func (s *RelayServer) renewViewerLease(v *Viewer, orig ViewerGrant, data []byte)
 		return false
 	}
 	g, err := s.auth.RenewViewer(msg.Token)
-	if err != nil || g.StreamID != orig.StreamID || g.PCID != orig.PCID || g.Mode != orig.Mode {
+	if err != nil || g.StreamID != orig.StreamID || g.PCID != orig.PCID || g.Mode != orig.Mode ||
+		g.UserID != orig.UserID || g.AuditID != orig.AuditID || s.revoked.blocks(g) {
 		log.Printf("[Gateway Viewer] lease renewal refused stream_id=%d err=%v", orig.StreamID, err)
 		return false
 	}
