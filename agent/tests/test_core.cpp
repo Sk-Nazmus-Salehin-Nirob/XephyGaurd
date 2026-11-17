@@ -418,3 +418,9 @@ TEST_CASE("known model-store walk honours max_files and max_depth (I-AGENT-29)")
     CHECK(found);  // the store is still reported
     fs::remove_all(home);
 }
+
+TEST_CASE("default student notice states live screen viewing truthfully (I-AGENT-21)") {
+    const auto n = Policy::default_for(Mode::test).notice_text;
+    CHECK(n.find("view this screen live") != std::string::npos);
+    CHECK(n.find("screen content is recorded") == std::string::npos);
+}

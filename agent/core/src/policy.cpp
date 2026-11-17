@@ -100,7 +100,10 @@ Policy Policy::default_for(Mode m) {
     // System-critical processes are never killed regardless of rules.
     p.kill_exempt = {"systemd", "init", "explorer", "winlogon", "csrss", "lsass", "services", "smss", "wininit",
                      "xephyguard-agent", "xephyguard-helper", "sshd", "xorg", "gnome-shell", "plasmashell", "dwm"};
-    p.notice_text = "This computer is monitored by XephyGuard. No keystrokes, clipboard text or screen content is recorded.";
+    // Fallback until the CCC sends its notice; must stay truthful (ETHICS.md, I-AGENT-21).
+    p.notice_text = "This computer is monitored by XephyGuard. Programs, websites and typing/paste statistics are "
+                    "recorded, never what you type, your clipboard text or your passwords. Lab staff can view this "
+                    "screen live and may save a screenshot as evidence; every view is logged.";
     return p;
 }
 
