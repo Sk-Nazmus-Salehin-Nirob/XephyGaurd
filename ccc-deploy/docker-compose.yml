@@ -114,6 +114,5 @@ services:
     command: ["/usr/local/bin/xephyguard-screen-gateway", "-addr", "127.0.0.1:8082", "-trusted-proxy", "127.0.0.1"]
     environment:
       SCREEN_GATEWAY_SECRET: ${SCREEN_GATEWAY_SECRET}
-      SCREEN_GATEWAY_AGENT_SECRET: ${SCREEN_GATEWAY_AGENT_SECRET}   # removed with screen Step 62
       SCREEN_GATEWAY_ISSUER: ${SCREEN_GATEWAY_ISSUER:-xephyguard-ccc}
       SCREEN_GATEWAY_AUDIENCE: ${SCREEN_GATEWAY_AUDIENCE:-xephyguard-gateway}

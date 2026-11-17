@@ -42,7 +42,7 @@ Done as part of M0-4, docs only:
 - [x] M1-5 Step 59 [agent]: helper→service "screen frame" IPC message (opaque, 4 MB cap, peer check), PROTOCOL.md "Helper ↔ service IPC"
 - [x] M1-6 Step 60 [agent]: service relays to the gateway over the realtime mTLS WSS client; check fragment handling and size cap there
 - [x] M1-7 Step 61 [agent]: helper drops its WinHTTP/WS client and `X-Agent-Token`
-- [ ] M1-8 Step 62 [screen]: gateway removes `-agent-secret` / `X-Agent-Token`; then nginx 443 `/screen-gw/` stops proxying the agent path (ccc)
+- [x] M1-8 Step 62 [screen]: gateway removes `-agent-secret` / `X-Agent-Token`; then nginx 443 `/screen-gw/` stops proxying the agent path (ccc)
 - [ ] M1-9 server-3 (revised): policy stops sending `agent_secret`; tick agent-9 and agent-10 as covered
 
 ## M2: Phase 1 security and bugs
