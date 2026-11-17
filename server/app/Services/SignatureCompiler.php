@@ -58,6 +58,12 @@ class SignatureCompiler
                 }
             }
         }
+        // Browser AI site patterns and network hints (web.yaml) are lists, not rules: kept as one setting.
+        if (is_file("$dir/web.yaml")) {
+            $web = Yaml::parseFile("$dir/web.yaml") ?? [];
+            unset($web['version']);
+            Setting::put('signatures.web', $web);
+        }
 
         return $n;
     }
@@ -92,6 +98,10 @@ class SignatureCompiler
         $bundle['ports']['probe'] = Setting::get('signatures.port.probe', ['enabled' => true,
             'paths' => ['/v1/models', '/api/tags'], 'severity' => 'high', 'min_rss_mb' => 300]);
         $bundle['artifacts']['scan'] = Setting::get('signatures.artifact.scan', ['roots' => ['~'], 'max_depth' => 6]);
+        $web = Setting::get('signatures.web', []);
+        if (is_array($web) && $web !== []) {
+            $bundle['web'] = $web;
+        }
 
         return $bundle;
     }
