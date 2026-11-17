@@ -449,4 +449,13 @@ TEST_CASE("run_program executes by absolute path without a shell and feeds stdin
     CHECK(run_program({"/bin/true"}, std::string(1 << 20, 'x')) == 0);
 }
 
+TEST_CASE("isolation ruleset keeps IPv4 and IPv6 CCC addresses reachable (I-AGENT-26)", "[linux]") {
+    const auto r = xg::lnx::nft_isolation_rules({"203.0.113.5", "2001:db8::5", "bad;drop"});
+    CHECK(r.find("203.0.113.4") != std::string::npos);  // range split around the CCC
+    CHECK(r.find("ip6 daddr { 2001:db8::5 } accept") != std::string::npos);
+    CHECK(r.find("ip6 daddr { 2001:db8::5 } accept") < r.find("ip6 daddr 2000::/3 drop"));
+    CHECK(r.find("bad;drop") == std::string::npos);
+    CHECK(xg::lnx::nft_isolation_rules({"203.0.113.5"}).find("accept\n") == std::string::npos);
+}
+
 #endif  // _WIN32

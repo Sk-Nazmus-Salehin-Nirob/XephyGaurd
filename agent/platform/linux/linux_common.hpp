@@ -14,6 +14,9 @@ namespace xg::lnx {
 
 /// Runs `argv[0]` (an absolute path, no PATH lookup, no shell) with `argv` as arguments, feeding `stdin_text`
 /// on stdin; stdout/stderr go to /dev/null. Returns the exit status, 127 if it could not be executed, or -1.
+/// nftables ruleset for isolation: public IPv4/IPv6 dropped, `exempt_ips` (v4 and v6, e.g. the CCC) kept.
+std::string nft_isolation_rules(const std::vector<std::string>& exempt_ips);
+
 int run_program(const std::vector<std::string>& argv, const std::string& stdin_text = {});
 
 /// Reaps only the children it was given (waitpid(pid, WNOHANG)), never `waitpid(-1)`, which would steal

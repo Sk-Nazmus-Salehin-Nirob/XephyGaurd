@@ -8,6 +8,7 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <set>
@@ -32,6 +33,31 @@ int nft(std::vector<std::string> args, const std::string& stdin_text = {}) {
     return run_program(args, stdin_text);
 }
 
+}  // namespace
+
+std::string nft_isolation_rules(const std::vector<std::string>& exempt_ips) {
+    std::string v4, v6;
+    for (const auto& r : isolation::blocked_ipv4_ranges(exempt_ips)) {
+        if (!v4.empty()) v4 += ", ";
+        v4 += r;
+    }
+    for (const auto& ip : exempt_ips) {
+        in6_addr a{};
+        if (ip.find(':') == std::string::npos || ::inet_pton(AF_INET6, ip.c_str(), &a) != 1) continue;  // validated
+        if (!v6.empty()) v6 += ", ";
+        v6 += ip;
+    }
+    std::string rules = std::string("table inet ") + kTable +
+                        " {\n  chain out {\n    type filter hook output priority 0; policy accept;\n" +
+                        "    ip daddr { " + v4 + " } drop\n";
+    // A CCC reachable over global IPv6 stays reachable while isolated (I-AGENT-26).
+    if (!v6.empty()) rules += "    ip6 daddr { " + v6 + " } accept\n";
+    rules += std::string("    ip6 daddr ") + isolation::blocked_ipv6_prefix() + " drop\n  }\n}\n";
+    return rules;
+}
+
+namespace {
+
 class NetworkIsolator final : public INetworkIsolator {
 public:
     bool isolate(const std::vector<std::string>& exempt_hosts) override {
@@ -44,13 +70,7 @@ public:
         for (const auto& h : exempt_hosts)
             if (auto it = known_ips_.find(h); it != known_ips_.end()) exempt.insert(it->second.begin(), it->second.end());
 
-        std::string v4;
-        for (const auto& r : isolation::blocked_ipv4_ranges({exempt.begin(), exempt.end()})) {
-            if (!v4.empty()) v4 += ", ";
-            v4 += r;
-        }
-        std::string rules = std::string("table inet ") + kTable + " {\n  chain out {\n    type filter hook output priority 0; policy accept;\n" +
-                            "    ip daddr { " + v4 + " } drop\n    ip6 daddr " + isolation::blocked_ipv6_prefix() + " drop\n  }\n}\n";
+        const std::string rules = nft_isolation_rules({exempt.begin(), exempt.end()});
         nft({"delete", "table", "inet", kTable});
         const int rc = nft({"-f", "-"}, rules);
         if (rc != 0) log::error("isolate: nft failed (exit {})", rc);
@@ -75,14 +95,19 @@ private:
         std::vector<std::string> out;
         if (host.empty()) return out;
         addrinfo hints{};
-        hints.ai_family = AF_INET;
+        hints.ai_family = AF_UNSPEC;
         hints.ai_socktype = SOCK_STREAM;
         addrinfo* res = nullptr;
         if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res) return out;
         for (auto* p = res; p; p = p->ai_next) {
-            char buf[INET_ADDRSTRLEN] = {0};
-            inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in*>(p->ai_addr)->sin_addr, buf, sizeof buf);
-            out.emplace_back(buf);
+            char buf[INET6_ADDRSTRLEN] = {0};
+            if (p->ai_family == AF_INET)
+                inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in*>(p->ai_addr)->sin_addr, buf, sizeof buf);
+            else if (p->ai_family == AF_INET6)
+                inet_ntop(AF_INET6, &reinterpret_cast<sockaddr_in6*>(p->ai_addr)->sin6_addr, buf, sizeof buf);
+            else
+                continue;
+            if (std::find(out.begin(), out.end(), buf) == out.end()) out.emplace_back(buf);
         }
         freeaddrinfo(res);
         return out;
