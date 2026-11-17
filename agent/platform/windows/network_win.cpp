@@ -239,6 +239,43 @@ public:
         return out;
     }
 
+    std::vector<OutboundTunnel> active_tunnels() override {
+        WebHints hints;
+        {
+            std::lock_guard lk(domains_mu_);
+            hints = hints_;
+        }
+        if (hints.tunnel.id.empty()) return {};
+        std::vector<OutboundTunnel> out;
+        auto add = [&](DWORD pid, const std::string& rip, uint16_t rport) {
+            if (out.size() >= 64 || pid <= 4 || !hints.is_tunnel(rip, rport)) return;  // bounded
+            out.push_back({int64_t(pid), normalize_exe(process_image(pid)), rip, rport});
+        };
+        for (ULONG af : {ULONG(AF_INET), ULONG(AF_INET6)}) {
+            DWORD sz = 0;
+            GetExtendedTcpTable(nullptr, &sz, FALSE, af, TCP_TABLE_OWNER_PID_CONNECTIONS, 0);
+            if (sz == 0 || sz >= 16 * 1024 * 1024) continue;
+            std::vector<BYTE> buf(sz);
+            if (GetExtendedTcpTable(buf.data(), &sz, FALSE, af, TCP_TABLE_OWNER_PID_CONNECTIONS, 0) != NO_ERROR) continue;
+            if (af == AF_INET) {
+                const auto* tbl = reinterpret_cast<const MIB_TCPTABLE_OWNER_PID*>(buf.data());
+                for (DWORD i = 0; i < tbl->dwNumEntries; ++i) {
+                    const auto& r = tbl->table[i];
+                    if (r.dwState == MIB_TCP_STATE_ESTAB)
+                        add(r.dwOwningPid, ipv4_str(r.dwRemoteAddr), ntohs(u_short(r.dwRemotePort)));
+                }
+            } else {
+                const auto* tbl = reinterpret_cast<const MIB_TCP6TABLE_OWNER_PID*>(buf.data());
+                for (DWORD i = 0; i < tbl->dwNumEntries; ++i) {
+                    const auto& r = tbl->table[i];
+                    if (r.dwState == MIB_TCP_STATE_ESTAB)
+                        add(r.dwOwningPid, ipv6_str(r.ucRemoteAddr), ntohs(u_short(r.dwRemotePort)));
+                }
+            }
+        }
+        return out;
+    }
+
     std::vector<OutboundAiFlow> active_ai_flows() override {
         refresh_dns_cache();
 
