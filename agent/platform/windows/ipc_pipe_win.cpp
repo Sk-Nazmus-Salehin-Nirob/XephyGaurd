@@ -12,7 +12,9 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
+#include "xg/ipc_framing.hpp"
 #include "xg/ipc_messages.hpp"
 #include "xg/log.hpp"
 #include "xg/util.hpp"
@@ -67,6 +69,8 @@ public:
             overlapped_write(c->h, line);
         }
     }
+
+    void set_frame_handler(FrameHandler h) override { on_frame_ = std::move(h); }
 
     void stop() override {
         running_ = false;
@@ -195,24 +199,28 @@ private:
 
     void read_loop(std::shared_ptr<Conn> c, const std::function<void(const Peer&, const std::string&)>& on_msg,
                    const std::function<void(const Peer&, bool)>& on_peer) {
-        std::string buf;
-        char tmp[8192];
+        ipc::StreamReader reader;
+        std::vector<ipc::Record> records;
+        std::vector<char> tmp(64 * 1024);
         OVERLAPPED ov{};
         ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         while (running_) {
             ResetEvent(ov.hEvent);
             DWORD n = 0;
-            BOOL ok = ReadFile(c->h, tmp, sizeof tmp, nullptr, &ov);
+            BOOL ok = ReadFile(c->h, tmp.data(), DWORD(tmp.size()), nullptr, &ov);
             if (!ok && GetLastError() != ERROR_IO_PENDING) break;
             while (running_ && WaitForSingleObject(ov.hEvent, 500) == WAIT_TIMEOUT) {}
             if (!running_ || !GetOverlappedResult(c->h, &ov, &n, FALSE) || n == 0) break;
-            buf.append(tmp, n);
-            size_t pos;
-            while ((pos = buf.find('\n')) != std::string::npos) {
-                on_msg(c->peer, buf.substr(0, pos));
-                buf.erase(0, pos + 1);
+            records.clear();
+            const bool valid = reader.feed(tmp.data(), n, records);
+            for (auto& r : records) {
+                if (r.kind == ipc::Record::Kind::line) on_msg(c->peer, r.data);
+                else if (on_frame_) on_frame_(c->peer, std::move(r.data));
             }
-            if (buf.size() > ipc::kMaxLine) buf.clear();
+            if (!valid) {
+                log::warn("ipc: protocol error from helper pid {}, closing", c->peer.pid);
+                break;
+            }
         }
         CloseHandle(ov.hEvent);
         {
@@ -225,6 +233,7 @@ private:
     }
 
     std::string allowed_;
+    FrameHandler on_frame_;
     std::wstring name_;
     std::atomic<bool> running_{false};
     std::thread accept_;

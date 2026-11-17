@@ -124,6 +124,13 @@ JSON lines over `/run/xephyguard/helper.sock` (Linux, peer checked with `SO_PEER
 or `\\.\pipe\XephyGuardHelper` (Windows, client image path + session id checked). See
 `agent/core/include/xg/ipc_messages.hpp`.
 
+Helper → service also carries binary **screen frame** records (`agent/core/include/xg/ipc_framing.hpp`,
+DECISIONS #24): `0x00`, type `0x01`, payload length (4 bytes, big-endian, 1 .. 4 MiB), payload = one encoded
+screen-protocol message. A JSON line never starts with `0x00`. The service checks type and length only, never
+decodes the payload, and closes the connection on an unknown type, an empty or an oversize record. Records are
+accepted only on connections that passed the helper peer check above. Not sent by the helper yet (screen Step 61);
+the service relays them to the gateway from screen Step 60.
+
 ## Proxy → CCC (internal)
 `POST http://127.0.0.1:8000/api/internal/net-events` with `Authorization: Bearer $XG_INTERNAL_TOKEN`,
 `{events:[{client_ip, host, path?, layer: sni|http|path|search-ai, action: blocked|allowed|rewritten, category?, matched?, ts}]}`.

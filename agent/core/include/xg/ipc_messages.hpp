@@ -8,6 +8,7 @@
 //   {"t":"keys", ...KeyStatsWindow...}           (Windows only; Linux service reads evdev itself)
 //   {"t":"paste_chord","ts":...}                 (Ctrl+V / Shift+Insert observed — Windows hook)
 //   {"t":"ping"}
+//   binary screen frame record (opaque, not JSON): see ipc_framing.hpp
 // service -> helper:
 //   {"t":"config","title_capture":"app_only","collect":{"window":true,"clipboard":true,"keys":false},"mode":"test"}
 //   {"t":"indicator","text":"Monitored by XephyGuard","mode":"test"}

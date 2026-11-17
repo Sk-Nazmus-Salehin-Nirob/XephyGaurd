@@ -191,6 +191,10 @@ public:
     virtual bool send(uint64_t conn_id, const std::string& line) = 0;
     virtual void broadcast(const std::string& line) = 0;
     virtual void stop() = 0;
+    /// Receives screen frame records (opaque bytes, type and size already checked, ipc_framing.hpp). Set before
+    /// start(); without a handler frames are dropped. Called on the IPC thread: must not block for long.
+    using FrameHandler = std::function<void(const Peer&, std::string&& frame)>;
+    virtual void set_frame_handler(FrameHandler h) { (void)h; }
 };
 
 class IIpcClient {
