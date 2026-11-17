@@ -15,7 +15,8 @@ constexpr uint32_t kMaxTilePayload = 64 * 64 * 4;
 constexpr uint16_t kMaxTiles = 4096;
 
 enum class MsgType : uint8_t { Frame=1, Cursor=2, Ack=3, KeyframeReq=4, Status=5 };
-enum Flags : uint16_t { KEY=1, FULL=2, DELTA=4, MASKED=8, SECURE=16, CURSOR_F=32 };
+// CACHED is set only by the gateway on a replayed cached keyframe (never by an agent).
+enum Flags : uint16_t { KEY=1, FULL=2, DELTA=4, MASKED=8, SECURE=16, CURSOR_F=32, CACHED=64 };
 enum class Codec : uint8_t { Raw=0, Webp=1, Jpeg=2 };
 
 struct TileRec { uint16_t x, y; Codec codec; std::vector<uint8_t> payload; };

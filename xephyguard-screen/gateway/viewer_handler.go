@@ -50,9 +50,9 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	// Only replay a cached keyframe and ask for a keyframe when a live agent is connected;
 	// otherwise keep the 150ms offline status grace timer active.
 	if hasAgent {
-		if len(stream.lastKeyframe) > 0 {
+		if cached := stream.cachedKeyframeLocked(time.Now()); cached != nil {
 			select {
-			case v.ch <- stream.lastKeyframe:
+			case v.ch <- cached:
 			default:
 			}
 		}

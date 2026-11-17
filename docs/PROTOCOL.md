@@ -141,7 +141,10 @@ Any other text message, or a refused renewal, closes the socket (1008). Binary v
 if they are exactly 28 bytes with the screen magic and version and type `Ack` (3) or `KeyframeReq` (4); the gateway
 sets their `stream_id` to the viewer's stream and drops everything else. A viewer message over 4 KiB closes the socket (1009).
 A browser `Origin` must be the request host (nginx forwards the dashboard `Host`) or match `-allowed-origins`
-(`SCREEN_GATEWAY_ALLOWED_ORIGINS`, comma-separated `host[:port]` patterns), else the upgrade gets 403. The renewal must also keep `sub` and `audit_id`.
+(`SCREEN_GATEWAY_ALLOWED_ORIGINS`, comma-separated `host[:port]` patterns), else the upgrade gets 403.
+The gateway keeps the agent's last keyframe for at most 5 s and replays a copy to a new viewer with frame flag
+`CACHED` (64, `core/protocol.h`; never sent by agents). Any frame flagged `MASKED` (8) or `SECURE` (16) clears the
+cache, and such keyframes are never cached. The renewal must also keep `sub` and `audit_id`.
 
 Server → gateway revoke (CCC-internal, loopback only, never proxied by nginx): `POST http://127.0.0.1:8082/internal/revoke`
 with `Authorization: Bearer $XG_INTERNAL_TOKEN` and JSON `{"audit_id":N}`, `{"user_id":N}` and/or `{"lab_session_id":N}`

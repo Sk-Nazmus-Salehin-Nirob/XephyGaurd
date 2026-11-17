@@ -113,11 +113,18 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Cache keyframe for instant display on new viewer connections
-			if (flags & 1) != 0 {
-				log.Printf("[Gateway Agent Keyframe] from remote=%s stream_id=%d size=%d", r.RemoteAddr, frameStreamID, len(data))
-				stream.lastKeyframe = make([]byte, len(data))
-				copy(stream.lastKeyframe, data)
+			// Cache the last keyframe for a fast first picture (screen Step 9). A masked or
+			// secure-desktop frame clears it, so a cached picture never outlives the privacy state.
+			if data[3] == kMsgTypeFrame {
+				switch {
+				case flags&(kFlagMasked|kFlagSecure) != 0:
+					stream.lastKeyframe = nil
+				case flags&kFlagKey != 0:
+					log.Printf("[Gateway Agent Keyframe] from remote=%s stream_id=%d size=%d", r.RemoteAddr, frameStreamID, len(data))
+					stream.lastKeyframe = make([]byte, len(data))
+					copy(stream.lastKeyframe, data)
+					stream.lastKeyframeAt = time.Now()
+				}
 			}
 
 			// Fan out to viewers

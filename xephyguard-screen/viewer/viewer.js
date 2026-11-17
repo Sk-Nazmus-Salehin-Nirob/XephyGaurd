@@ -21,7 +21,8 @@ export const Flags = {
   DELTA: 4,
   MASKED: 8,
   SECURE: 16,
-  CURSOR_F: 32
+  CURSOR_F: 32,
+  CACHED: 64 // gateway replayed its cached keyframe (up to 5 s old); the next live frame replaces it
 };
 
 export const Codec = {
@@ -270,6 +271,8 @@ export class ScreenViewer {
       this.tileCanvas.setBanner('PRIVACY MASKED');
     } else if (msg.flags & Flags.SECURE) {
       this.tileCanvas.setBanner('SECURE DESKTOP');
+    } else if (msg.flags & Flags.CACHED) {
+      this.tileCanvas.setBanner('LAST PICTURE (CACHED)');
     } else {
       this.tileCanvas.setBanner(null);
     }

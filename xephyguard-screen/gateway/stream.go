@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -21,6 +22,15 @@ const (
 	kMsgTypeAck      = uint8(3)
 	kMsgTypeKeyReq   = uint8(4)
 	kMsgTypeStatus   = uint8(5)
+
+	// Frame flags (core/protocol.h Flags).
+	kFlagKey    = uint16(1)
+	kFlagMasked = uint16(8)
+	kFlagSecure = uint16(16)
+	kFlagCached = uint16(64) // set by the gateway on a replayed cached keyframe
+
+	// kKeyframeCacheTTL is how long a cached keyframe may be replayed to a new viewer.
+	kKeyframeCacheTTL = 5 * time.Second
 )
 
 type Viewer struct {
@@ -36,16 +46,17 @@ type Viewer struct {
 }
 
 type Stream struct {
-	streamID     uint32
-	agentConn    *websocket.Conn
-	agentID      string
-	agentOut     chan []byte
-	mu           sync.Mutex
-	viewers      map[uint64]*Viewer
-	nextViewerID uint64
-	lastKeyframe []byte
-	ctx          context.Context
-	cancel       context.CancelFunc
+	streamID       uint32
+	agentConn      *websocket.Conn
+	agentID        string
+	agentOut       chan []byte
+	mu             sync.Mutex
+	viewers        map[uint64]*Viewer
+	nextViewerID   uint64
+	lastKeyframe   []byte
+	lastKeyframeAt time.Time
+	ctx            context.Context
+	cancel         context.CancelFunc
 }
 
 func newStream(streamID uint32) *Stream {
@@ -206,4 +217,17 @@ func isKeyframe(msg []byte) bool {
 		binary.LittleEndian.Uint16(msg[0:2]) == kMagic &&
 		msg[3] == kMsgTypeFrame &&
 		binary.LittleEndian.Uint16(msg[4:6])&1 != 0
+}
+
+// cachedKeyframeLocked returns a copy of the cached keyframe flagged CACHED, or nil when there is
+// none or it is older than kKeyframeCacheTTL. Caller holds st.mu.
+func (st *Stream) cachedKeyframeLocked(now time.Time) []byte {
+	if len(st.lastKeyframe) < kHeaderSize || now.Sub(st.lastKeyframeAt) > kKeyframeCacheTTL {
+		st.lastKeyframe = nil
+		return nil
+	}
+	out := make([]byte, len(st.lastKeyframe))
+	copy(out, st.lastKeyframe)
+	binary.LittleEndian.PutUint16(out[4:6], binary.LittleEndian.Uint16(out[4:6])|kFlagCached)
+	return out
 }

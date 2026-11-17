@@ -34,7 +34,7 @@ Gateway trust and authorisation:
 - [x] Step 6: [screen] Viewer to agent messages: allow only `Ack` and `KeyframeReq`, exactly 28 bytes, stream id rewritten; viewer read limit 4 KB (fixes I-SCREEN-13; touches F45)
 - [x] Step 7: [screen] Origin check against configured dashboard origins, `InsecureSkipVerify` removed (fixes I-SCREEN-15; touches F45)
 - [x] Step 8: (done with Step 3: the stream is fixed per connection) [screen] Fix the `stream` data race in `HandleAgent` (resolve the stream before the writer starts) (fixes I-SCREEN-19; touches F45)
-- [ ] Step 9: [screen] Keyframe cache: 5 s TTL, cleared on MASKED/SECURE, replayed frames flagged cached (fixes I-SCREEN-16; touches F43, F45)
+- [x] Step 9: [screen] Keyframe cache: 5 s TTL, cleared on MASKED/SECURE, replayed frames flagged cached (fixes I-SCREEN-16; touches F43, F45)
 
 Privacy and capture:
 - [ ] Step 10: [screen] X11 shared memory created 0600 and removed (`IPC_RMID`) right after attach (fixes I-SCREEN-4; touches F43, F47, F95)
