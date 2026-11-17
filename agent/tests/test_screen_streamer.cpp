@@ -24,14 +24,22 @@ std::string control(MsgType type, uint16_t flags, uint32_t stream_id) {
     return {v.begin(), v.end()};
 }
 
+// A gateway Status message: `viewers` in flags, view mode code in the reserved field (1 live, 2 snapshot, 3 wall).
+std::string status(uint16_t viewers, uint16_t mode, uint32_t stream_id) {
+    auto m = control(MsgType::Status, viewers, stream_id);
+    m[26] = static_cast<char>(mode & 0xff);
+    m[27] = static_cast<char>(mode >> 8);
+    return m;
+}
+
 struct Rig {
-    ScreenStreamer s{[] { return std::make_shared<FakeCapture>(320, 240); }};
+    ScreenStreamer s;
     std::mutex mu;
     std::vector<std::string> frames;
     std::atomic<int> viewing{-1};
     std::mutex wmu;
     std::optional<ScreenWindow> win = ScreenWindow{"editor", "main.cpp"};  // what the "window monitor" reports
-    Rig() {
+    explicit Rig(int w = 320, int h = 240) : s([w, h] { return std::make_shared<FakeCapture>(w, h); }) {
         s.set_window_source([this] {
             std::lock_guard lk(wmu);
             return win;
@@ -58,6 +66,14 @@ struct Rig {
         }, [this](bool v) { viewing = v ? 1 : 0; });
     }
     size_t count() { std::lock_guard lk(mu); return frames.size(); }
+    // Width of the newest real frame (0 if none yet).
+    int last_width() {
+        std::lock_guard lk(mu);
+        for (auto it = frames.rbegin(); it != frames.rend(); ++it)
+            if (auto m = decode(reinterpret_cast<const uint8_t*>(it->data()), it->size()); m && m->type == MsgType::Frame && m->width > 0)
+                return m->width;
+        return 0;
+    }
     template <class F> static bool eventually(F f) {
         for (int i = 0; i < 300; ++i) {
             if (f()) return true;
@@ -154,4 +170,29 @@ TEST_CASE("privacy mask: an invalid rule regex masks (fail-safe); rules can chan
     CHECK(r.kinds() == 1);
     r.s.set_mask_rules({});  // the bad list is replaced
     REQUIRE(Rig::eventually([&] { return (r.kinds() & 2) != 0; }));
+}
+
+TEST_CASE("streamer follows the mode in the gateway's Status: wall sends thumbnails, live full size, and it switches", "[screen]") {
+    Rig r(640, 480);
+    REQUIRE(r.start(42));
+    r.s.on_gateway_message(status(1, 3, 42));  // one wall viewer
+    REQUIRE(Rig::eventually([&] { return r.last_width() > 0; }));
+    CHECK(r.last_width() == 320);
+
+    r.s.on_gateway_message(status(2, 1, 42));  // a live viewer joined: the most demanding mode wins
+    REQUIRE(Rig::eventually([&] { return r.last_width() == 640; }));
+
+    r.s.on_gateway_message(status(0, 0, 42));  // everyone left
+    CHECK_FALSE(r.s.is_capturing());
+}
+
+TEST_CASE("streamer treats a Status without a mode as live, and a snapshot Status starts capture", "[screen]") {
+    Rig r(640, 480);
+    REQUIRE(r.start(42));
+    r.s.on_gateway_message(status(1, 0, 42));  // an older gateway sends 0
+    REQUIRE(Rig::eventually([&] { return r.last_width() == 640; }));
+    r.s.on_gateway_message(status(0, 0, 42));
+    REQUIRE(Rig::eventually([&] { return !r.s.is_capturing(); }));
+    r.s.on_gateway_message(status(1, 2, 42));  // snapshot
+    REQUIRE(Rig::eventually([&] { return r.s.is_capturing(); }));
 }

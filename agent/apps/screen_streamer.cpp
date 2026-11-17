@@ -29,6 +29,14 @@ std::shared_ptr<ScreenCapture> platform_capture() {
 #endif
 }
 
+// The gateway's Status message carries the viewers' mode in the reserved header field (bytes 26-27, u16 LE,
+// docs/PROTOCOL.md): 2 snapshot, 3 wall, anything else (0 not stated, 1 live) is live.
+const char* mode_from_status(std::string_view msg) {
+    if (msg.size() < kHeaderSize) return "live";
+    const uint16_t code = static_cast<uint8_t>(msg[26]) | (static_cast<uint16_t>(static_cast<uint8_t>(msg[27])) << 8);
+    return code == 2 ? "snapshot" : code == 3 ? "wall" : "live";
+}
+
 constexpr size_t kMaxTitleBytes = 512;  // bounds the regex work on a title the student controls
 
 std::shared_ptr<PrivacyFilter> make_filter(const WindowSource& src, const std::vector<MaskRule>& rules) {
@@ -57,6 +65,7 @@ struct ScreenStreamer::Impl {
     mutable std::mutex mu;
     std::unique_ptr<AgentStateMachine> sm;
     uint32_t stream_id = 0;
+    std::string mode = "live";  // what the gateway last asked for: wall, snapshot or live
     bool viewing = false;
     std::function<void(bool)> on_viewing_changed;
     WindowSource window_source;
@@ -123,12 +132,16 @@ void ScreenStreamer::on_gateway_message(std::string_view msg) {
     if (auto m = decode(bytes, msg.size())) {
         if (m->type == MsgType::Status && m->flags == 0) {  // no viewer left
             impl_->stop_capture_locked();
+            impl_->mode = "live";
             return;
         }
+        if (m->type == MsgType::Status) impl_->mode = mode_from_status(msg);
         if (m->type == MsgType::KeyframeReq || (m->type == MsgType::Status && m->flags > 0)) {
+            // A different mode (a wall viewer became a live one, or the reverse) restarts capture with it.
+            if (impl_->sm->is_thread_running() && impl_->sm->mode() != impl_->mode) impl_->sm->on_view_stop();
             if (!impl_->sm->is_thread_running()) {
                 impl_->sm->on_view_stop();
-                impl_->sm->on_view_start(impl_->stream_id, "live");
+                impl_->sm->on_view_start(impl_->stream_id, impl_->mode);
             }
             impl_->set_viewing(true);
         }
