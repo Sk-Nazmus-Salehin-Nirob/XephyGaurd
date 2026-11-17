@@ -82,7 +82,8 @@ Done as part of M0-4, docs only:
 ## M4: Phase 3a low power (each step records before/after from the bench)
 - [x] M4-1a Step 50 [agent]: `WebSocketClient::receive(timeout, interruptible)` blocks in one poll instead of 50 ms slices (measured 10 wake-ups per 0.5 s idle before, <= 3 after) and `interrupt()` ends it from another thread
 - [x] M4-1b Step 50 [agent]: `ScreenRelay` uses it (receive loop, `wait_ms`, `send_loop` wait on the condition variable, `set_source`/shutdown interrupt the link) so a connected idle relay costs no polling
-- [ ] M4-2 Step 51 + Step 31: event-driven capture on X11 Damage; skip capture without damage; drop the alpha loop
+- [x] M4-2a Step 31: X11 capture reads Damage events (rectangles), skips the screen read when none (safety re-read every 1 s), copies only damaged rectangles into a shadow frame with opaque alpha, reports `dirty` rectangles; `ScreenCapture::wait_for_change` / `interrupt_wait` (X11: poll on the X connection + eventfd). Bench x11/Xvfb static: 21 % -> 3.4 % of a core (capture still polled every 20 ms)
+- [ ] M4-2b Step 51: `agent_state` capture loop blocks in `capture_->wait_for_change` instead of `sleep_for(20/30 ms)` on NoChange and ends the wait on stop
 - [ ] M4-3 Step 55: static screen nearly free; wall thumbnail only when changed; pause when locked/blanked
 - [ ] M4-4 Step 53 [agent]: idle priority for capture/encode threads
 - [ ] M4-5 Step 54: codec choice by measurement (libjpeg-turbo default, WebP low effort); config values

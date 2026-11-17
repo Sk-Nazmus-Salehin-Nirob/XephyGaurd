@@ -1,5 +1,8 @@
 #pragma once
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
+#include <thread>
 #include <vector>
 
 namespace xg {
@@ -21,5 +24,13 @@ public:
   virtual bool start() = 0;
   virtual CaptureStatus capture(Frame& out) = 0;  // fills out when Ok
   virtual void stop() = 0;
+  /// Blocks until the screen may have changed or `timeout_ms` passed; false = timed out (nothing changed). Captures
+  /// without a change source poll: this default sleeps a short slice and says "maybe", like the old fixed sleeps.
+  virtual bool wait_for_change(int timeout_ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(std::min(timeout_ms, 20)));
+    return true;
+  }
+  /// Thread-safe: ends a wait_for_change() blocked on another thread at once.
+  virtual void interrupt_wait() {}
 };
 }

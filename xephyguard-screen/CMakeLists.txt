@@ -158,6 +158,13 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   add_test(NAME xgtests COMMAND xgtests)
 
+  # The X11 capture tests draw on the root window: run them on a private Xvfb, only when xvfb-run exists.
+  find_program(XG_XVFB_RUN xvfb-run)
+  if(XG_XVFB_RUN)
+    add_test(NAME xgtests_x11 COMMAND ${XG_XVFB_RUN} -a -s "-screen 0 1920x1080x24" $<TARGET_FILE:xgtests> "-tc=X11 capture*")
+    set_tests_properties(xgtests_x11 PROPERTIES ENVIRONMENT "XG_TEST_DISPOSABLE_DISPLAY=1")
+  endif()
+
   add_executable(xgbench bench/load_agents.cpp)
   target_include_directories(xgbench PRIVATE core capture agent third_party)
   target_link_libraries(xgbench PRIVATE xgcore)
