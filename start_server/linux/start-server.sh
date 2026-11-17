@@ -51,14 +51,10 @@ fi
 
 ensure_gateway_secrets() {
   local env_file="$1"
-  local s1 s2
+  local s1
   s1="$(xg_read_env "$env_file" SCREEN_GATEWAY_SECRET "")"
-  s2="$(xg_read_env "$env_file" SCREEN_GATEWAY_AGENT_SECRET "")"
   if [[ -z "$s1" || "$s1" == dev-secret* ]]; then
     xg_set_env "$env_file" SCREEN_GATEWAY_SECRET "$(xg_rand_hex 32)"
-  fi
-  if [[ -z "$s2" || "$s2" == dev-secret* ]]; then
-    xg_set_env "$env_file" SCREEN_GATEWAY_AGENT_SECRET "$(xg_rand_hex 32)"
   fi
 }
 
@@ -125,7 +121,6 @@ case "$RESOLVED_MODE" in
     [[ -n "$GATEWAY_PORT" ]] || GATEWAY_PORT="$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_PORT "8082")"
 
     GW_SECRET="$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_SECRET)"
-    GW_AGENT_SECRET="$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_AGENT_SECRET)"
     GW_ISSUER="$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_ISSUER "xephyguard-ccc")"
     GW_AUDIENCE="$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_AUDIENCE "xephyguard-gateway")"
 
@@ -196,7 +191,6 @@ case "$RESOLVED_MODE" in
         env \
         SCREEN_GATEWAY_ADDR=":${GATEWAY_PORT}" \
         SCREEN_GATEWAY_SECRET="$GW_SECRET" \
-        SCREEN_GATEWAY_AGENT_SECRET="$GW_AGENT_SECRET" \
         SCREEN_GATEWAY_ISSUER="$GW_ISSUER" \
         SCREEN_GATEWAY_AUDIENCE="$GW_AUDIENCE" \
         "$GW_BIN"

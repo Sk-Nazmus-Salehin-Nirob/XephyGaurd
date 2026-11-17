@@ -52,12 +52,6 @@ if (-not $gwSecret -or $gwSecret.StartsWith("dev-secret")) {
     $envRaw = Set-DotEnvKey -Content $envRaw -Key "SCREEN_GATEWAY_SECRET" -Value $gwSecret
     $envChanged = $true
 }
-$gwAgentSecret = $envMap["SCREEN_GATEWAY_AGENT_SECRET"]
-if (-not $gwAgentSecret -or $gwAgentSecret.StartsWith("dev-secret")) {
-    $gwAgentSecret = New-RandomHex 32
-    $envRaw = Set-DotEnvKey -Content $envRaw -Key "SCREEN_GATEWAY_AGENT_SECRET" -Value $gwAgentSecret
-    $envChanged = $true
-}
 if ($envChanged) {
     Set-Content -Path $EnvFile -Value $envRaw -NoNewline
     $envMap = Read-DotEnvMap -Path $EnvFile
@@ -124,7 +118,6 @@ if (-not $pGateway) {
     $gatewayExe = Join-Path $gatewayDir "gateway.exe"
     $env:SCREEN_GATEWAY_ADDR         = ":$GatewayPort"
     $env:SCREEN_GATEWAY_SECRET       = $gwSecret
-    $env:SCREEN_GATEWAY_AGENT_SECRET = $gwAgentSecret
     $env:SCREEN_GATEWAY_ISSUER       = $gwIssuer
     $env:SCREEN_GATEWAY_AUDIENCE     = $gwAudience
 
