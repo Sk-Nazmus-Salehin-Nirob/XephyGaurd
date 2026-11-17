@@ -18,6 +18,7 @@ type FakeAuth struct {
 	agentErr   error
 	viewerErr  error
 	agentID    string
+	agentPC    uint32 // 0: the agent's PC is its ?stream_id (default 100)
 	streamIDFn func(r *http.Request) (uint32, error)
 }
 
@@ -36,14 +37,22 @@ func (f *FakeAuth) AuthViewer(r *http.Request) (uint32, error) {
 	return 100, nil
 }
 
-func (f *FakeAuth) AuthAgent(r *http.Request) (string, error) {
+func (f *FakeAuth) AuthAgent(r *http.Request) (string, uint32, error) {
 	if f.agentErr != nil {
-		return "", f.agentErr
+		return "", 0, f.agentErr
 	}
+	id := "test-agent-fp"
 	if f.agentID != "" {
-		return f.agentID, nil
+		id = f.agentID
 	}
-	return "test-agent-fp", nil
+	pc := f.agentPC
+	if pc == 0 {
+		pc = 100
+		if sid, err := strconv.ParseUint(r.URL.Query().Get("stream_id"), 10, 32); err == nil && sid != 0 {
+			pc = uint32(sid)
+		}
+	}
+	return id, pc, nil
 }
 
 func makeTestFrame(streamID uint32, monitorID uint16, seq uint32) []byte {

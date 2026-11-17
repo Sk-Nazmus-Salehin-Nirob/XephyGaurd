@@ -12,17 +12,20 @@ import (
 )
 
 func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
-	agentID, err := s.auth.AuthAgent(r)
-	if err != nil {
+	agentID, pcID, err := s.auth.AuthAgent(r)
+	if err != nil || pcID == 0 {
 		log.Printf("[Gateway Agent Rejected] remote=%s path=%s err=%v", r.RemoteAddr, r.URL.Path, err)
-		http.Error(w, "Unauthorized agent: "+err.Error(), http.StatusUnauthorized)
+		http.Error(w, "Unauthorized agent", http.StatusUnauthorized)
 		return
 	}
 
-	streamIDVal := uint32(0)
+	// The agent streams only as its own PC (screen Step 3). A ?stream_id naming another PC is refused.
 	if sidStr := r.URL.Query().Get("stream_id"); sidStr != "" {
-		if parsed, err := strconv.ParseUint(sidStr, 10, 32); err == nil {
-			streamIDVal = uint32(parsed)
+		parsed, perr := strconv.ParseUint(sidStr, 10, 32)
+		if perr != nil || uint32(parsed) != pcID {
+			log.Printf("[Gateway Agent Rejected] remote=%s pc_id=%d asked for stream_id=%q", r.RemoteAddr, pcID, sidStr)
+			http.Error(w, "stream_id does not match this agent's PC", http.StatusForbidden)
+			return
 		}
 	}
 
@@ -35,26 +38,24 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 	c.SetReadLimit(16 * 1024 * 1024)
 	defer c.Close(websocket.StatusInternalError, "agent closed")
 
-	log.Printf("[Gateway Agent Connected] remote=%s path=%s stream_id_param=%d", r.RemoteAddr, r.URL.Path, streamIDVal)
+	log.Printf("[Gateway Agent Connected] remote=%s path=%s pc_id=%d", r.RemoteAddr, r.URL.Path, pcID)
 
-	var stream *Stream
-	if streamIDVal != 0 {
-		stream = s.getOrCreateStream(streamIDVal)
-		stream.mu.Lock()
-		if stream.agentConn != c {
-			stream.lastKeyframe = nil
-		}
-		stream.agentConn = c
-		stream.agentID = agentID
-		if len(stream.viewers) > 0 {
-			s.broadcastStatusLocked(stream, true)
-			select {
-			case stream.agentOut <- buildKeyframeReq(stream.streamID, 0):
-			default:
-			}
-		}
-		stream.mu.Unlock()
+	// The stream is fixed for the whole connection and resolved before the writer starts.
+	stream := s.getOrCreateStream(pcID)
+	stream.mu.Lock()
+	if stream.agentConn != c {
+		stream.lastKeyframe = nil
 	}
+	stream.agentConn = c
+	stream.agentID = agentID
+	if len(stream.viewers) > 0 {
+		s.broadcastStatusLocked(stream, true)
+		select {
+		case stream.agentOut <- buildKeyframeReq(stream.streamID, 0):
+		default:
+		}
+	}
+	stream.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -65,19 +66,10 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 		defer close(agentWriterDone)
 		for {
 			var out []byte
-			if stream != nil {
-				select {
-				case <-ctx.Done():
-					return
-				case out = <-stream.agentOut:
-				}
-			} else {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(50 * time.Millisecond):
-					continue
-				}
+			select {
+			case <-ctx.Done():
+				return
+			case out = <-stream.agentOut:
 			}
 
 			writeCtx, writeCancel := context.WithTimeout(ctx, 3*time.Second)
@@ -111,16 +103,17 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 			flags := binary.LittleEndian.Uint16(data[4:6])
 			monitorID := binary.LittleEndian.Uint16(data[6:8])
 
-			if stream == nil || stream.streamID != frameStreamID {
-				stream = s.getOrCreateStream(frameStreamID)
+			if frameStreamID != stream.streamID {
+				// A frame for another PC's stream: drop it (screen Step 3).
+				continue
 			}
 
 			stream.mu.Lock()
 			if stream.agentConn != c {
-				stream.lastKeyframe = nil
+				// Another connection of this PC took over; this one no longer feeds viewers.
+				stream.mu.Unlock()
+				continue
 			}
-			stream.agentConn = c
-			stream.agentID = agentID
 
 			// Cache keyframe for instant display on new viewer connections
 			if (flags & 1) != 0 {
@@ -159,13 +152,11 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 	cancel()
 	<-agentWriterDone
 
-	if stream != nil {
-		stream.mu.Lock()
-		if stream.agentConn == c {
-			stream.agentConn = nil
-			stream.lastKeyframe = nil
-			s.broadcastStatusLocked(stream, false)
-		}
-		stream.mu.Unlock()
+	stream.mu.Lock()
+	if stream.agentConn == c {
+		stream.agentConn = nil
+		stream.lastKeyframe = nil
+		s.broadcastStatusLocked(stream, false)
 	}
+	stream.mu.Unlock()
 }

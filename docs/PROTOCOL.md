@@ -119,7 +119,9 @@ and `X-SSL-Client-Cert` (URL-escaped PEM) to the gateway on 127.0.0.1:8082, whic
 as the SHA-256 of that certificate (same value as `agents.cert_fingerprint`); it accepts no other agent
 credential (no shared token, `X-Agent-Token` / `agent_token` are ignored). The policy response has no `screen`
 object (no gateway address or token; the agent uses this fixed URL). The dashboard port 443
-never forwards these headers and serves only `/screen-gw/view` and `/screen-gw/health` (agent path 404). The service opens it (`?stream_id=<pc_id>`, numeric only) while a helper of the
+never forwards these headers and serves only `/screen-gw/view` and `/screen-gw/health` (agent path 404). The gateway binds the connection to the PC of that certificate (internal lookup below):
+`?stream_id` naming another PC is refused with 403, and frames whose header `stream_id` is not that PC are
+dropped; an unenrolled or revoked certificate gets 401. The service opens it (`?stream_id=<pc_id>`, numeric only) while a helper of the
 active session streams over IPC (`screen_caps.ipc_stream`), relays helper frames up unchanged (queue capped at
 8 MiB, excess dropped) and gateway messages down as `screen_rx`; reconnect backoff 1 s doubling to 30 s.
 Messages from the gateway are capped at 64 KiB per WebSocket message (fragments included) and 1 KiB per relayed message.

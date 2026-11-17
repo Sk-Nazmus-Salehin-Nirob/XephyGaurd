@@ -101,10 +101,10 @@ func TestAgentCertRejectsUntrustedOrUnverified(t *testing.T) {
 }
 
 func TestAgentFingerprintHeaderIsNeverTrusted(t *testing.T) {
-	g := NewGatewayAuthenticator("secret", "iss", "aud", false, loopbackOnly)
+	g := NewGatewayAuthenticator("secret", "iss", "aud", false, loopbackOnly, staticPCs{})
 	req := proxiedRequest("127.0.0.1:1", "SUCCESS", "")
 	req.Header.Set("X-Agent-Cert-Fingerprint", strings.Repeat("ab", 32))
-	if id, err := g.AuthAgent(req); err == nil {
+	if id, _, err := g.AuthAgent(req); err == nil {
 		t.Fatalf("spoofed fingerprint header accepted as %q", id)
 	}
 }
@@ -112,10 +112,11 @@ func TestAgentFingerprintHeaderIsNeverTrusted(t *testing.T) {
 func TestGatewayAuthAgentUsesProxiedCert(t *testing.T) {
 	der := testCertDER(t)
 	want := sha256.Sum256(der)
-	g := NewGatewayAuthenticator("secret", "iss", "aud", false, loopbackOnly)
-	id, err := g.AuthAgent(proxiedRequest("127.0.0.1:1", "SUCCESS", nginxEscaped(der)))
-	if err != nil || id != hex.EncodeToString(want[:]) {
-		t.Fatalf("got %q, %v", id, err)
+	fp := hex.EncodeToString(want[:])
+	g := NewGatewayAuthenticator("secret", "iss", "aud", false, loopbackOnly, staticPCs{fp: 42})
+	id, pc, err := g.AuthAgent(proxiedRequest("127.0.0.1:1", "SUCCESS", nginxEscaped(der)))
+	if err != nil || id != fp || pc != 42 {
+		t.Fatalf("got %q, %d, %v", id, pc, err)
 	}
 }
 
@@ -135,11 +136,11 @@ func TestParseTrustedProxiesLoopbackOnly(t *testing.T) {
 }
 
 func TestGatewayAuthAgentRejectsSharedToken(t *testing.T) {
-	g := NewGatewayAuthenticator("secret", "iss", "aud", false, loopbackOnly)
+	g := NewGatewayAuthenticator("secret", "iss", "aud", false, loopbackOnly, staticPCs{})
 	req := proxiedRequest("127.0.0.1:1", "NONE", "")
 	req.Header.Set("X-Agent-Token", "sec-123")
 	req.URL.RawQuery = "agent_token=sec-123"
-	if id, err := g.AuthAgent(req); !errors.Is(err, ErrMissingCert) {
+	if id, _, err := g.AuthAgent(req); !errors.Is(err, ErrMissingCert) {
 		t.Fatalf("shared token accepted as %q (%v)", id, err)
 	}
 }
