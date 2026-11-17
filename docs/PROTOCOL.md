@@ -130,6 +130,10 @@ HS256 JWT (30 s) with `iss`, `aud`, `sub` (user id), `pc_id`, `stream_id`, `stud
 `iat`, `nbf`, `exp`, `jti`. `stream_id` is always the PC's id (the stream the agent opens) and is set by the server;
 a client-sent `stream_id` is ignored. A renewed token keeps the audit's `pc_id`; an audit without one is not renewed.
 
+Gateway → server (CCC-internal, loopback): `GET /api/internal/screen/agent/{sha256 fingerprint}` with
+`Authorization: Bearer $XG_INTERNAL_TOKEN` returns `{"pc_id": N}` for an enrolled, unrevoked agent on a
+non-retired PC, else 404. The gateway uses it to bind an agent connection to stream `pc_id`.
+
 ## Helper ↔ service IPC
 JSON lines over `/run/xephyguard/helper.sock` (Linux, peer checked with `SO_PEERCRED` + `/proc/<pid>/exe`)
 or `\\.\pipe\XephyGuardHelper` (Windows, client image path + session id checked). See
