@@ -240,4 +240,31 @@ class ViewTokenTest extends TestCase
         $this->assertNull($audit->student_id);
         $this->assertNull($audit->lab_session_id);
     }
+
+    public function test_pc_token_during_active_session_names_the_student(): void
+    {
+        $lab = $this->bootLab();
+        $instructor = $this->user('instructor');
+        [$pc] = $this->enrolledPc('192.168.10.44', 'PC-INSESSION');
+        $student = Student::create(['name' => 'Ivy', 'login' => 'ivy', 'student_number' => 'S1009']);
+        $session = LabSession::create([
+            'lab_id' => $lab->id,
+            'profile_id' => $this->profile('Test: AI blocked')->id,
+            'course' => 'CS101',
+            'title' => 'Lab 1',
+            'mode' => 'exam',
+            'status' => 'active',
+            'starts_at' => now(),
+            'ends_at' => now()->addHours(2),
+            'started_at' => now(),
+            'started_by' => $instructor->id,
+        ]);
+        SessionPc::create(['lab_session_id' => $session->id, 'pc_id' => $pc->id, 'student_id' => $student->id]);
+
+        $res = $this->actingAs($instructor)->postJson("/api/screen/pc/{$pc->id}/token");
+        $res->assertOk();
+        $this->assertDatabaseHas('screen_view_audits', [
+            'id' => $res->json('audit_id'), 'pc_id' => $pc->id, 'student_id' => $student->id, 'lab_session_id' => $session->id,
+        ]);
+    }
 }
