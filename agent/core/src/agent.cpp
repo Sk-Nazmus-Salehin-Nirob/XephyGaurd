@@ -1062,7 +1062,6 @@ void Agent::check_integrity(bool initial) {
     if (!initial && std::abs(wms - wall_minus_steady_) > 5000)
         report("clock_change", {{"delta_ms", wms - wall_minus_steady_}, {"at", now_ms()}});
     wall_minus_steady_ = wms;
-    if (!manifest.empty() || !mok) {}  // manifest is optional in development builds
 }
 
 // ------------------------------------------------------------------------------------ heartbeat

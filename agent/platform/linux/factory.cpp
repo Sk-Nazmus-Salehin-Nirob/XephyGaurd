@@ -13,7 +13,7 @@ std::unique_ptr<ServicePlatform> make_service_platform(const Config& cfg) {
     p->network = lnx::make_network_monitor();
     p->isolator = lnx::make_network_isolator();
     p->devices = lnx::make_device_monitor();
-    p->extensions = lnx::make_extension_scanner(p->system.get());
+    p->extensions = lnx::make_extension_scanner();
     p->files = lnx::make_file_watcher();
     p->input = lnx::make_evdev_input();  // root can read evdev: works on X11 and Wayland
     p->gpu = lnx::make_gpu_monitor();
