@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/subtle"
 	"flag"
 	"fmt"
 	"log"
@@ -33,12 +32,11 @@ func envBool(key string, def bool) bool {
 
 type GatewayAuthenticator struct {
 	validator      *TokenValidator
-	agentSecret    string
 	devInsecure    bool
 	trustedProxies []netip.Addr
 }
 
-func NewGatewayAuthenticator(secret, agentSecret, issuer, audience string, devInsecure bool, trustedProxies []netip.Addr) *GatewayAuthenticator {
+func NewGatewayAuthenticator(secret, issuer, audience string, devInsecure bool, trustedProxies []netip.Addr) *GatewayAuthenticator {
 	var tv *TokenValidator
 	if secret != "" {
 		tv = NewTokenValidator(AuthConfig{
@@ -49,7 +47,6 @@ func NewGatewayAuthenticator(secret, agentSecret, issuer, audience string, devIn
 	}
 	return &GatewayAuthenticator{
 		validator:      tv,
-		agentSecret:    agentSecret,
 		devInsecure:    devInsecure,
 		trustedProxies: trustedProxies,
 	}
@@ -77,16 +74,6 @@ func (g *GatewayAuthenticator) AuthAgent(r *http.Request) (string, error) {
 	if id, err := AgentCertFingerprint(r, g.trustedProxies); err == nil {
 		return id, nil
 	}
-	if g.agentSecret != "" {
-		tok := r.Header.Get("X-Agent-Token")
-		if tok == "" {
-			tok = r.URL.Query().Get("agent_token")
-		}
-		if len(tok) == len(g.agentSecret) &&
-			subtle.ConstantTimeCompare([]byte(tok), []byte(g.agentSecret)) == 1 {
-			return "agent-token", nil
-		}
-	}
 	if g.devInsecure {
 		log.Printf("[Gateway Auth] DEV-INSECURE allowing unauthenticated agent from %s", r.RemoteAddr)
 		return "dev-agent", nil
@@ -97,7 +84,6 @@ func (g *GatewayAuthenticator) AuthAgent(r *http.Request) (string, error) {
 func main() {
 	addr := flag.String("addr", envOrDefault("SCREEN_GATEWAY_ADDR", ":8082"), "Gateway HTTP/WebSocket address")
 	secret := flag.String("secret", envOrDefault("SCREEN_GATEWAY_SECRET", ""), "JWT Secret")
-	agentSecret := flag.String("agent-secret", envOrDefault("SCREEN_GATEWAY_AGENT_SECRET", ""), "Shared token for screen agents")
 	issuer := flag.String("issuer", envOrDefault("SCREEN_GATEWAY_ISSUER", "xephyguard-ccc"), "JWT Issuer")
 	audience := flag.String("audience", envOrDefault("SCREEN_GATEWAY_AUDIENCE", "xephyguard-gateway"), "JWT Audience")
 	trustedProxy := flag.String("trusted-proxy", envOrDefault("SCREEN_GATEWAY_TRUSTED_PROXY", ""), "Comma-separated loopback IPs of the TLS proxy whose X-SSL-Client-* headers are trusted (empty: none)")
@@ -113,7 +99,7 @@ func main() {
 		log.Fatalf("-trusted-proxy: %v", err)
 	}
 
-	auth := NewGatewayAuthenticator(*secret, *agentSecret, *issuer, *audience, *devInsecure, trusted)
+	auth := NewGatewayAuthenticator(*secret, *issuer, *audience, *devInsecure, trusted)
 	relay := NewRelayServer(auth)
 
 	server := &http.Server{
