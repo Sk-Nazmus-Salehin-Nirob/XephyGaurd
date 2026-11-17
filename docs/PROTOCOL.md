@@ -184,7 +184,14 @@ screen-protocol message. A JSON line never starts with `0x00`. The service check
 decodes the payload, and closes the connection on an unknown type, an empty or an oversize record. Records are
 accepted only on connections that passed the helper peer check above, and relayed only from the helper the
 service chose as source: one that sent `{"t":"screen_caps",...,"ipc_stream":true}` from the active session.
-Service → helper: `{"t":"screen_rx","data":"<base64 gateway message>"}`. The helper's `config` carries only
+Service → helper: `{"t":"screen_rx","data":"<base64 gateway message>"}`, and `{"t":"screen_lease","ttl_s":N}`
+(1..120) while the CCC holds a live-view lease (CCC command `screen_lease`, granted with every screen token and renewal;
+the service sends it to the source helper on each grant and when a helper becomes the source). Without a lease the
+service drops helper frames and sends no `screen_rx`; it keeps the newest gateway Status/KeyframeReq seen for 10 s
+and replays it once when a lease arrives (the viewer's request can beat the command). The helper starts capturing
+only inside a lease, stops by itself when `ttl_s` lapses or the service link drops, and a gateway request alone never
+starts it (screen Step 15).
+`screen_rx` data is one gateway message. The helper's `config` carries only
 `screen.enabled` and `screen.privacy_rules` (mask rules, see the policy section): no gateway address, port or token reaches the student session (screen Step 61); the helper opens
 no network connection for the screen.
 

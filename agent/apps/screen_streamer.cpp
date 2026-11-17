@@ -1,5 +1,7 @@
 #include "screen_streamer.hpp"
 
+#include <algorithm>
+#include <chrono>
 #include <mutex>
 #include <stdexcept>
 #include <vector>
@@ -65,6 +67,8 @@ struct ScreenStreamer::Impl {
     mutable std::mutex mu;
     std::unique_ptr<AgentStateMachine> sm;
     uint32_t stream_id = 0;
+    std::chrono::steady_clock::time_point lease_until{};  // default (epoch): no lease
+    bool lease_active_locked() const { return std::chrono::steady_clock::now() < lease_until; }
     std::string mode = "live";  // what the gateway last asked for: wall, snapshot or live
     bool viewing = false;
     std::function<void(bool)> on_viewing_changed;
@@ -125,6 +129,16 @@ bool ScreenStreamer::start(uint32_t stream_id, FrameOut out, std::function<void(
     return true;
 }
 
+void ScreenStreamer::grant_lease(int ttl_s) {
+    std::lock_guard lk(impl_->mu);
+    impl_->lease_until = std::chrono::steady_clock::now() + std::chrono::seconds(std::clamp(ttl_s, 1, 120));
+}
+
+void ScreenStreamer::tick() {
+    std::lock_guard lk(impl_->mu);
+    if (impl_->sm && impl_->sm->is_thread_running() && !impl_->lease_active_locked()) impl_->stop_capture_locked();
+}
+
 void ScreenStreamer::on_gateway_message(std::string_view msg) {
     std::lock_guard lk(impl_->mu);
     if (!impl_->sm) return;
@@ -137,6 +151,7 @@ void ScreenStreamer::on_gateway_message(std::string_view msg) {
         }
         if (m->type == MsgType::Status) impl_->mode = mode_from_status(msg);
         if (m->type == MsgType::KeyframeReq || (m->type == MsgType::Status && m->flags > 0)) {
+            if (!impl_->lease_active_locked()) return;  // no CCC lease: a gateway request alone never starts capture
             // A different mode (a wall viewer became a live one, or the reverse) restarts capture with it.
             if (impl_->sm->is_thread_running() && impl_->sm->mode() != impl_->mode) impl_->sm->on_view_stop();
             if (!impl_->sm->is_thread_running()) {
@@ -151,6 +166,7 @@ void ScreenStreamer::on_gateway_message(std::string_view msg) {
 
 void ScreenStreamer::on_link_lost() {
     std::lock_guard lk(impl_->mu);
+    impl_->lease_until = {};  // the service grants it again when it reconnects
     impl_->stop_capture_locked();
 }
 

@@ -318,6 +318,18 @@ TEST_CASE("a tunnel to an outside host is flagged for review during a session, n
     CHECK(h.of(ev::rule_hit).size() == 1);  // de-duplicated
 }
 
+TEST_CASE("screen_lease command: a positive ttl is accepted, a missing or zero ttl is ignored") {
+    Harness h;
+    h.agent->handle_command({"l1", "screen_lease", {{"ttl_s", 30}}});
+    h.agent->handle_command({"l2", "screen_lease", {{"ttl_s", 0}}});
+    h.agent->handle_command({"l3", "screen_lease", json::object()});
+    const auto r = h.of(ev::command_result);
+    REQUIRE(r.size() == 3);
+    CHECK(r[0].data.at("status") == "ok");
+    CHECK(r[1].data.at("status") == "ignored");
+    CHECK(r[2].data.at("status") == "ignored");
+}
+
 TEST_CASE("policy screen.privacy_rules parse, round-trip, and a malformed list rejects the policy") {
     const json ok = {{"screen", {{"privacy_rules", json::array({{{"process", "keepassxc"}}, {{"title_regex", "bank|private"}}})}}}};
     std::string err;

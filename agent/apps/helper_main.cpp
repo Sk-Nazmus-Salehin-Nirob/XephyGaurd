@@ -376,6 +376,7 @@ int helper_main() {
     };
 
     while (true) {
+        screen_streamer.tick();  // lease lapsed -> stop capturing
         if (!plat->ipc->connected()) {
             if (was_connected) plat->ui->set_indicator("XephyGuard service not reachable", "always_on");
             screen_streamer.on_link_lost();
@@ -463,6 +464,10 @@ int helper_main() {
                 refresh_indicator();
             } else if (t == "notify") {
                 plat->ui->notify(j.value("title", "XephyGuard"), j.value("body", ""), j.value("urgent", false));
+            } else if (t == "screen_lease") {
+                // The CCC holds a live-view lease for ttl_s seconds; capture runs only inside it (screen Step 15).
+                const int64_t ttl = j.value("ttl_s", int64_t{0});
+                if (ttl > 0) screen_streamer.grant_lease(static_cast<int>(std::min<int64_t>(ttl, 120)));
             } else if (t == "screen_rx") {
                 // One gateway control message relayed by the service (Ack / KeyframeReq / Status).
                 if (j.contains("data") && j["data"].is_string()) {

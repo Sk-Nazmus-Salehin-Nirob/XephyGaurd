@@ -1311,6 +1311,11 @@ void Agent::handle_command(const protocol::Command& cmd) {
             scan_devices();
         }
         command_result(cmd.id, "ok", json::object());
+    } else if (cmd.type == "screen_lease") {
+        // The CCC watches this PC's screen for ttl_s more seconds (sent with every screen token and renewal).
+        const int64_t ttl = jr::i64(cmd.args, "ttl_s", 0, 0, 3600);
+        if (ttl > 0 && cfg_.screen_enabled) screen_relay_->grant_lease(int(ttl));
+        command_result(cmd.id, ttl > 0 && cfg_.screen_enabled ? "ok" : "ignored", json::object());
     } else if (cmd.type == "flush" || cmd.type == "ping") {
         wake_uplink();
         command_result(cmd.id, "ok", {{"pong", now_ms()}});

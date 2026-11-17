@@ -101,6 +101,7 @@ TEST_CASE("screen relay stays disconnected until the core names a source helper"
 
 TEST_CASE("screen relay forwards only the source helper's frames, unchanged", "[screen]") {
     Rig r;
+    r.relay->grant_lease(60);
     r.relay->set_source(7);
     REQUIRE(Rig::eventually([&] { return r.link.load() != nullptr; }));
     REQUIRE(Rig::eventually([&] { r.relay->push(7, std::string("\x00\x01\xff", 3)); return r.sent_count() >= 1; }));
@@ -114,6 +115,7 @@ TEST_CASE("screen relay forwards only the source helper's frames, unchanged", "[
 
 TEST_CASE("screen relay sends gateway messages to the source helper as screen_rx, capped", "[screen]") {
     Rig r;
+    r.relay->grant_lease(60);
     r.relay->set_source(7);
     REQUIRE(Rig::eventually([&] { return r.link.load() != nullptr; }));
     {
@@ -161,4 +163,32 @@ TEST_CASE("mTLS screen link refuses to connect without a numeric pc id and a cli
     v.cert_file.clear();
     CHECK(f(v, &err) == nullptr);
     CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("screen relay passes nothing without a CCC lease, tells the helper the lease, and replays an early request", "[screen][lease]") {
+    Rig r;
+    r.relay->set_source(7);
+    REQUIRE(Rig::eventually([&] { return r.link.load() != nullptr; }));
+    CHECK_FALSE(r.relay->lease_active());
+    const auto before = r.relay->dropped();
+    r.relay->push(7, "frame");  // helper ignoring the lease rule: dropped
+    CHECK(r.relay->dropped() == before + 1);
+
+    std::string key(28, '\0');  // KeyframeReq (type 4) from the gateway, before any lease command
+    key[3] = 4;
+    {
+        std::lock_guard lk(r.link.load()->mu);
+        r.link.load()->inbox.push_back(key);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK(r.ipc.count_containing("\"screen_rx\"") == 0);  // nothing reached the helper
+
+    r.relay->grant_lease(500);  // clamped to 120 s
+    CHECK(r.relay->lease_active());
+    REQUIRE(Rig::eventually([&] { return r.ipc.count_containing("\"screen_lease\"") == 1; }));
+    CHECK(r.ipc.count_containing("\"ttl_s\":120") == 1);
+    REQUIRE(Rig::eventually([&] { return r.ipc.count_containing(crypto::base64_encode(key)) == 1; }));  // replayed once
+    r.relay->grant_lease(10);  // a renewal: told again, nothing replayed twice
+    REQUIRE(Rig::eventually([&] { return r.ipc.count_containing("\"screen_lease\"") == 2; }));
+    CHECK(r.ipc.count_containing("\"screen_rx\"") == 1);
 }

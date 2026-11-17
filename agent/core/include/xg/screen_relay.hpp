@@ -4,6 +4,8 @@
 // The service owns the only gateway connection: wss://<ccc>:<api_port>/screen-gw/agent with the agent's
 // mTLS client cert. Frames go up unchanged; gateway messages (Ack, KeyframeReq, Status) go down to the
 // helper as a `screen_rx` JSON line. The relay connects only while the core has named a source helper.
+// Capture needs a CCC lease (screen Step 15): until the core calls grant_lease() (CCC command `screen_lease`),
+// frames from the helper and gateway messages for it are dropped, so a gateway request alone starts nothing.
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -37,6 +39,8 @@ ScreenLinkFactory mtls_screen_link_factory();
 class ScreenRelay {
 public:
     static constexpr size_t kMaxQueuedBytes = 8 * 1024 * 1024;  // two maximum-size frames
+    static constexpr int kMaxLeaseS = 120;
+    static constexpr int64_t kHoldMs = 10000;                   // how long an early gateway request waits for the lease
     static constexpr size_t kMaxDownlink = 1024;                // gateway control messages are 28 bytes
 
     ScreenRelay(const Snapshot<UplinkView>& view, IIpcServer* ipc, ScreenLinkFactory factory)
@@ -45,6 +49,10 @@ public:
     /// Core thread: the helper connection allowed to stream (0 = none; the gateway link is closed).
     void set_source(uint64_t conn_id);
     uint64_t source() const { return source_.load(); }
+    /// Core thread: the CCC granted a live-view lease of `ttl_s` more seconds (clamped to 1..kMaxLeaseS). Tells the
+    /// source helper, which stops itself when the lease lapses, and replays a gateway request that arrived first.
+    void grant_lease(int ttl_s);
+    bool lease_active() const;
     /// IPC thread: queues one frame from `conn_id`. Never blocks; drops frames from other connections,
     /// while no link is open, or when the queue is full.
     void push(uint64_t conn_id, std::string&& frame);
@@ -59,6 +67,8 @@ private:
     void wait_ms(int ms, const std::atomic<bool>& stop);
     void send_loop(IScreenLink& link, const std::atomic<bool>& stop);
     void forward_down(uint64_t src, const std::string& msg);
+    void send_down(uint64_t src, const std::string& msg);
+    void send_lease(uint64_t conn, int64_t remaining_ms);
 
     const Snapshot<UplinkView>& view_;
     IIpcServer* ipc_;
@@ -66,6 +76,10 @@ private:
     std::atomic<uint64_t> source_{0};
     std::atomic<bool> linked_{false};
     std::atomic<uint64_t> dropped_{0};
+    std::atomic<int64_t> lease_until_ms_{0};  // steady_ms(); 0 = no lease
+    std::mutex hold_mu_;
+    std::string held_status_, held_key_;      // newest gateway Status(viewers>0) / KeyframeReq seen without a lease
+    int64_t held_at_ms_ = 0;
     std::mutex mu_;
     std::condition_variable cv_;
     std::deque<std::string> queue_;

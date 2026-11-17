@@ -42,7 +42,7 @@ Privacy and capture:
 - [x] Step 12: [screen] Viewer ordered frame queue: one frame at a time in sequence, tiles decoded in parallel, stale frames dropped, ACK on receive (fixes I-SCREEN-9; touches F43)
 - [x] Step 13: [screen] Gateway sends the token's `mode` to the agent in the `Status` message (reserved field) (fixes I-SCREEN-7 part 1; touches F43, F45) [update docs/PROTOCOL.md]
 - [x] Step 14: [agent] Streamer honours `wall`, `snapshot`, `live` (no hard-coded `live`) (fixes I-SCREEN-7 part 2; touches F95, F43)
-- [ ] Step 15: [agent] Helper starts only on a service start command (Step 59 channel) with a lease expiry, and stops itself when it lapses; the service starts it only for a CCC lease, and a gateway `KeyframeReq` alone never starts capture (fixes I-SCREEN-20; touches F95) [CROSS: agent IPC message, update PROTOCOL.md]
+- [x] Step 15: [agent] Helper starts only on a service start command (Step 59 channel) with a lease expiry, and stops itself when it lapses; the service starts it only for a CCC lease, and a gateway `KeyframeReq` alone never starts capture (fixes I-SCREEN-20; touches F95) [CROSS: agent IPC message, update PROTOCOL.md]
 - [x] ~~Step 16: [agent] One mutex around the Windows WinHTTP socket~~ **Dropped** (DECISIONS #24): Step 61 removes that socket from the helper
 
 ## Phase 2: Tooling and measurement

@@ -40,6 +40,7 @@ struct Rig {
     std::mutex wmu;
     std::optional<ScreenWindow> win = ScreenWindow{"editor", "main.cpp"};  // what the "window monitor" reports
     explicit Rig(int w = 320, int h = 240) : s([w, h] { return std::make_shared<FakeCapture>(w, h); }) {
+        s.grant_lease(60);  // most tests are about what happens inside a CCC lease
         s.set_window_source([this] {
             std::lock_guard lk(wmu);
             return win;
@@ -130,6 +131,7 @@ TEST_CASE("privacy mask: no window source or an unknown window masks the picture
     CHECK(r.kinds() == 1);
 
     ScreenStreamer bare([] { return std::make_shared<FakeCapture>(320, 240); });  // never given a window source
+    bare.grant_lease(60);
     std::mutex mu;
     int masked = 0, real = 0;
     REQUIRE(bare.start(7, [&](std::string_view f) {
@@ -195,4 +197,34 @@ TEST_CASE("streamer treats a Status without a mode as live, and a snapshot Statu
     REQUIRE(Rig::eventually([&] { return !r.s.is_capturing(); }));
     r.s.on_gateway_message(status(1, 2, 42));  // snapshot
     REQUIRE(Rig::eventually([&] { return r.s.is_capturing(); }));
+}
+
+TEST_CASE("streamer never starts without a CCC lease and stops by itself when the lease lapses", "[screen][lease]") {
+    ScreenStreamer s([] { return std::make_shared<FakeCapture>(320, 240); });
+    s.set_window_source([] { return ScreenWindow{"editor", "main.cpp"}; });
+    std::atomic<int> sent{0};
+    REQUIRE(s.start(42, [&](std::string_view) { ++sent; return true; }));
+    s.on_gateway_message(control(MsgType::KeyframeReq, 0, 42));  // a gateway request alone
+    s.on_gateway_message(status(1, 1, 42));
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    CHECK_FALSE(s.is_capturing());
+    CHECK(sent == 0);
+
+    s.grant_lease(1);
+    s.on_gateway_message(status(1, 1, 42));
+    REQUIRE(Rig::eventually([&] { return s.is_capturing(); }));
+    s.tick();
+    CHECK(s.is_capturing());  // lease still running
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    s.tick();
+    CHECK_FALSE(s.is_capturing());
+    s.on_gateway_message(control(MsgType::KeyframeReq, 0, 42));  // lapsed: no restart either
+    CHECK_FALSE(s.is_capturing());
+
+    s.grant_lease(30);
+    s.on_gateway_message(control(MsgType::KeyframeReq, 0, 42));
+    REQUIRE(Rig::eventually([&] { return s.is_capturing(); }));
+    s.on_link_lost();  // the service link dropped: the lease is gone with it
+    s.on_gateway_message(control(MsgType::KeyframeReq, 0, 42));
+    CHECK_FALSE(s.is_capturing());
 }
