@@ -40,6 +40,9 @@ std::string read_file(const std::string& path, bool* ok = nullptr);
 /// then renamed over `path`. On Windows the mode is not applied yet (plan step 11, DACL).
 enum class FileMode { shared, secret };
 bool write_file_atomic(const std::string& path, const std::string& content, FileMode mode = FileMode::shared);
+/// Creates a new, empty directory only the caller can use (mkdtemp 0700 on POSIX) under the system temp dir.
+/// Returns an empty string on failure. Never reuses an existing directory.
+std::string make_private_temp_dir(const std::string& prefix);
 /// Extracts the lowercase TLS ClientHello SNI hostname (extension 0x0000), or empty if absent.
 std::string parse_tls_sni(const uint8_t* data, size_t len);
 /// True for passive telemetry/experiment subdomains that must not raise AI alerts.

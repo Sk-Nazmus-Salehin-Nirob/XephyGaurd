@@ -175,6 +175,24 @@ bool write_file_atomic(const std::string& path, const std::string& content, File
 #endif
 }
 
+std::string make_private_temp_dir(const std::string& prefix) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path base = fs::temp_directory_path(ec);
+    if (ec) return {};
+#ifndef _WIN32
+    std::string tmpl = (base / (prefix + "-XXXXXX")).string();
+    if (!::mkdtemp(tmpl.data())) return {};
+    return tmpl;
+#else
+    for (int i = 0; i < 8; ++i) {
+        const fs::path p = base / (prefix + "-" + random_hex(8));
+        if (fs::create_directory(p, ec)) return p.string();  // false if it already existed
+    }
+    return {};
+#endif
+}
+
 std::string parse_tls_sni(const uint8_t* buf, size_t len) {
     if (!buf || len < 43) return {};
     if (buf[0] != 0x16 || buf[1] != 0x03) return {};

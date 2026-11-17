@@ -361,3 +361,17 @@ TEST_CASE("write_file_atomic creates secrets 0600 from the start and leaves no t
     fs::remove_all(dir);
 }
 #endif
+
+TEST_CASE("make_private_temp_dir never reuses a directory (I-AGENT-24)") {
+    const auto a = make_private_temp_dir("xg-test-scan");
+    const auto b = make_private_temp_dir("xg-test-scan");
+    REQUIRE_FALSE(a.empty());
+    REQUIRE_FALSE(b.empty());
+    CHECK(a != b);
+    CHECK(fs::is_empty(a));
+#ifndef _WIN32
+    CHECK((fs::status(a).permissions() & fs::perms::all) == fs::perms::owner_all);
+#endif
+    fs::remove_all(a);
+    fs::remove_all(b);
+}
