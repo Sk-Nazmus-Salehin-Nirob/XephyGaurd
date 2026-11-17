@@ -54,6 +54,7 @@ Route::group([], function () {
             Route::post('/sessions', [SessionController::class, 'start'])->name('sessions.start');
             Route::post('/sessions/{session}/stop', [SessionController::class, 'stop'])->name('sessions.stop');
             Route::post('/sessions/{session}/profile', [SessionController::class, 'switchProfile'])->name('sessions.switch');
+            Route::post('/sessions/{session}/network-lock', [SessionController::class, 'networkLock'])->name('sessions.network_lock');
             Route::post('/sessions/message', [SessionController::class, 'message'])->name('sessions.message');
             Route::post('/pcs/{pc}/isolate', [SessionController::class, 'isolate'])->name('pcs.isolate');
             Route::post('/pcs/{pc}/kill', [SessionController::class, 'kill'])->name('pcs.kill');

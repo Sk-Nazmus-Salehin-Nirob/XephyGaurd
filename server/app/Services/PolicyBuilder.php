@@ -38,6 +38,7 @@ class PolicyBuilder
         ['profile' => $profile, 'session' => $session] = $this->effective($pc);
         $mode = $profile->mode;
         $agent = $profile->agent ?? [];
+        $proxyOnly = Setting::get('network_mode', config('xephyguard.network_mode', 'gateway')) === 'proxy_only';
 
         $ruleActions = [];
         $disabled = [];
@@ -69,6 +70,10 @@ class PolicyBuilder
             'proxy_mode' => Setting::get('network_mode', config('xephyguard.network_mode', 'gateway')),
             'proxy_pac_url' => (Setting::get('network_mode', config('xephyguard.network_mode', 'gateway')) === 'proxy_only' && Setting::get('ccc_ip'))
                 ? 'https://'.Setting::get('ccc_ip').'/proxy.pac'  // lab CA: a LAN host cannot swap the PAC (F97)
+                : null,
+            // Session egress lock on the PC; only meaningful without a gateway, so gateway policies are unchanged.
+            'network_lock' => ($proxyOnly && $session && $mode !== 'always_on')
+                ? (in_array($session->network_lock, LabSession::NETWORK_LOCKS, true) ? $session->network_lock : 'observe')
                 : null,
         ], fn ($v) => $v !== null && $v !== []);
         $policy['session_id'] = $session?->id ?? 0;

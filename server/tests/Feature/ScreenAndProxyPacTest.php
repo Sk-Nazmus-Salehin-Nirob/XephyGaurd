@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\LabSession;
 use App\Models\Profile;
 use App\Models\Setting;
 use App\Services\NetworkPolicyWriter;
@@ -76,6 +77,43 @@ class ScreenAndProxyPacTest extends TestCase
         $fromPc()->assertOk()->assertSee('return "PROXY 192.168.10.2:8080";', false);  // test: fail closed
         $this->withServerVariables(['REMOTE_ADDR' => '192.168.10.99'])->get('/proxy.pac')
             ->assertSee('PROXY 192.168.10.2:8080; DIRECT', false);                        // unknown host: unchanged
+    }
+
+    public function test_session_network_lock_reaches_the_policy_in_proxy_only_mode(): void
+    {
+        $lab = $this->bootLab();
+        [$pc] = $this->enrolledPc('192.168.10.21');
+        $pb = app(PolicyBuilder::class);
+        Setting::put('network_mode', 'proxy_only');
+        Setting::put('ccc_ip', '192.168.10.2');
+        $this->assertArrayNotHasKey('network_lock', $pb->forPc($pc));   // always-on: never locked
+
+        $assistant = $this->user('assistant');
+        $this->actingAs($assistant)->post('/sessions', ['course' => 'EXAM',
+            'profile_id' => $this->profile('Test: AI blocked')->id])->assertRedirect();
+        $session = LabSession::activeFor($lab->id);
+        $this->assertSame('observe', $pb->forPc($pc)['network_lock']);  // default
+
+        $before = $pb->forPc($pc)['version'];
+        $this->actingAs($assistant)->post("/sessions/{$session->id}/network-lock", ['network_lock' => 'strict'])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('strict', $pb->forPc($pc)['network_lock']);
+        $this->assertNotSame($before, $pb->forPc($pc)['version']);       // agents re-fetch on the next ack
+        $this->assertDatabaseHas('audit_log', ['action' => 'session.network_lock']);
+        $this->actingAs($assistant)->post("/sessions/{$session->id}/network-lock", ['network_lock' => 'everything'])
+            ->assertSessionHasErrors('network_lock');
+        $this->assertSame('strict', $session->fresh()->network_lock);
+
+        // The sessions page offers the control only in proxy-only mode.
+        $this->actingAs($assistant)->get('/sessions')->assertOk()->assertSee('Network: strict (proxy only)');
+        Setting::put('network_mode', 'gateway');
+        $this->assertArrayNotHasKey('network_lock', $pb->forPc($pc));   // the gateway enforces instead
+        $this->actingAs($assistant)->get('/sessions')->assertOk()->assertDontSee('Network: strict (proxy only)');
+
+        Setting::put('network_mode', 'proxy_only');
+        $this->actingAs($assistant)->post('/sessions', ['course' => 'EXAM2', 'network_lock' => 'off',
+            'profile_id' => $this->profile('Test: AI blocked')->id])->assertRedirect();
+        $this->assertSame('off', $pb->forPc($pc)['network_lock']);
     }
 
     public function test_always_on_udm14_populates_udm14_clients_and_saving_profile_writes_net_state(): void

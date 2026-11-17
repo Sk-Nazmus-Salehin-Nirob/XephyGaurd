@@ -8,6 +8,7 @@ use App\Models\Lab;
 use App\Models\LabSession;
 use App\Models\Pc;
 use App\Models\Profile;
+use App\Models\Setting;
 use App\Services\Audit;
 use App\Services\CommandBus;
 use App\Services\SessionManager;
@@ -27,6 +28,8 @@ class SessionController extends Controller
             'history' => LabSession::query()->with('profile')->where('lab_id', $lab->id)->latest('starts_at')->paginate(20),
             'profiles' => Profile::query()->orderBy('mode')->get(),
             'commands' => Command::query()->with('pc:id,name')->latest()->limit(20)->get(),
+            // The network lock is enforced by the agent only in proxy-only mode (DECISIONS #23).
+            'proxyOnly' => Setting::get('network_mode', config('xephyguard.network_mode', 'gateway')) === 'proxy_only',
         ]);
     }
 
@@ -36,10 +39,12 @@ class SessionController extends Controller
             'course' => 'required|string|max:64', 'profile_id' => 'required|exists:profiles,id',
             'duration_min' => 'nullable|integer|min:5|max:720',
             'experiment_condition' => 'nullable|in:baseline,treatment', 'experiment_group' => 'nullable|string|max:32',
+            'network_lock' => 'nullable|in:'.implode(',', LabSession::NETWORK_LOCKS),
         ]);
         $this->sessions->start(Lab::current(), Profile::findOrFail($d['profile_id']), $d['course'], $request->user(),
             isset($d['duration_min']) ? now()->addMinutes((int) $d['duration_min']) : null,
-            array_filter(['experiment_condition' => $d['experiment_condition'] ?? null, 'experiment_group' => $d['experiment_group'] ?? null]));
+            array_filter(['experiment_condition' => $d['experiment_condition'] ?? null, 'experiment_group' => $d['experiment_group'] ?? null,
+                'network_lock' => $d['network_lock'] ?? null]));
 
         return back()->with('status', 'Session started. PCs switch within seconds.');
     }
@@ -49,6 +54,14 @@ class SessionController extends Controller
         $this->sessions->stop($session, $request->user());
 
         return back()->with('status', 'Session ended. Blocking relaxed; report is being generated.');
+    }
+
+    public function networkLock(Request $request, LabSession $session)
+    {
+        $d = $request->validate(['network_lock' => 'required|in:'.implode(',', LabSession::NETWORK_LOCKS)]);
+        $this->sessions->setNetworkLock($session, $d['network_lock'], $request->user());
+
+        return back()->with('status', 'Network lock set to '.$d['network_lock'].'. PCs switch within seconds.');
     }
 
     public function switchProfile(Request $request, LabSession $session)

@@ -83,6 +83,18 @@ class SessionManager
         $this->propagate($session->fresh());
     }
 
+    /** Changes the proxy-only network lock of a running session (off / observe / strict). Audited. */
+    public function setNetworkLock(LabSession $session, string $lock, ?User $by = null): void
+    {
+        if (! in_array($lock, LabSession::NETWORK_LOCKS, true)) {
+            throw new \InvalidArgumentException("unknown network lock $lock");
+        }
+        $from = $session->network_lock;
+        $session->forceFill(['network_lock' => $lock])->save();
+        Audit::log('session.network_lock', $session, ['from' => $from, 'to' => $lock, 'by' => $by?->email]);
+        $this->propagate($session->fresh());
+    }
+
     /** Per-PC override (e.g. an approved accommodation). Always audited with a reason. */
     public function setOverride(LabSession $session, Pc $pc, ?Profile $profile, string $reason, ?User $by = null): void
     {
