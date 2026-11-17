@@ -29,9 +29,7 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.originPatterns})
 	if err != nil {
 		return
 	}

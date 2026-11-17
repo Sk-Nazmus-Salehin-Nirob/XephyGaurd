@@ -125,6 +125,7 @@ func main() {
 	audience := flag.String("audience", envOrDefault("SCREEN_GATEWAY_AUDIENCE", "xephyguard-gateway"), "JWT Audience")
 	trustedProxy := flag.String("trusted-proxy", envOrDefault("SCREEN_GATEWAY_TRUSTED_PROXY", ""), "Comma-separated loopback IPs of the TLS proxy whose X-SSL-Client-* headers are trusted (empty: none)")
 	serverURL := flag.String("server-url", envOrDefault("SCREEN_GATEWAY_SERVER_URL", "http://127.0.0.1:8000"), "CCC server base URL for the internal agent-to-PC lookup")
+	allowedOrigins := flag.String("allowed-origins", envOrDefault("SCREEN_GATEWAY_ALLOWED_ORIGINS", ""), "Comma-separated extra browser Origin hosts (host[:port], * wildcards) allowed besides the request host")
 	devInsecure := flag.Bool("dev-insecure", envBool("SCREEN_GATEWAY_DEV_INSECURE", false), "Allow unauthenticated dev connections (never use in production)")
 	flag.Parse()
 
@@ -149,6 +150,7 @@ func main() {
 	auth := NewGatewayAuthenticator(*secret, *issuer, *audience, *devInsecure, trusted, pcs)
 	relay := NewRelayServer(auth)
 	relay.internalToken = internalToken // enables POST /internal/revoke
+	relay.originPatterns = splitList(*allowedOrigins)
 
 	server := &http.Server{
 		Addr:    *addr,
@@ -159,4 +161,15 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Gateway server failed: %v", err)
 	}
+}
+
+// splitList splits a comma-separated flag value, dropping empty items.
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

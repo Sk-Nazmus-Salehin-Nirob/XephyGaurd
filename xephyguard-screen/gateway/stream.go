@@ -66,6 +66,9 @@ type RelayServer struct {
 	// internalToken guards POST /internal/revoke; empty disables the endpoint.
 	internalToken string
 	revoked       *revocations
+	// originPatterns are extra allowed browser Origin hosts (host[:port], path.Match patterns) besides
+	// the request's own host, e.g. the dashboard on another port in a native dev setup.
+	originPatterns []string
 }
 
 func NewRelayServer(auth Authenticator) *RelayServer {

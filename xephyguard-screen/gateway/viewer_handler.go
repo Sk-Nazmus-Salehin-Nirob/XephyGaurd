@@ -65,9 +65,8 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 	}
 	stream.mu.Unlock()
 
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	// Origin must be the request host (nginx passes the dashboard host) or match -allowed-origins (screen Step 7).
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.originPatterns})
 	if err != nil {
 		stream.mu.Lock()
 		delete(stream.viewers, viewerID)
