@@ -2,6 +2,7 @@
 // Typed messages into the agent core, and the read-only view the core publishes for the I/O threads.
 // Producers never touch agent state: they post one of these (DECISIONS #22).
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 
@@ -9,6 +10,7 @@
 #include "xg/event.hpp"
 #include "xg/interfaces.hpp"
 #include "xg/protocol.hpp"
+#include "xg/rules.hpp"
 #include "xg/types.hpp"
 
 namespace xg {
@@ -35,11 +37,14 @@ struct AckReceived { protocol::BatchAck ack; int64_t t0_ms = 0; int64_t t1_ms = 
 /// Enrollment approved by the CCC (all fields type-checked by the uplink).
 struct EnrollApproved { std::string cert_pem, ca_pem, token; int64_t pc_id = 0; };
 struct ArtifactsScanned { ArtifactScanResult result; };
+/// A local port answered an LLM API path (probe worker, F74). `rule` is the port rule that required the probe,
+/// if any; otherwise the generic LLM API rule applies.
+struct ProbeDone { ListeningSocket sock; std::string path; std::optional<RuleHit> rule; };
 }  // namespace msg
 
 using AgentMessage = std::variant<msg::ProcessExec, msg::NetworkChanged, msg::DeviceEvent, msg::HelperLine,
                                   msg::HelperConn, msg::FileEvent, msg::KeyEvent, msg::CommandMsg, msg::PolicyFetched,
-                                  msg::AckReceived, msg::EnrollApproved, msg::ArtifactsScanned>;
+                                  msg::AckReceived, msg::EnrollApproved, msg::ArtifactsScanned, msg::ProbeDone>;
 
 /// Everything the uplink and realtime threads may read. Published by the core, never mutated in place.
 struct UplinkView {

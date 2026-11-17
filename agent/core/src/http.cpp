@@ -271,4 +271,24 @@ HttpResponse http_get_plain(const std::string& host, uint16_t port, const std::s
     return resp;
 }
 
+std::string probe_llm_api(const std::string& address, uint16_t port, const std::vector<std::string>& paths) {
+    const std::string primary = (address == "::1") ? "::1" : "127.0.0.1";
+    for (const auto& path : paths) {
+        // The answering process is any local user's: one bad reply must not stop the other paths.
+        HttpResponse r;
+        try {
+            r = http_get_plain(primary, port, path, 400, kProbeLimits);
+            if (r.status == 0 && address == "::") r = http_get_plain("::1", port, path, 400, kProbeLimits);
+        } catch (const std::exception&) {
+            continue;
+        }
+        if ((r.status == 200 || r.status == 400 || r.status == 405 || r.status == 422) &&
+            (icontains(r.headers["content-type"], "json") || r.body.starts_with("{")) &&
+            (path.find("models") == std::string::npos || r.body.find("\"data\"") != std::string::npos ||
+             r.body.find("\"models\"") != std::string::npos))
+            return path;
+    }
+    return {};
+}
+
 }  // namespace xg::net

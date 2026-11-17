@@ -2,6 +2,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "xg/tls.hpp"
 
@@ -48,6 +49,10 @@ struct PlainGetLimits {
 };
 /// Limits for LLM port probes against local, untrusted servers.
 inline constexpr PlainGetLimits kProbeLimits{64 * 1024, 1000};
+
+/// Returns the first of `paths` on which a local server at `address:port` answers like an LLM API
+/// (JSON reply; for "models" paths a "data"/"models" key), or "" if none. Uses kProbeLimits per request.
+std::string probe_llm_api(const std::string& address, uint16_t port, const std::vector<std::string>& paths);
 
 /// Plain-HTTP GET (CA download before it is trusted, then pinned; local LLM port probes with kProbeLimits).
 HttpResponse http_get_plain(const std::string& host, uint16_t port, const std::string& path, int timeout_ms = 5000,

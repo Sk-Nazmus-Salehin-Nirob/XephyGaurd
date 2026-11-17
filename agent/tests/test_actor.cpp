@@ -239,3 +239,53 @@ TEST_CASE("helper disconnect is tamper only if the session stays without a helpe
     c.agent->check_helpers();
     CHECK(tampers() == 1);
 }
+
+#ifndef _WIN32
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+TEST_CASE("LLM port probes run on the probe worker and report back to the core (F74)") {
+    // Local server that answers /v1/models like an OpenAI-compatible API.
+    int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    REQUIRE(::bind(lfd, reinterpret_cast<sockaddr*>(&a), sizeof a) == 0);
+    ::listen(lfd, 4);
+    socklen_t al = sizeof a;
+    ::getsockname(lfd, reinterpret_cast<sockaddr*>(&a), &al);
+    const uint16_t port = ntohs(a.sin_port);
+    std::thread srv([lfd] {
+        int c = ::accept(lfd, nullptr, nullptr);
+        if (c < 0) return;
+        char b[1024];
+        (void)::recv(c, b, sizeof b, 0);
+        const char r[] = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"data\":[]}";
+        ::send(c, r, sizeof r - 1, MSG_NOSIGNAL);
+        ::close(c);
+    });
+
+    Core c;
+    json sig = test::sample_signatures();
+    sig["ports"]["probe"] = {{"enabled", true}, {"paths", {"/v1/models"}}, {"severity", "high"}, {"min_rss_mb", 1}};
+    REQUIRE(c.agent->apply_signatures({{"version", "t2"}, {"bundle", sig.dump()}}, false));
+    c.agent->apply_policy(Policy::default_for(Mode::test));
+    auto* net = static_cast<test::FakeNetwork*>(c.plat.network.get());
+    net->socks = {{port, "127.0.0.1", true, 4242, "llama-server-renamed", 512ull * 1024 * 1024}};
+
+    c.agent->scan_ports();  // returns without waiting for the probe
+    bool seen = false;
+    for (int i = 0; i < 300 && !seen; ++i) {
+        std::this_thread::sleep_for(10ms);
+        c.agent->drain();
+        for (const auto& e : c.sink.events)
+            seen = seen || (e.type == ev::listening_port && e.data["probed"] == true &&
+                            e.data["rule_id"] == "port.generic_llm_api");
+    }
+    srv.join();
+    ::close(lfd);
+    CHECK(seen);
+}
+#endif

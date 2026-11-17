@@ -44,6 +44,7 @@ Agent::Agent(Config cfg, std::string config_path, ServicePlatform& plat)
     queue_ = std::make_unique<EventQueue>(join(cfg_.data_dir, "queue.db"));
     sink_ = queue_.get();
     uplink_ = std::make_unique<Uplink>(queue_.get(), view_, mailbox_, status_);
+    probe_worker_.start();  // idle until scan_ports hands it candidates
     realtime_ = std::make_unique<Realtime>(view_, mailbox_, status_);
     policy_ = Policy::default_for(Mode::always_on);
 
@@ -317,49 +318,47 @@ void Agent::scan_ports() {
     const auto socks = plat_.network->listening_sockets();
     const auto probe = rules_.probe();
     std::set<std::string> now_keys;
+    struct ProbeJob { ListeningSocket sock; std::optional<RuleHit> rule; };
+    std::vector<ProbeJob> to_probe;
     for (const auto& s : socks) {
         const std::string key = std::to_string(s.port) + "/" + std::to_string(s.pid);
         now_keys.insert(key);
         if (known_ports_.contains(key)) continue;
-        std::optional<RuleHit> hit = rules_.match_port(s.port);
+        const std::optional<RuleHit> hit = rules_.match_port(s.port);
         const auto needs_probe = rules_.match_port(s.port, /*probe_required=*/true);
-        bool probed = false;
         const bool candidate = needs_probe || (s.port > 1024 && s.rss_bytes >= probe.min_rss_mb * 1024 * 1024);
-        if (!hit && probe.enabled && candidate && !probed_ports_.contains(key)) {
-            probed_ports_.insert(key);
-            const std::string primary_host = (s.address == "::1") ? "::1" : "127.0.0.1";
-            for (const auto& path : probe.paths) {
-                // The answering process is any local user's: one bad reply must not abort the whole scan.
-                net::HttpResponse r;
-                try {
-                    r = net::http_get_plain(primary_host, s.port, path, 400, net::kProbeLimits);
-                    if (r.status == 0 && s.address == "::")
-                        r = net::http_get_plain("::1", s.port, path, 400, net::kProbeLimits);
-                } catch (const std::exception& e) {
-                    log::debug("ports: probe of {} failed: {}", s.port, e.what());
-                    continue;
-                }
-                if ((r.status == 200 || r.status == 400 || r.status == 405 || r.status == 422) &&
-                    (icontains(r.headers["content-type"], "json") || r.body.starts_with("{")) &&
-                    (path.find("models") == std::string::npos || r.body.find("\"data\"") != std::string::npos ||
-                     r.body.find("\"models\"") != std::string::npos)) {
-                    hit = needs_probe ? needs_probe
-                                      : RuleHit{"port.generic_llm_api", "local_llm",
-                                                "Local server answering an LLM API path (" + path + ")", probe.severity};
-                    probed = true;
-                    break;
-                }
-            }
-        }
-        if (hit) {
-            sink_->emit(ev::listening_port, {{"port", s.port}, {"address", s.address}, {"process", s.process},
-                                             {"pid", s.pid}, {"rule_id", hit->rule_id}, {"probed", probed}});
-            handle_rule_hit(*hit, std::to_string(s.port), json{{"port", s.port}, {"exe", s.process}, {"pid", s.pid}},
-                            s.pid);
-        }
+        if (hit) report_port(s, *hit, false);
+        else if (probe.enabled && candidate && !probed_ports_.contains(key)) to_probe.push_back({s, needs_probe});
     }
     known_ports_ = std::move(now_keys);
     if (probed_ports_.size() > 1024) probed_ports_.clear();
+    // Probes talk to servers any local user can run: they go to the probe worker with their own copies, and
+    // results come back as ProbeDone messages, so the core thread never waits on them (F74).
+    if (to_probe.empty()) return;
+    const bool queued = probe_worker_.submit([this, jobs = to_probe, paths = probe.paths](const std::atomic<bool>& stop) {
+        for (const auto& j : jobs) {
+            if (stop) return;
+            if (auto path = net::probe_llm_api(j.sock.address, j.sock.port, paths); !path.empty())
+                post(msg::ProbeDone{j.sock, path, j.rule});
+        }
+    });
+    if (queued)  // busy worker: the same candidates are offered again on the next scan
+        for (const auto& j : to_probe) probed_ports_.insert(std::to_string(j.sock.port) + "/" + std::to_string(j.sock.pid));
+}
+
+void Agent::report_port(const ListeningSocket& s, const RuleHit& hit, bool probed) {
+    sink_->emit(ev::listening_port, {{"port", s.port}, {"address", s.address}, {"process", s.process},
+                                     {"pid", s.pid}, {"rule_id", hit.rule_id}, {"probed", probed}});
+    handle_rule_hit(hit, std::to_string(s.port), json{{"port", s.port}, {"exe", s.process}, {"pid", s.pid}}, s.pid);
+}
+
+void Agent::on_probe_done(const msg::ProbeDone& p) {
+    const std::string key = std::to_string(p.sock.port) + "/" + std::to_string(p.sock.pid);
+    if (!known_ports_.contains(key)) return;  // the listener went away meanwhile
+    const RuleHit hit = p.rule ? *p.rule
+                               : RuleHit{"port.generic_llm_api", "local_llm",
+                                         "Local server answering an LLM API path (" + p.path + ")", rules_.probe().severity};
+    report_port(p.sock, hit, true);
 }
 
 // --------------------------------------------------------------------------------------- network
@@ -1371,6 +1370,7 @@ void Agent::dispatch(AgentMessage& m) {
                    [&](msg::AckReceived& e) { on_ack(e); },
                    [&](msg::EnrollApproved& e) { on_enroll_approved(e); },
                    [&](msg::ArtifactsScanned& e) { on_artifacts_scanned(e.result); },
+                   [&](msg::ProbeDone& e) { on_probe_done(e); },
                },
                m);
 }
@@ -1489,6 +1489,7 @@ int Agent::run(std::atomic<bool>& stop) {
     if (plat_.input) plat_.input->stop();
     wake_uplink();
     worker_.stop();
+    probe_worker_.stop();
     for (auto& t : threads_) t.join();
     threads_.clear();
     mailbox_.close();

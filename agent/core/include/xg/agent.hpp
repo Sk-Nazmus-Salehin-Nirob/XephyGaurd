@@ -84,6 +84,8 @@ private:
     void on_file_activity(const FileActivity& a);
     void on_key(int64_t t_ms, bool backspace, bool paste_chord);
     void on_artifacts_scanned(const ArtifactScanResult& res);
+    void on_probe_done(const msg::ProbeDone& p);
+    void report_port(const ListeningSocket& s, const RuleHit& hit, bool probed);
     void maybe_start_artifact_scan(int64_t now_steady);
     void command_result(const std::string& id, const std::string& status, const json& detail);
     void wake_uplink() { uplink_->wake(); }
@@ -114,7 +116,8 @@ private:
     AgentStatus status_;
     std::unique_ptr<Uplink> uplink_;
     std::unique_ptr<Realtime> realtime_;
-    Worker worker_;
+    Worker worker_;        // artifact walks
+    Worker probe_worker_;  // LLM API port probes (F74)
     std::vector<std::thread> threads_;
     bool running_ = false;
 
