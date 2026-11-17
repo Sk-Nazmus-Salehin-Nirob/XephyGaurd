@@ -161,4 +161,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_executable(xgbench bench/load_agents.cpp)
   target_include_directories(xgbench PRIVATE core capture agent third_party)
   target_link_libraries(xgbench PRIVATE xgcore)
+
+  add_executable(xgstreambench bench/stream_bench.cpp)
+  target_include_directories(xgstreambench PRIVATE core capture agent third_party)
+  target_link_libraries(xgstreambench PRIVATE xgcore)
+  # Smoke test only: one second per phase, checks that the bench runs and prints its rows.
+  add_test(NAME xgstreambench_smoke COMMAND xgstreambench --seconds 1 --workload idle --workload typing)
+  set_tests_properties(xgstreambench_smoke PROPERTIES PASS_REGULAR_EXPRESSION "idle .*typing .*fps")
 endif()

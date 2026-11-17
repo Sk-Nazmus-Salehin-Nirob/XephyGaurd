@@ -28,6 +28,11 @@ Run each from the repo root:
 * Core/capture (C++): `cmake -S xephyguard-screen -B xephyguard-screen/build && systemd-run --user --scope -q -p MemoryMax=5G -p MemorySwapMax=0 nice cmake --build xephyguard-screen/build -j6 && ctest --test-dir xephyguard-screen/build --output-on-failure`
 * Viewer (JS): `(cd xephyguard-screen && node --test viewer)`
 
+Bench (part a, no gateway): `xephyguard-screen/build/xgstreambench [--seconds N] [--workload idle|static|typing|scrolling|drag|video]... [--json]`
+runs the real streamer loop, tile diff, encoder and flow control on synthetic 1080p workloads and prints fps, bytes/s, ms from capture to sent
+(p50/p95), keyframes, CPU per second / frame / capture and thread wake-ups per second. Worst case: `taskset -c 0 xgstreambench`. The capture is synthetic
+(full copy per call like the X11 capture) and the ACK is immediate; gateway + headless-viewer latency is M3-3b.
+
 Debug: gateway `GET http://127.0.0.1:8082/metrics` (loopback only, Prometheus text, aggregate counters, not under `/screen-gw/`);
 viewer page `index.html?debug=1&...` shows fps, kbit/s and paint lag (receipt to painted; end-to-end latency comes from the bench).
 
