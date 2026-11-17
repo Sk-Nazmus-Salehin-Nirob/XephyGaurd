@@ -482,6 +482,20 @@ void Agent::scan_ai_traffic() {
     }
 }
 
+void Agent::scan_tunnels() {
+    const auto& t = rules_.web().tunnel;
+    if (!plat_.network || t.id.empty() || policy_.mode == Mode::always_on) return;
+    for (const auto& f : plat_.network->active_tunnels()) {
+        if (!rules_.web().is_tunnel(f.remote_ip, f.remote_port)) continue;  // never trust the adapter's filter alone
+        RuleHit hit{t.id, "tunnel", t.description, t.severity};
+        const std::string dest = f.remote_ip + ":" + std::to_string(f.remote_port);
+        // pid 0: a tunnel is flagged for review, never closed automatically.
+        handle_rule_hit(hit, f.process + ":" + dest,
+                        json{{"process", f.process}, {"exe", f.process}, {"pid", f.pid}, {"remote_ip", f.remote_ip},
+                             {"remote_port", f.remote_port}, {"signal", "tcp_destination"}});
+    }
+}
+
 // ------------------------------------------------------------------------------------ extensions
 void Agent::scan_extensions() {
     if (!plat_.extensions) return;
@@ -1372,6 +1386,7 @@ void Agent::run_periodic(int64_t now) {
     if (p.collect.ports && due("ports", p.intervals.port_scan_s)) scan_ports();
     if (p.collect.network && (std::exchange(network_dirty_, false) || due("net", 30))) scan_network();
     if (p.collect.network && due("ai_net", 4)) scan_ai_traffic();
+    if (p.collect.network && due("tunnels", 10)) scan_tunnels();
     if (p.collect.extensions && (std::exchange(rescan_extensions_, false) || due("ext", p.intervals.extension_scan_s)))
         scan_extensions();
     flush_keystats(now_ms(), false);

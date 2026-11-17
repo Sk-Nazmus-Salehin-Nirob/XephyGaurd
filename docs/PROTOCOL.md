@@ -75,7 +75,7 @@ Response: `{ack_seq, server_time_ms, policy_version, signatures_version, isolate
 | `agent_stopping` | `reason, uptime_s` (clean shutdown announcement) |
 | `process_start` / `process_stop` | `pid, ppid, exe, user, rss_mb, rule_id` — only for processes matching signatures; no command lines |
 | `process_snapshot` | `hash, count, added[], removed[]` (executable names), `list[]` (`pid, ppid, exe, name, user, rss_mb, cpu_pct, net_kbps, net_conns, start, rule_id`; `start` = OS start tick that identifies the process together with `pid`) |
-| `rule_hit` | `rule_id, severity, category, description, subject, actions[], result, context, mode, session_id, user` |
+| `rule_hit` | `rule_id, severity, category, description, subject, actions[], result, context, mode, session_id, user`. Tunnel flags (`category: tunnel`, rule id from `web.tunnel`, sessions only): context `process, pid, remote_ip, remote_port, signal: tcp_destination`, never closed by the agent |
 | `listening_port` | `port, address, process, pid, rule_id, probed` |
 | `window_focus` | `app, title` (title filtered by policy: off / app_only / full) |
 | `paste` / `copy` | `chars, lines, code, score, src, dst, user` |
@@ -86,7 +86,7 @@ Response: `{ack_seq, server_time_ms, policy_version, signatures_version, isolate
 | `artifact_scan` | `count, files_visited, truncated, found[{path, size_mb, rule_id}]` |
 | `file_activity` | per work folder / 10 s: `saves, created, deleted, bytes_delta, total_bytes, exts[]` |
 | `gpu_sample` | `util_pct, mem_used_mb, mem_total_mb` (only spikes) |
-| `tamper` | `kind` ∈ binary_hash_mismatch, binary_changed, helper_binary_missing, config_changed, ca_removed, ca_changed, clock_change, helper_missing, signature_invalid |
+| `tamper` | `kind` ∈ binary_hash_mismatch, binary_changed, helper_binary_missing, config_changed, ca_removed, ca_changed, clock_change, helper_missing, signature_invalid, isolation_rule_removed, network_lock_removed |
 | `helper_status` | `connected, user, session, caps` |
 | `command_result` | `command_id, status, detail` |
 

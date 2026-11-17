@@ -1,5 +1,8 @@
 #include "xg/signatures.hpp"
 
+#include <algorithm>
+
+#include "xg/isolation.hpp"
 #include "xg/json_read.hpp"
 #include "xg/util.hpp"
 
@@ -165,11 +168,29 @@ SignatureSet SignatureSet::from_json(const json& j, std::string* err) {
             for (const auto& [proc, dom] : jr::obj(w, "process_domains").items())
                 if (dom.is_string() && !dom.get<std::string>().empty())
                     s.web.process_domains[normalize_exe(proc)] = to_lower(dom.get<std::string>());
+            if (const json& t = jr::obj(w, "tunnel"); !t.empty()) {
+                const std::string id = jr::str(t, "id");
+                if (id.rfind("net.", 0) == 0) s.web.tunnel.id = id;
+                s.web.tunnel.severity = parse_severity(jr::str(t, "severity", "medium"));
+                s.web.tunnel.description = jr::str(t, "description", "Connection to an outside host on a tunnel port");
+                if (const json* tp = jr::field(t, "tcp_ports"); tp && tp->is_array())
+                    for (const auto& v : *tp)
+                        // 80/443 are normal web traffic and never a tunnel signal on their own.
+                        if (v.is_number_integer() && v.get<int64_t>() > 0 && v.get<int64_t>() < 65536 &&
+                            v.get<int64_t>() != 80 && v.get<int64_t>() != 443)
+                            s.web.tunnel.tcp_ports.push_back(uint16_t(v.get<int64_t>()));
+            }
         }
     } catch (const std::exception& e) {
         if (err) *err = e.what();
     }
     return s;
+}
+
+bool WebHints::is_tunnel(const std::string& remote_ip, uint16_t remote_port) const {
+    if (tunnel.id.empty()) return false;
+    if (std::find(tunnel.tcp_ports.begin(), tunnel.tcp_ports.end(), remote_port) == tunnel.tcp_ports.end()) return false;
+    return isolation::is_public_ip(remote_ip);
 }
 
 size_t SignatureSet::rule_count() const {

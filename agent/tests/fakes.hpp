@@ -31,6 +31,8 @@ public:
     std::vector<AdapterInfo> adapters() override { return list; }
     std::vector<ListeningSocket> listening_sockets() override { return socks; }
     std::vector<OutboundAiFlow> active_ai_flows() override { return flows; }
+    std::vector<OutboundTunnel> tunnels;
+    std::vector<OutboundTunnel> active_tunnels() override { return tunnels; }
     bool watch(std::function<void()>) override { return false; }
     void stop() override {}
 };
@@ -142,7 +144,9 @@ inline json sample_signatures() {
         ],
         "telemetry_domains": ["telemetry", "exp.individual.", "exp-tas.com"],
         "process_domains": {"copilot-runtime": "api.githubcopilot.com", "copilot-language-server": "api.githubcopilot.com",
-                            "copilot": "api.githubcopilot.com", "claude": "api.anthropic.com", "ollama": "ollama.com"}
+                            "copilot": "api.githubcopilot.com", "claude": "api.anthropic.com", "ollama": "ollama.com"},
+        "tunnel": {"id": "net.tunnel_flow", "severity": "medium", "description": "Tunnel to an outside host",
+                   "tcp_ports": [22, 1080, 9001]}
       },
       "domains": {
         "ai": ["chatgpt.com", "claude.ai", "gemini.google.com", "perplexity.ai", "deepseek.com"],

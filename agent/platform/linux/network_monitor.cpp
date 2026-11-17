@@ -274,6 +274,34 @@ public:
         });
     }
 
+    std::vector<OutboundTunnel> active_tunnels() override {
+        WebHints hints;
+        {
+            std::lock_guard lk(tracker_mu_);
+            hints = tracker_.hints;
+        }
+        if (hints.tunnel.id.empty()) return {};
+        std::vector<OutboundTunnel> out;
+        std::vector<uint64_t> inodes;
+        std::set<uint64_t> need;
+        for (const auto& s : query_sock_diag_tcp()) {  // established sockets only
+            if (!hints.is_tunnel(s.remote_ip, s.remote_port)) continue;
+            out.push_back({0, {}, s.remote_ip, s.remote_port});
+            need.insert(s.inode);
+            inodes.push_back(s.inode);
+            if (out.size() >= 64) break;  // bounded: one report per process/destination is enough
+        }
+        if (out.empty()) return out;
+        std::unordered_map<uint64_t, std::pair<int64_t, std::string>> owners;
+        resolve_socket_inodes(need, owners);
+        for (size_t i = 0; i < out.size(); ++i)
+            if (auto it = owners.find(inodes[i]); it != owners.end()) {
+                out[i].pid = it->second.first;
+                out[i].process = it->second.second;
+            }
+        return out;
+    }
+
     std::vector<AdapterInfo> adapters() override {
         std::map<std::string, AdapterInfo> m;
         const auto routes = default_route_ifaces();

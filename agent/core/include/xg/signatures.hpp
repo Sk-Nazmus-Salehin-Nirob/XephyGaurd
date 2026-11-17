@@ -75,6 +75,14 @@ struct AiSite {
     std::vector<std::string> equals, prefix, suffix, contains;
 };
 
+/// web.yaml `tunnel`: TCP ports that suggest a tunnel the proxy cannot see into (SSH, VPN over TCP, SOCKS, Tor).
+struct TunnelHint {
+    std::string id;  // rule id, e.g. net.tunnel_flow; empty = no tunnel detection
+    Severity severity = Severity::medium;
+    std::string description;
+    std::vector<uint16_t> tcp_ports;
+};
+
 /// data/signatures/web.yaml: browser AI site detection and network hints.
 struct WebHints {
     std::vector<AiSite> ai_sites;
@@ -83,6 +91,9 @@ struct WebHints {
     std::vector<std::string> telemetry_domains;       // substrings of hosts that never raise AI alerts
     std::map<std::string, std::string> process_domains;  // normalized exe -> domain when a flow has no SNI
     Severity ai_tab_severity = Severity::medium;  // title-only hits corroborate the proxy's decision (F76)
+    TunnelHint tunnel;
+    /// True if a TCP connection to ip:port should be flagged as a possible tunnel (public address, listed port).
+    bool is_tunnel(const std::string& remote_ip, uint16_t remote_port) const;
 };
 
 /// Orders bundle versions "YYYY.MM.DD[-HHMMSS][-digest]" (CCC / compile_signatures.py) by date and time.

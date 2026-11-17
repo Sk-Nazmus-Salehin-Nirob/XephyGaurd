@@ -56,6 +56,8 @@ public:
     void scan_ports();
     void scan_network();
     void scan_ai_traffic();
+    /// Flags tunnels the proxy cannot see into, during a session only (practice / test).
+    void scan_tunnels();
     void scan_devices();
     void scan_extensions();
     void on_helper_message(const IIpcServer::Peer& peer, const std::string& line);

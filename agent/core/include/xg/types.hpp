@@ -99,6 +99,15 @@ struct FileActivity {
     uint64_t total_bytes = 0;
 };
 
+/// An established TCP connection to a public address on a tunnel port (web.yaml `tunnel`). Only the
+/// destination and the owning process are known; the traffic itself is never read.
+struct OutboundTunnel {
+    int64_t pid = 0;
+    std::string process;  // normalized exe name, e.g. "ssh"
+    std::string remote_ip;
+    uint16_t remote_port = 0;
+};
+
 struct OutboundAiFlow {
     int64_t pid = 0;
     std::string process;      // normalized exe name, e.g. "copilot-runtime", "code", "idea64", "chrome"

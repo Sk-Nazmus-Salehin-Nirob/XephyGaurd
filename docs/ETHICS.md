@@ -13,6 +13,7 @@ such controls work.
 |---|---|---|---|
 | AI-related programs, extensions, local model files, VM/container use | ✓ | ✓ | ✓ |
 | Network adapter changes (hotspot, VPN), USB devices | ✓ | ✓ | ✓ |
+| Connections to an outside host on a tunnel port (SSH, VPN, SOCKS, Tor): program name, destination address and port — **never the traffic** | – | ✓ | ✓ |
 | Name of the focused application | – | ✓ | ✓ |
 | Window titles | – | off / app name (default) | configurable |
 | Typing rhythm per 5 s (counts and intervals — **never which keys**) | – | ✓ | ✓ |

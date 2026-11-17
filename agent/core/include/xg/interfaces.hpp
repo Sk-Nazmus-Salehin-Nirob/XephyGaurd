@@ -36,6 +36,8 @@ public:
     virtual std::vector<AdapterInfo> adapters() = 0;
     virtual std::vector<ListeningSocket> listening_sockets() = 0;
     virtual std::vector<OutboundAiFlow> active_ai_flows() { return {}; }
+    /// Established TCP connections for which WebHints::is_tunnel() is true (hints from set_web_hints).
+    virtual std::vector<OutboundTunnel> active_tunnels() { return {}; }
     /// Updates the set of monitored AI / IDE host suffixes from synced signatures/blocklists.
     virtual void set_ai_domains(std::vector<std::string> /*domains*/) {}
     /// Telemetry hosts and per-process fallback domains from the bundle's web section.

@@ -285,6 +285,28 @@ TEST_CASE("isolation range math keeps LAN and the CCC reachable") {
     CHECK(in_ranges(carved, "203.0.113.10"));
 }
 
+TEST_CASE("is_public_ip and tunnel hints: only public destinations on listed ports") {
+    using xg::isolation::is_public_ip;
+    for (const char* pub : {"8.8.8.8", "198.51.100.7", "::ffff:140.82.114.22", "2001:4860:4860::8888", "2a00:1450::1"})
+        CHECK(is_public_ip(pub));
+    for (const char* lan : {"10.0.0.5", "192.168.1.10", "172.20.0.1", "127.0.0.1", "169.254.3.4", "::ffff:10.1.1.1",
+                            "::1", "fe80::1", "fd00::5", "ff02::1", "200::1", "", "not-an-ip", "2001"})
+        CHECK_FALSE(is_public_ip(lan));
+
+    auto set = SignatureSet::from_json(test::sample_signatures());
+    CHECK(set.web.tunnel.id == "net.tunnel_flow");
+    CHECK(set.web.is_tunnel("198.51.100.7", 22));
+    CHECK_FALSE(set.web.is_tunnel("198.51.100.7", 2222));
+    CHECK_FALSE(set.web.is_tunnel("192.168.1.10", 22));
+
+    // 80/443 and junk ports are dropped; an id outside net.* disables the rule.
+    auto j = test::sample_signatures();
+    j["web"]["tunnel"] = {{"id", "net.t"}, {"tcp_ports", json::array({443, 80, 0, 70000, "22", 1194})}};
+    CHECK(SignatureSet::from_json(j).web.tunnel.tcp_ports == std::vector<uint16_t>{1194});
+    j["web"]["tunnel"]["id"] = "proc.t";
+    CHECK_FALSE(SignatureSet::from_json(j).web.is_tunnel("198.51.100.7", 1194));
+}
+
 TEST_CASE("artifact scan gives each root its own file budget and skips noisy cache dirs") {
     const fs::path base = fs::temp_directory_path() / ("xg-art-" + random_hex(4));
     const fs::path home = base / "home";

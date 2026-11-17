@@ -297,6 +297,27 @@ TEST_CASE("network lock follows the session in proxy_only mode only") {
     CHECK(h.agent->build_heartbeat()["network_lock"] == "off");
 }
 
+TEST_CASE("a tunnel to an outside host is flagged for review during a session, never closed") {
+    Harness h;
+    h.net->tunnels = {{77, "ssh", "198.51.100.7", 22}, {78, "ssh", "192.168.1.10", 22}};  // 2nd: LAN, ignored
+    h.agent->apply_policy(Policy::default_for(Mode::always_on));
+    h.agent->scan_tunnels();
+    CHECK(h.of(ev::rule_hit).empty());  // outside a session nothing is reported
+
+    h.agent->apply_policy(Policy::default_for(Mode::test));
+    h.agent->scan_tunnels();
+    auto hits = h.of(ev::rule_hit);
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].data["rule_id"] == "net.tunnel_flow");
+    CHECK(hits[0].data["severity"] == "medium");
+    CHECK(hits[0].data["context"]["remote_ip"] == "198.51.100.7");
+    CHECK(hits[0].data["context"]["remote_port"] == 22);
+    CHECK(hits[0].data["context"]["process"] == "ssh");
+    CHECK(h.procs->killed.empty());
+    h.agent->scan_tunnels();
+    CHECK(h.of(ev::rule_hit).size() == 1);  // de-duplicated
+}
+
 TEST_CASE("policy network_lock parses known values and falls back to off") {
     CHECK(Policy::from_json(json{{"network_lock", "strict"}}).network_lock == NetworkLock::strict);
     CHECK(Policy::from_json(json{{"network_lock", "OBSERVE"}}).network_lock == NetworkLock::observe);
