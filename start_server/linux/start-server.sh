@@ -56,6 +56,10 @@ ensure_gateway_secrets() {
   if [[ -z "$s1" || "$s1" == dev-secret* ]]; then
     xg_set_env "$env_file" SCREEN_GATEWAY_SECRET "$(xg_rand_hex 32)"
   fi
+  # Shared by Laravel's internal API and the gateway's agent cert -> PC lookup.
+  if [[ -z "$(xg_read_env "$env_file" XG_INTERNAL_TOKEN "")" ]]; then
+    xg_set_env "$env_file" XG_INTERNAL_TOKEN "$(xg_rand_hex 24)"
+  fi
 }
 
 if (( RESTART == 1 )); then
@@ -123,6 +127,7 @@ case "$RESOLVED_MODE" in
     GW_SECRET="$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_SECRET)"
     GW_ISSUER="$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_ISSUER "xephyguard-ccc")"
     GW_AUDIENCE="$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_AUDIENCE "xephyguard-gateway")"
+    GW_INTERNAL_TOKEN="$(xg_read_env "$ENV_FILE" XG_INTERNAL_TOKEN)"
 
     mkdir -p "$PID_DIR" "$LOG_DIR"
 
@@ -193,6 +198,8 @@ case "$RESOLVED_MODE" in
         SCREEN_GATEWAY_SECRET="$GW_SECRET" \
         SCREEN_GATEWAY_ISSUER="$GW_ISSUER" \
         SCREEN_GATEWAY_AUDIENCE="$GW_AUDIENCE" \
+        SCREEN_GATEWAY_INTERNAL_TOKEN="$GW_INTERNAL_TOKEN" \
+        SCREEN_GATEWAY_SERVER_URL="http://127.0.0.1:${APP_PORT}" \
         "$GW_BIN"
     else
       xg_warn "Screen Gateway binary not found and 'go' CLI unavailable; live screen viewer relay will stay down until built."

@@ -52,6 +52,11 @@ if (-not $gwSecret -or $gwSecret.StartsWith("dev-secret")) {
     $envRaw = Set-DotEnvKey -Content $envRaw -Key "SCREEN_GATEWAY_SECRET" -Value $gwSecret
     $envChanged = $true
 }
+# Shared by Laravel's internal API and the gateway's agent cert -> PC lookup.
+if (-not $envMap["XG_INTERNAL_TOKEN"]) {
+    $envRaw = Set-DotEnvKey -Content $envRaw -Key "XG_INTERNAL_TOKEN" -Value (New-RandomHex 24)
+    $envChanged = $true
+}
 if ($envChanged) {
     Set-Content -Path $EnvFile -Value $envRaw -NoNewline
     $envMap = Read-DotEnvMap -Path $EnvFile
@@ -118,6 +123,8 @@ if (-not $pGateway) {
     $gatewayExe = Join-Path $gatewayDir "gateway.exe"
     $env:SCREEN_GATEWAY_ADDR         = ":$GatewayPort"
     $env:SCREEN_GATEWAY_SECRET       = $gwSecret
+    $env:SCREEN_GATEWAY_INTERNAL_TOKEN = $envMap["XG_INTERNAL_TOKEN"]
+    $env:SCREEN_GATEWAY_SERVER_URL   = "http://127.0.0.1:$AppPort"
     $env:SCREEN_GATEWAY_ISSUER       = $gwIssuer
     $env:SCREEN_GATEWAY_AUDIENCE     = $gwAudience
 
