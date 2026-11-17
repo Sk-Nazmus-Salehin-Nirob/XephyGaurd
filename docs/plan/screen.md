@@ -97,7 +97,7 @@ Each step quotes before/after numbers from Step 20. Stop and re-plan if two step
 
 ## Phase 7: Errors, logging, validation
 - [x] Step 44 (vet only): [screen] Gateway `ReadHeaderTimeout`, WebSocket ping/pong every 10 s, "agent offline" status on timeout (fixes I-SCREEN-14; touches F45)
-- [ ] Step 45: [screen] Viewer reports decode and control errors through `onError` and counters (fixes I-SCREEN-28; touches F43)
+- [x] Step 45 (viewer tests pass): [screen] Viewer reports decode and control errors through `onError` and counters (fixes I-SCREEN-28; touches F43)
 - [x] ~~Step 46: [agent] Windows receive loop handles fragmented messages~~ **Dropped** (DECISIONS #24): Step 61 removes that loop; the service's realtime WSS client must already handle fragments with a cap (check in Step 60)
 
 ## Phase 8: Medium/Low bugs
@@ -105,7 +105,7 @@ Each step quotes before/after numbers from Step 20. Stop and re-plan if two step
 - [ ] Step 48: Wayland: owner decision between forcing Xorg on lab PCs and a PipeWire portal path (no audit ID; touches F43) [APPROVAL; installers out of scope here]
 
 ## Phase 9: Dependency updates
-- [ ] Step 49: [screen] Review `coder/websocket`, `golang-jwt/jwt`, libwebp, libjpeg-turbo versions; report first, update only with approval (fixes none; touches F45, F47)
+- [x] Step 49 (report in screen-implementation.md M6-8): [screen] Review `coder/websocket`, `golang-jwt/jwt`, libwebp, libjpeg-turbo versions; report first, update only with approval (fixes none; touches F45, F47)
 
 ## Phase gate: H.264 (only if Step 38 misses the targets)
 Software H.264 at 1080p costs a large share of a core even for a static desktop, which breaks the low-power rule, so it is **not** an option for CPU-only PCs. A video path is considered only as an optional, hardware-accelerated mode (VAAPI on Linux, Media Foundation on Windows, which covers Intel, AMD and NVIDIA through one API) that is probed at start, reported in `screen_caps`, and falls back to the tile path when absent. Consider it only if Step 58 shows the tile path cannot reach p95 15 fps on scrolling or video-like content within the CPU budget. It needs a new dependency decision, so it is yours to approve, not a scheduled step.

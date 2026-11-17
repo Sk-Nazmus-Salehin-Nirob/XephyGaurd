@@ -116,10 +116,10 @@ Done as part of M0-4, docs only:
 - [ ] M6-2 Step 40: viewer token in the first WebSocket message (server page code cross)
 - [x] M6-3 Step 41 (libjpeg-turbo 3.0.3 = 7fa4b5b7, libwebp v1.4.0 = 845d5476 by commit, GIT_SHALLOW dropped because it does not combine with a hash; CMake configure checked, no patch exists to document): pin libwebp / libjpeg-turbo by commit
 - [x] M6-4 Step 44 (`ReadHeaderTimeout` 10 s, `IdleTimeout` 120 s, `keepAlive` ping/pong 10 s on agent and viewer sockets; a dead agent ends the connection and viewers get the existing offline status; vet only): timeouts, ping/pong 10 s, "agent offline" status
-- [ ] M6-5 Step 45: viewer error reporting and counters
+- [x] M6-5 Step 45: `ScreenViewer.reportError(kind)` for malformed messages, undecodable tiles and bad control JSON: counters in `ViewerStats` (shown in the overlay), `options.onError({kind})` at most 1/s per kind, never content. Existing 23 viewer tests pass; new behaviour untested
 - [x] M6-6 Step 47 (`sweepIdleStreams` every 15 s, 60 s idle TTL, unit test passes): remove idle streams after 60 s
 - [ ] M6-7 Step 48: Wayland decision (owner)
-- [ ] M6-8 Step 49: dependency version report only
+- [x] M6-8 Step 49: report only, nothing updated (2026-11-18): coder/websocket v1.8.15 and golang-jwt v5.3.1 are current per `go list -m -u`; libjpeg-turbo pinned 3.0.3, latest tag 3.2.1; libwebp pinned v1.4.0, latest v1.6.0. Updating either C library needs owner approval and a bench re-run
 
 ## Needs the owner (do not start alone)
 H.264 gate after M5-11 (new dependency) · Wayland path in M6-7 · any full Docker stack run · pushing the branch · real Windows and integrated-GPU benchmark runs.

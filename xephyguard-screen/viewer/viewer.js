@@ -257,6 +257,20 @@ export class ScreenViewer {
     this.drainPromise = null;
   }
 
+  /**
+   * Counts an error (kind: 'parse' | 'decode' | 'control') in the stats and tells options.onError({kind}),
+   * at most once per second per kind. Counters only, never message content (Step 45).
+   */
+  reportError(kind) {
+    if (this.stats) this.stats[kind + 'Errors']++;
+    const now = Date.now();
+    this.errorTimes = this.errorTimes || {};
+    if (this.options.onError && now - (this.errorTimes[kind] || 0) >= 1000) {
+      this.errorTimes[kind] = now;
+      try { this.options.onError({ kind }); } catch {}
+    }
+  }
+
   clearQueue() {
     this.frameQueue.length = 0;
     this.queueHead = 0;
@@ -308,7 +322,9 @@ export class ScreenViewer {
           if (this.options.onControlMessage) {
             this.options.onControlMessage(json);
           }
-        } catch {}
+        } catch {
+          this.reportError('control');
+        }
         return;
       }
 
@@ -373,6 +389,7 @@ export class ScreenViewer {
       if (this.options.onCursor) this.options.onCursor(msg.width, msg.height);
       return this.drainPromise || Promise.resolve();
     }
+    if (!msg) this.reportError('parse');
     if (!msg || msg.type !== MsgType.Frame) {
       return this.drainPromise || Promise.resolve(); // reject malformed message without throwing
     }
@@ -453,6 +470,7 @@ export class ScreenViewer {
     } catch {
       // Skip un-decodable tile without throwing
     }
+    this.reportError('decode');
     return null;
   }
 

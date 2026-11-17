@@ -11,6 +11,9 @@ export class ViewerStats {
     this.painted = []; // {t, lag}
     this.keyframeRequests = 0;
     this.queueDrops = 0;
+    this.parseErrors = 0; // malformed binary messages
+    this.decodeErrors = 0; // tiles the browser could not decode
+    this.controlErrors = 0; // control JSON that did not parse
   }
 
   prune(t) {
@@ -46,6 +49,9 @@ export class ViewerStats {
       lagMaxMs: lags.length ? Math.max(...lags) : 0,
       keyframeRequests: this.keyframeRequests,
       queueDrops: this.queueDrops,
+      parseErrors: this.parseErrors,
+      decodeErrors: this.decodeErrors,
+      controlErrors: this.controlErrors,
     };
   }
 
@@ -53,6 +59,7 @@ export class ViewerStats {
     const s = this.snapshot();
     return `${s.fps.toFixed(1)} fps  ${s.kbps.toFixed(0)} kbit/s\n` +
       `paint lag ${s.lagMs.toFixed(0)} ms (max ${s.lagMaxMs.toFixed(0)})  queue ${queueLength}\n` +
-      `keyframe req ${s.keyframeRequests}  queue drops ${s.queueDrops}`;
+      `keyframe req ${s.keyframeRequests}  queue drops ${s.queueDrops}\n` +
+      `errors parse ${s.parseErrors}  decode ${s.decodeErrors}  control ${s.controlErrors}`;
   }
 }
