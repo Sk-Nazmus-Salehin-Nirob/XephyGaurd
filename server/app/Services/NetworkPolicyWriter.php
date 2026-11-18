@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\BlocklistEntry;
-use App\Models\LabSession;
 use App\Models\Pc;
 use App\Models\Setting;
 
@@ -28,6 +27,7 @@ class NetworkPolicyWriter
         foreach (Pc::query()->active()->whereNotNull('ip')->get() as $pc) {
             if ($pc->isolated) {
                 $groups['isolated'][] = $pc->ip;
+
                 continue;
             }
             ['profile' => $profile, 'session' => $session, 'override' => $override] = $this->policies->effective($pc);
@@ -41,6 +41,7 @@ class NetworkPolicyWriter
             }
             if ($override && ! $cats) {
                 $groups['exempt'][] = $pc->ip;          // accommodation: profile without blocking
+
                 continue;
             }
             if (! $cats) {

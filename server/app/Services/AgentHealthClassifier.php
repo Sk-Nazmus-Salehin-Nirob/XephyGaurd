@@ -7,16 +7,18 @@ use DateTimeInterface;
 class AgentHealthClassifier
 {
     public const STATUS_OK = 'OK';
+
     public const STATUS_UNAVAILABLE = 'AGENT_UNAVAILABLE';
+
     public const STATUS_TAMPERING = 'SUSPECTED_TAMPERING';
 
     /**
      * Classifies the health state of an agent PC.
      *
-     * @param array<string, mixed>|object $pc
-     * @param array<int, array<string, mixed>|object> $labSnapshot
-     * @param DateTimeInterface|int|null $now
-     * @param int|null $timeoutS Optional explicit heartbeat timeout override in seconds
+     * @param  array<string, mixed>|object  $pc
+     * @param  array<int, array<string, mixed>|object>  $labSnapshot
+     * @param  DateTimeInterface|int|null  $now
+     * @param  int|null  $timeoutS  Optional explicit heartbeat timeout override in seconds
      * @return string 'OK' | 'AGENT_UNAVAILABLE' | 'SUSPECTED_TAMPERING'
      */
     public static function classify($pc, array $labSnapshot = [], $now = null, ?int $timeoutS = null): string
@@ -54,11 +56,12 @@ class AgentHealthClassifier
         }
 
         $neighborsHealthy = false;
-        if (!empty($otherPcs)) {
+        if (! empty($otherPcs)) {
             $connectedCount = 0;
             foreach ($otherPcs as $other) {
                 if (isset($other['status']) && $other['status'] === 'connected') {
                     $connectedCount++;
+
                     continue;
                 }
                 $otherHb = self::toTimestamp($other['last_heartbeat_at'] ?? $other['last_seen_at'] ?? null);
@@ -73,16 +76,16 @@ class AgentHealthClassifier
         }
 
         // Condition 3: The PC did NOT report a sleep or shutdown event
-        $reportedSleepOrShutdown = !empty($pcData['sleep_or_shutdown']) ||
-                                   !empty($pcData['reported_sleep_shutdown']) ||
-                                   !empty($pcData['sleep_reported']) ||
-                                   !empty($pcData['shutdown_reported']);
+        $reportedSleepOrShutdown = ! empty($pcData['sleep_or_shutdown']) ||
+                                   ! empty($pcData['reported_sleep_shutdown']) ||
+                                   ! empty($pcData['sleep_reported']) ||
+                                   ! empty($pcData['shutdown_reported']);
 
         // Condition 4: No reconnect has happened
-        $reconnected = !empty($pcData['reconnected']);
+        $reconnected = ! empty($pcData['reconnected']);
 
         // Escalate to SUSPECTED_TAMPERING only if ALL conditions are true
-        if ($longerThan5Min && $neighborsHealthy && !$reportedSleepOrShutdown && !$reconnected) {
+        if ($longerThan5Min && $neighborsHealthy && ! $reportedSleepOrShutdown && ! $reconnected) {
             return self::STATUS_TAMPERING;
         }
 
@@ -118,8 +121,10 @@ class AgentHealthClassifier
         }
         if (is_string($val)) {
             $ts = strtotime($val);
+
             return $ts !== false ? $ts : null;
         }
+
         return null;
     }
 }

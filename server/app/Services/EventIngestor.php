@@ -302,14 +302,14 @@ class EventIngestor
                 $details = $lines > 1 ? "{$chars} ch, {$lines} ln" : "{$chars} ch";
 
                 if ($type === 'paste') {
-                    $pc->last_event = mb_substr("Paste: ".($src ?: '?')." → ".($dst ?: '?')." ({$details})", 0, 160);
+                    $pc->last_event = mb_substr('Paste: '.($src ?: '?').' → '.($dst ?: '?')." ({$details})", 0, 160);
                 } else {
-                    $pc->last_event = mb_substr("Copy: ".($src ?: '?')." ({$details})", 0, 160);
+                    $pc->last_event = mb_substr('Copy: '.($src ?: '?')." ({$details})", 0, 160);
                 }
 
                 $threshold = (int) Setting::get('paste_alert_chars', 800);
                 if ($type === 'paste' && $sid && $session->mode === 'test' && $chars >= $threshold) {
-                    $pc->last_event = mb_substr("Large paste: ".($src ?: '?')." → ".($dst ?: '?')." ({$chars} chars)", 0, 160);
+                    $pc->last_event = mb_substr('Large paste: '.($src ?: '?').' → '.($dst ?: '?')." ({$chars} chars)", 0, 160);
 
                     return $this->alert($pc, $sid, 'behavior.large_paste', 'medium', 'behavior',
                         sprintf('Large paste: %d characters, %d lines%s from %s to %s', $chars, $lines,

@@ -50,7 +50,8 @@ Deferred (not scheduled, ask again later):
   Done: `test` drops `@no_additional_args` (unsupported by local Composer 2.7.1, so the old script failed) and sets a random `APP_KEY` when unset; `lint` = `pint --test`. `composer test` 128 passed.
 - [x] S-4 Pint only: `app/Http/Controllers/Web` (was 17)
   Done: 3 files (Alert, Dashboard, Profile controllers), inline FQCNs became `use` imports. No `strict_types` added (Pint-only steps stay formatting-only). 128 tests pass.
-- [ ] S-5 Pint only: `app/Services`, `app/Jobs`, `app/Http/Middleware` (was 18)
+- [x] S-5 Pint only: `app/Services`, `app/Jobs`, `app/Http/Middleware` (was 18)
+  Done: 6 files (AgentHealthClassifier, CertificateAuthority, EventIngestor, NetworkPolicyWriter, ScoreSession, AuthenticateAgent). Only change beyond whitespace/quotes: unused `LabSession` import removed, inline `Log` FQCN became a `use`. 128 tests pass.
 - [ ] S-6 Pint only: `routes`, `config`, `database`, `tests` (was 19)
 - [ ] S-7 CI pint job blocking (was 20)
 
