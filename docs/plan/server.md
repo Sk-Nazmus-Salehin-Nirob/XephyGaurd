@@ -79,7 +79,7 @@ Each step first adds a failing-budget test (query count via `DB::listen`) or an 
 - [x] Step 47: Index `alerts.acknowledged_at` migration (fixes I-SERVER-41 part; touches F40) (done as S-32)
 - [x] Step 48: Cache policy version per PC/session, invalidate on profile/rule/session/setting changes (fixes I-SERVER-26; touches F32, F72) (done as S-23)
 - [x] Step 49: `NetworkPolicyWriter::build` resolves sessions/overrides in memory with a fixed query count (fixes I-SERVER-27; touches F5) (done as S-24)
-- [ ] Step 50: Report controller resolves `Student::forLogin` once into a map (fixes I-SERVER-32; touches F49, F50)
+- [x] Step 50: (done as S-40) Report controller resolves `Student::forLogin` once into a map (fixes I-SERVER-32; touches F49, F50)
 - [ ] Step 51: Research export filters consent in SQL and streams with `lazy()` (fixes I-SERVER-33; touches F52)
 
 ## Phase 9: Dependency updates

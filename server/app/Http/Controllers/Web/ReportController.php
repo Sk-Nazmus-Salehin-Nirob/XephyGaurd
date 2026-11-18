@@ -47,8 +47,9 @@ class ReportController extends Controller
         $data = ReportModel::build($session);
         $data['scores'] = $data['scores']->where('student_id', $student->id)->values();
         $data['student'] = $student;
-        $data['alerts'] = $data['alerts']->filter(fn ($a) => Student::forLogin($a->user)?->id === $student->id)->values();
-        $data['evidence'] = $data['evidence']->filter(fn ($e) => Student::forLogin($e->user)?->id === $student->id)->values();
+        $byLogin = Student::forLogins($data['alerts']->pluck('user')->merge($data['evidence']->pluck('user'))->unique());
+        $data['alerts'] = $data['alerts']->filter(fn ($a) => ($byLogin[$a->user] ?? null)?->id === $student->id)->values();
+        $data['evidence'] = $data['evidence']->filter(fn ($e) => ($byLogin[$e->user] ?? null)?->id === $student->id)->values();
 
         return view('reports.session', $data);
     }
