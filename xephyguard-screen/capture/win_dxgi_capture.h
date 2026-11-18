@@ -9,8 +9,12 @@ namespace xg {
 
 class WinDxgiCapture : public ScreenCapture {
 public:
-  WinDxgiCapture();
+  /// output_index: which output attached to the desktop to duplicate (0 = the first, across all adapters).
+  explicit WinDxgiCapture(int output_index = 0);
   ~WinDxgiCapture() override;
+
+  /// DesktopCoordinates of every output attached to the desktop, in enumeration order (screen Step 36).
+  static std::vector<RECT> list_outputs();
 
   bool initialize() override;
   bool start() override;
@@ -30,6 +34,7 @@ private:
   IDXGIOutputDuplication* duplication_ = nullptr;
   ID3D11Texture2D* staging_texture_ = nullptr;
 
+  int output_index_ = 0;
   int width_ = 0;
   int height_ = 0;
   bool running_ = false;

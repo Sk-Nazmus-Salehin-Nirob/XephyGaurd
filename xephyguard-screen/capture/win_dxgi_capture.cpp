@@ -5,7 +5,27 @@
 
 namespace xg {
 
-WinDxgiCapture::WinDxgiCapture() = default;
+WinDxgiCapture::WinDxgiCapture(int output_index) : output_index_(output_index < 0 ? 0 : output_index) {}
+
+std::vector<RECT> WinDxgiCapture::list_outputs() {
+  std::vector<RECT> rects;
+  IDXGIFactory1* factory = nullptr;
+  if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))) || !factory) return rects;
+  for (UINT a = 0; ; ++a) {
+    IDXGIAdapter1* adapter = nullptr;
+    if (factory->EnumAdapters1(a, &adapter) == DXGI_ERROR_NOT_FOUND) break;
+    for (UINT o = 0; ; ++o) {
+      IDXGIOutput* output = nullptr;
+      if (adapter->EnumOutputs(o, &output) == DXGI_ERROR_NOT_FOUND) break;
+      DXGI_OUTPUT_DESC desc;
+      if (SUCCEEDED(output->GetDesc(&desc)) && desc.AttachedToDesktop && rects.size() < 16) rects.push_back(desc.DesktopCoordinates);
+      output->Release();
+    }
+    adapter->Release();
+  }
+  factory->Release();
+  return rects;
+}
 
 WinDxgiCapture::~WinDxgiCapture() {
   cleanup();
@@ -23,7 +43,8 @@ bool WinDxgiCapture::initialize() {
   IDXGIAdapter1* owning_adapter = nullptr;
   IDXGIOutput* target_output = nullptr;
 
-  // Enumerate adapters and find first active output
+  // Enumerate adapters and find the output_index_-th active output (0 = the first)
+  int attached = 0;
   for (UINT a = 0; ; ++a) {
     IDXGIAdapter1* adapter = nullptr;
     if (factory->EnumAdapters1(a, &adapter) == DXGI_ERROR_NOT_FOUND) {
@@ -37,7 +58,7 @@ bool WinDxgiCapture::initialize() {
       }
 
       DXGI_OUTPUT_DESC desc;
-      if (SUCCEEDED(output->GetDesc(&desc)) && desc.AttachedToDesktop) {
+      if (SUCCEEDED(output->GetDesc(&desc)) && desc.AttachedToDesktop && attached++ == output_index_) {
         owning_adapter = adapter;
         target_output = output;
         width_ = desc.DesktopCoordinates.right - desc.DesktopCoordinates.left;

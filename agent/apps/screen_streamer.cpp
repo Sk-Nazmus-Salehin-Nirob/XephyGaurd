@@ -11,6 +11,7 @@
 #if defined(_WIN32)
 #include "win_dxgi_capture.h"
 #include "win_gdi_capture.h"
+#include "win_multi_capture.h"
 #else
 #include "x11_capture.h"
 #ifdef Status
@@ -23,7 +24,7 @@ namespace {
 
 std::shared_ptr<ScreenCapture> platform_capture() {
 #if defined(_WIN32)
-    auto dxgi = std::make_shared<WinDxgiCapture>();
+    auto dxgi = std::make_shared<WinMultiOutputCapture>();  // every output, one at a time (screen Step 36)
     if (dxgi->initialize()) return dxgi;
     return std::make_shared<WinGdiCapture>();
 #else

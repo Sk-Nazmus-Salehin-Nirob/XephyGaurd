@@ -120,6 +120,7 @@ if(WIN32)
   target_sources(xgcore PRIVATE
     capture/win_gdi_capture.cpp
     capture/win_dxgi_capture.cpp
+    capture/win_multi_capture.cpp
   )
   target_link_libraries(xgcore PUBLIC d3d11 dxgi gdi32)
 else()
