@@ -76,7 +76,7 @@ Privacy defaults (ETHICS):
 ## Phase 8: Measured performance
 Each step first adds a failing-budget test (query count via `DB::listen`) or an `EXPLAIN`, then the fix.
 - [ ] Step 46: Index `events (pc_id, type, seq)` migration, verified with `EXPLAIN` (fixes I-SERVER-28; touches F39, F24)
-- [ ] Step 47: Index `alerts.acknowledged_at` migration (fixes I-SERVER-41; touches F40)
+- [x] Step 47: Index `alerts.acknowledged_at` migration (fixes I-SERVER-41 part; touches F40) (done as S-32)
 - [x] Step 48: Cache policy version per PC/session, invalidate on profile/rule/session/setting changes (fixes I-SERVER-26; touches F32, F72) (done as S-23)
 - [x] Step 49: `NetworkPolicyWriter::build` resolves sessions/overrides in memory with a fixed query count (fixes I-SERVER-27; touches F5) (done as S-24)
 - [ ] Step 50: Report controller resolves `Student::forLogin` once into a map (fixes I-SERVER-32; touches F49, F50)
