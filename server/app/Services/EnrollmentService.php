@@ -13,7 +13,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-/** "Approve, don't configure": agents register as Pending; staff approve with one click. */
+/** "Approve, don't configure": agents register as Pending; staff approve with one click, or a one-time token approves. */
 class EnrollmentService
 {
     public function __construct(private readonly CertificateAuthority $ca) {}
@@ -61,9 +61,8 @@ class EnrollmentService
             if ($enrollToken->consume($enrollment)) {
                 $this->approve($enrollment, null, $enrollToken->pc_name, 'token');
             }
-        } elseif ($lab->auto_approve && array_intersect($macs, array_map('strtolower', $lab->auto_approve_macs ?? []))) {
-            $this->approve($enrollment, null, null, 'mac');
         }
+        // MAC addresses never approve anything (spoofable; S-16, DECISIONS #28). Staff click or token only.
 
         return ['enrollment' => $enrollment->fresh(), 'poll_token' => $pollToken];
     }

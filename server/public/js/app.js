@@ -1542,10 +1542,8 @@ document.addEventListener('alpine:init', () => {
     const d = window.xgJson('xg-page-data', {}) || {};
     return {
       os: 'win', q: '',
-      auto: !!d.auto,
       key: d.key || '',
       fp: d.fp || '',
-      macs: d.macs || '',
       exeName: d.exeName || 'XephyGuard-Setup.exe',
       cccHost: d.cccHost || window.location.hostname || '',
       baseUrl: d.baseUrl || window.location.origin,

@@ -21,7 +21,7 @@ Access control and enrollment:
 - [x] Step 6: First-run wizard requires `XG_SETUP_TOKEN` (env) or localhost (fixes I-SERVER-22; touches F1, F2) [CROSS: ccc-deploy prints the token, I-CCC-6] (done as S-9)
 - [x] Step 7: Remove `XG_REQUIRE_MTLS=false`; always require `X-SSL-Client-Verify=SUCCESS` + fingerprint match (fixes I-SERVER-6; touches F20, F21) (done as S-10)
 - [x] Step 8: Enrollment key off the public `/downloads` page; show on authenticated `/enroll` only, or per-PC one-time token (fixes I-SERVER-4 part 1; touches F99, F17, F6, F15) [APPROVAL: reverses e9ded61] (done as S-15)
-- [ ] Step 9: Auto-approve by MAC requires human approval or a one-time token (fixes I-SERVER-4 part 2; touches F16, F15) [APPROVAL: changes F16]
+- [x] Step 9: Auto-approve by MAC requires human approval or a one-time token (fixes I-SERVER-4 part 2; touches F16, F15) [APPROVAL: changes F16] (done as S-16)
 - [ ] Step 10: Never adopt an existing PC by MAC/hostname without `machine_uid` or explicit staff choice; flag conflicts (fixes I-SERVER-5; touches F15, F19, F20)
 
 Privacy defaults (ETHICS):

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Events\AgentCommand;
@@ -56,17 +58,23 @@ class EnrollmentTest extends TestCase
             ->assertOk()->assertJsonPath('policy.mode', 'always_on')->assertJsonPath('realtime.channel', 'private-pc.'.$creds['pc_id']);
     }
 
-    public function test_auto_approve_by_mac_and_reenrollment_keeps_the_pc(): void
+    public function test_known_mac_never_auto_approves_and_reenrollment_keeps_the_pc(): void
     {
         $lab = $this->bootLab();
+        // Old F16 settings left in the DB must have no effect (S-16).
         $lab->update(['auto_approve' => true, 'auto_approve_macs' => ['aa:bb:cc:dd:ee:09']]);
         $svc = app(EnrollmentService::class);
+        $staff = $this->user('assistant');
         $first = $svc->register($lab, ['hostname' => 'pc9', 'macs' => ['AA:BB:CC:DD:EE:09'], 'csr_pem' => $this->csr()], '192.168.10.9');
-        $this->assertSame('approved', $first['enrollment']->status);
+        $this->assertSame('pending', $first['enrollment']->status);
+        $this->assertSame(0, Pc::count());
+        $pc = $svc->approve($first['enrollment'], $staff);
         $second = $svc->register($lab, ['hostname' => 'pc9', 'macs' => ['aa:bb:cc:dd:ee:09'], 'csr_pem' => $this->csr()], '192.168.10.9');
-        $this->assertSame($first['enrollment']->pc_id, $second['enrollment']->pc_id);
-        $this->assertSame(1, $first['enrollment']->pc->agents()->whereNull('revoked_at')->count());
+        $this->assertSame('pending', $second['enrollment']->status);
+        $this->assertSame($pc->id, $svc->approve($second['enrollment'], $staff)->id);
+        $this->assertSame(1, $pc->agents()->whereNull('revoked_at')->count());
         $this->assertSame(2, Enrollment::count());
+        $this->actingAs($this->user('admin'))->post('/enroll/auto-approve', ['auto_approve' => 1])->assertNotFound();
     }
 
     public function test_key_rotation_invalidates_old_key(): void

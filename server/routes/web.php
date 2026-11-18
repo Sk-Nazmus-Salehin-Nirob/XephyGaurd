@@ -120,7 +120,6 @@ Route::group([], function () {
             Route::post('/signatures/{version}/activate', [SignatureController::class, 'activate'])->name('signatures.activate');
 
             Route::post('/enroll/rotate-key', [EnrollmentController::class, 'rotateKey'])->name('enroll.rotate');
-            Route::post('/enroll/auto-approve', [EnrollmentController::class, 'autoApprove'])->name('enroll.auto');
             Route::post('/pcs/{pc}/retire', [EnrollmentController::class, 'retire'])->name('pcs.retire');
             Route::post('/roster/pseudonymize', [RosterController::class, 'pseudonymize'])->name('roster.pseudonymize');
 

@@ -121,18 +121,6 @@ class EnrollmentController extends Controller
         return back()->with('status', 'New enrollment key generated. The old key no longer works.');
     }
 
-    public function autoApprove(Request $request)
-    {
-        $d = $request->validate(['auto_approve' => 'nullable|boolean', 'macs' => 'nullable|string|max:20000']);
-        $macs = collect(preg_split('/[\s,;]+/', strtolower($d['macs'] ?? '')))
-            ->filter(fn ($m) => preg_match('/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/', $m))->unique()->values()->all();
-        $lab = Lab::current();
-        $lab->update(['auto_approve' => (bool) ($d['auto_approve'] ?? false), 'auto_approve_macs' => $macs]);
-        Audit::log('enroll.auto_approve', $lab, ['enabled' => $lab->auto_approve, 'macs' => count($macs)]);
-
-        return back()->with('status', 'Auto-approve settings saved ('.count($macs).' MACs).');
-    }
-
     public function rename(Request $request, Pc $pc)
     {
         $d = $request->validate(['name' => 'required|string|max:64']);

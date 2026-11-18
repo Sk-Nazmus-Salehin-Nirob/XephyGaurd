@@ -37,10 +37,8 @@
   })->values()->all() : [];
 @endphp
 <script type="application/json" id="xg-page-data">{!! json_encode([
-  'auto' => (bool) ($lab?->auto_approve ?? false),
   'key' => $key ?? '',
   'fp' => $fingerprint ?? '',
-  'macs' => implode("\n", $lab?->auto_approve_macs ?? []),
   'exeName' => $exeName,
   'cccHost' => $cccHost,
   'baseUrl' => $baseUrl,
@@ -110,14 +108,6 @@
         </div>
       </template>
       <div class="empty-state" x-show="!pending.length"><b>No PCs waiting</b>New installs appear here.</div>
-      <form method="post" action="{{ route('enroll.auto') }}" class="panel-body stack" style="border-top:1px solid var(--border);background:var(--surface-2)">
-        @csrf
-        <label class="check"><span class="switch"><input type="checkbox" name="auto_approve" value="1" x-model="auto"><i></i></span> Approve known MAC addresses automatically</label>
-        <div class="stack" style="--gap:8px" x-show="auto">
-          <textarea name="macs" class="textarea mono" rows="3" x-model="macs"></textarea>
-          <div><button type="submit" class="btn btn-sm">Save list</button></div>
-        </div>
-      </form>
     </section>
   </div>
 
