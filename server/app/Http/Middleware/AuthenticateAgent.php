@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Middleware;
 
 use App\Models\Agent;
@@ -26,18 +28,18 @@ class AuthenticateAgent
         if (! $agent || ! $agent->pc || $agent->pc->retired_at) {
             return response()->json(['error' => 'unknown or revoked agent'], 401);
         }
-        if (config('xephyguard.require_mtls')) {
-            $verify = $request->header('X-SSL-Client-Verify');
-            $pem = urldecode((string) $request->header('X-SSL-Client-Cert'));
-            $fp = $pem ? @openssl_x509_fingerprint($pem, 'sha256') : false;
-            if ($verify !== 'SUCCESS' || ! $fp || ! hash_equals((string) $agent->cert_fingerprint, $fp)) {
-                Log::warning("AuthAgent mTLS failed: verify={$verify}, fp={$fp}, agent_fp={$agent->cert_fingerprint}");
+        // Always required (no opt-out): the request must come through the nginx mTLS front.
+        $verify = (string) $request->header('X-SSL-Client-Verify');
+        $pem = urldecode((string) $request->header('X-SSL-Client-Cert'));
+        $fp = $pem !== '' ? @openssl_x509_fingerprint($pem, 'sha256') : false;
+        $expected = (string) $agent->cert_fingerprint;
+        if ($verify !== 'SUCCESS' || ! is_string($fp) || $expected === '' || ! hash_equals($expected, $fp)) {
+            Log::warning("AuthAgent mTLS failed: agent={$agent->id} verify={$verify}");
 
-                return response()->json(['error' => 'client certificate missing or does not match this agent'], 403);
-            }
+            return response()->json(['error' => 'client certificate missing or does not match this agent'], 403);
         }
         $key = 'agent:'.$agent->id;
-        if (RateLimiter::tooManyAttempts($key, config('xephyguard.agent_rate_limit_per_minute'))) {
+        if (RateLimiter::tooManyAttempts($key, (int) config('xephyguard.agent_rate_limit_per_minute'))) {
             return response()->json(['error' => 'rate limited'], 429, ['Retry-After' => RateLimiter::availableIn($key)]);
         }
         RateLimiter::hit($key, 60);

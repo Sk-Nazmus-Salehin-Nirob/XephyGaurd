@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Models\Alert;
@@ -40,6 +42,19 @@ class AgentApiTest extends TestCase
         $this->withHeaders($this->agentHeaders($token, $otherCert))->getJson('/api/agent/v1/policy')->assertForbidden();
         $this->withHeaders($this->agentHeaders($token, $cert))->getJson('/api/agent/v1/policy')->assertOk()
             ->assertJsonStructure(['policy' => ['version', 'mode'], 'signatures' => ['version', 'bundle', 'signature'], 'realtime']);
+    }
+
+    public function test_mtls_cannot_be_switched_off(): void
+    {
+        $this->bootLab();
+        [, $token, $cert] = $this->enrolledPc();
+        config(['xephyguard.require_mtls' => false]); // old opt-out must have no effect
+
+        $this->withHeaders(['Authorization' => "Bearer $token"])->getJson('/api/agent/v1/policy')->assertForbidden();
+        $h = $this->agentHeaders($token, $cert);
+        $this->withHeaders(['X-SSL-Client-Verify' => 'FAILED:unknown ca'] + $h)->getJson('/api/agent/v1/policy')->assertForbidden();
+        $this->withHeaders(['X-SSL-Client-Verify' => 'NONE'] + $h)->getJson('/api/agent/v1/policy')->assertForbidden();
+        $this->withHeaders(['X-SSL-Client-Cert' => 'not-a-cert'] + $h)->getJson('/api/agent/v1/policy')->assertForbidden();
     }
 
     public function test_batch_ingest_alerts_dedup_and_ack(): void
@@ -162,7 +177,7 @@ class AgentApiTest extends TestCase
         $ok = $this->withHeaders($h)->postJson('/api/agent/v1/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => "private-pc.{$pc->id}"])
             ->assertOk()->json('auth');
         $key = config('reverb.apps.apps.0.key');
-        $this->assertSame("$key:".hash_hmac('sha256', "123.456:private-pc.{$pc->id}", config('reverb.apps.apps.0.secret')), $ok);
+        $this->assertSame("$key:".hash_hmac('sha256', "123.456:private-pc.{$pc->id}", (string) config('reverb.apps.apps.0.secret')), $ok);
         $this->withHeaders($h)->postJson('/api/agent/v1/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => 'private-pc.999'])->assertForbidden();
         $this->withHeaders($h)->postJson('/api/agent/v1/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => 'private-lab.1'])->assertForbidden();
     }
