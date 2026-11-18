@@ -124,7 +124,8 @@ Formatting goes first so that every later diff is logic only.
   Done: migration `2026_11_18_000700` adds index `alerts_acknowledged_at_index`. New `AlertIndexTest` (2 tests): index exists; `EXPLAIN QUERY PLAN` of the open-alert count uses it, no table scan (SQLite only; MySQL EXPLAIN not run, no MySQL on this machine). Moving the layout query is S-33. 173 tests pass, pint clean.
 - [x] S-33 Move only: the unacknowledged-alert count moves into a view composer (was 29).
   Done: `App\View\Composers\OpenAlertsComposer` registered for `layouts.app` in `AppServiceProvider`; same query, same fallback to 0 on error; the two lines are gone from the layout. New `OpenAlertsComposerTest` (2 tests): badge count, no badge at 0. 175 tests pass, pint clean.
-- [ ] S-34 [O] When `Audit::log` fails, the action fails (was 32).
+- [x] S-34 [O] When `Audit::log` fails, the action fails (was 32).
+  Done: `Audit::log` no longer catches the insert error; the exception propagates, so the action fails (500) instead of leaving a change with no record. `strict_types`. New `AuditFailureTest` (2 tests: row written; throws when the table is missing). No action ran its change inside a transaction with the audit write, so some state may already be changed when the audit fails; the S-36 hash chain will make the log verifiable. FEATURES F105, THREAT_MODEL row 33. 177 tests pass, pint clean.
 - [ ] S-35 The audit log records that an exemption changed, not the reason (was 37).
 - [ ] S-36 [O] Audit hash chain: a `prev_hash` column plus an `xg:audit-verify` command.
 - [ ] S-37 Retention registry: purge covers alerts, scores, commands, screen_view_audits, student_pc_assignments, evidence and messages (was 43).

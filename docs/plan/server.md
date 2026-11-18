@@ -56,7 +56,7 @@ Privacy defaults (ETHICS):
 - [x] Step 31: Update docs/PROTOCOL.md for `observed` action and `network/ports/devices` rescan (fixes I-SERVER-37; touches F37, F70) (done as S-26)
 
 ## Phase 6: Errors, logging, validation
-- [ ] Step 32: `Audit::log` reports failures and fails the action (or queues retry) (fixes I-SERVER-14; touches F105)
+- [x] Step 32: `Audit::log` reports failures and fails the action (or queues retry) (fixes I-SERVER-14 part; touches F105) (done as S-34)
 - [x] Step 33: `EventIngestor` validates type and length of heartbeat strings, `description`, `subject` (fixes I-SERVER-25; touches F39, F72) (done as S-28)
 - [x] Step 34: Per-event-type field allow-list from PROTOCOL.md; drop titles not allowed by effective `title_capture` (fixes I-SERVER-16; touches F39, F75) (done as S-28, S-29)
 - [x] Step 35: `kill` validates `pid` `integer|min:2` and that it is in the PC's latest snapshot (fixes I-SERVER-40; touches F35) (done as S-30)

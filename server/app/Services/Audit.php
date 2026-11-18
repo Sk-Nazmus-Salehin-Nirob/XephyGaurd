@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Models\AuditLog;
@@ -17,10 +19,8 @@ class Audit
             'details' => $details ?: null,
             'ip' => request()?->ip(),
         ];
-        try {
-            return AuditLog::create($attrs);
-        } catch (\Throwable) {
-            return new AuditLog($attrs);
-        }
+
+        // A failed audit write must fail the action: no unaudited changes (I-SERVER-14, DECISIONS #29).
+        return AuditLog::create($attrs);
     }
 }
