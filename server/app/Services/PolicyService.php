@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\LabSession;
 use App\Models\Pc;
 use App\Models\Profile;
+use App\Models\ResolvedPolicy;
 use App\Models\Rule;
 use App\Models\SessionPc;
 use App\Models\Setting;
@@ -35,7 +36,36 @@ class PolicyService
             ?? new Profile(['name' => 'Always-on', 'mode' => 'always_on', 'network' => [], 'agent' => []]);
     }
 
+    /**
+     * The policy the agent gets, from the per-PC cache when still valid (S-23). Valid = same global
+     * generation (bumped by every profile/rule/session/override/setting/signature change) and same
+     * config + privacy-rules file stamp. A hit costs two small queries.
+     */
     public function forPc(Pc $pc): array
+    {
+        $generation = ResolvedPolicy::generation();   // read first: a change during resolve() makes the row stale
+        $stamp = $this->stamp();
+        $row = ResolvedPolicy::query()->where('pc_id', $pc->id)->first();
+        if ($row && $row->generation === $generation && hash_equals($row->stamp, $stamp)) {
+            return $row->policy;
+        }
+        $policy = $this->resolve($pc);
+        ResolvedPolicy::query()->updateOrCreate(['pc_id' => $pc->id],
+            ['generation' => $generation, 'stamp' => $stamp, 'version' => $policy['version'], 'policy' => $policy]);
+
+        return $policy;
+    }
+
+    /** Inputs that are not DB rows: config/env values (Setting falls back to them) and the privacy-rules file. */
+    private function stamp(): string
+    {
+        $rules = config('xephyguard.data_dir').'/screen/privacy_rules.yaml';
+
+        return hash('sha256', json_encode(config('xephyguard')).'|'.(is_file($rules) ? (string) filemtime($rules) : '-'));
+    }
+
+    /** Resolves the policy from scratch (no cache). */
+    public function resolve(Pc $pc): array
     {
         ['profile' => $profile, 'session' => $session] = $this->effective($pc);
         $mode = $profile->mode;

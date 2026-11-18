@@ -1,7 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
+use App\Models\Concerns\InvalidatesPolicies;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -10,6 +13,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class Profile extends Model
 {
+    use InvalidatesPolicies;
+
     protected $fillable = ['name', 'mode', 'description', 'network', 'agent', 'builtin'];
 
     protected $casts = ['network' => 'array', 'agent' => 'array', 'builtin' => 'boolean'];

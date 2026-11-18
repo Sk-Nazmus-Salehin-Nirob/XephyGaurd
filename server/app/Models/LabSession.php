@@ -1,7 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
+use App\Models\Concerns\InvalidatesPolicies;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** A lab session: course + mode + profile + roster + time window. */
 class LabSession extends Model
 {
+    use InvalidatesPolicies;
+
     protected $table = 'lab_sessions';
 
     protected $fillable = ['lab_id', 'profile_id', 'timetable_entry_id', 'course', 'title', 'mode', 'status',

@@ -1,13 +1,18 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
+use App\Models\Concerns\InvalidatesPolicies;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 
 /** Key/value settings editable in the dashboard; values fall back to config/xephyguard.php. */
 class Setting extends Model
 {
+    use InvalidatesPolicies;
+
     protected $primaryKey = 'key';
 
     public $incrementing = false;
