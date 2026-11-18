@@ -620,7 +620,9 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 - **Trigger:** `POST /signatures/publish`, `POST /signatures/{version}/activate`; auto-publish F110.
 - **Code:** `SignatureController::publish`, `activate`; `SignatureCompiler::publish`, `assertPublishable`.
 - **Status:** working (`signature_publish_and_rollback`,
-  `publish_refuses_bundle_without_domains_and_keeps_active_version`).
+  `publish_refuses_bundle_without_domains_and_keeps_active_version`). Publish signs first, then switches the
+  active version in one locked transaction; a signing error keeps the current version. Rollback goes through
+  `SignatureCompiler::activate` and refuses a version whose signature does not verify (S-48).
 - **Test:** 1. Publish. 2. Activate the previous version. 3. Agents report the older version in heartbeat.
 
 ### F62. Agent bundle verification

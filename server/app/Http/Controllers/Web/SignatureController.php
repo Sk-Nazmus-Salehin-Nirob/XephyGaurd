@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
@@ -118,10 +120,13 @@ class SignatureController extends Controller
         return back()->with('status', "Published {$v->version}; $n agents notified.");
     }
 
-    public function activate(SignatureVersion $version, CommandBus $bus)
+    public function activate(SignatureVersion $version, SignatureCompiler $compiler, CommandBus $bus)
     {
-        SignatureVersion::query()->update(['active' => false]);
-        $version->update(['active' => true]);
+        try {
+            $compiler->activate($version);
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
         $bus->sendMany(Pc::query()->active()->get(), 'policy_updated');
         Audit::log('signatures.rollback', $version, ['version' => $version->version]);
 

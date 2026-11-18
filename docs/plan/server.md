@@ -65,7 +65,7 @@ Privacy defaults (ETHICS):
 
 ## Phase 7: Medium/Low bugs
 - [x] Step 38: Alert acknowledge skips already-acknowledged alerts; batch IDs scoped to the lab (fixes I-SERVER-13; touches F41) (done as S-31)
-- [ ] Step 39: Signature publish: sign first, then switch active version in a locked DB transaction; same for `activate` (fixes I-SERVER-18; touches F61, F7, F110)
+- [x] Step 39: (done as S-48) Signature publish: sign first, then switch active version in a locked DB transaction; same for `activate` (fixes I-SERVER-18; touches F61, F7, F110)
 - [ ] Step 40: `importSeed` inserts only missing rules (or `edited` flag) so dashboard edits survive bootstrap (fixes I-SERVER-19; touches F2, F60, F58)
 - [x] Step 41: (done as S-39) HTML session report shows score/points as stored, adds not-observable column, matches PDF/CSV (fixes I-SERVER-20; touches F49, F51)
 - [x] Step 42: `switchProfile` and `setOverride` reject non-active sessions (fixes I-SERVER-21; touches F27, F28) (done as S-22)
