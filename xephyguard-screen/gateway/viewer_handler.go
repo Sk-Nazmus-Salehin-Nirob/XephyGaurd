@@ -292,9 +292,10 @@ const kViewerAuthTimeout = 5 * time.Second
 // Anything else (binary, other text, oversize, no message in time) is an error; the caller closes the socket.
 func (s *RelayServer) readViewerAuth(c *websocket.Conn) (ViewerGrant, error) {
 	c.SetReadLimit(kViewerReadLimit)
-	ctx, cancel := context.WithTimeout(context.Background(), kViewerAuthTimeout)
-	defer cancel()
-	msgType, data, err := c.Read(ctx)
+	// A timer, not a read deadline: a deadline would drop the connection without a close frame.
+	timer := time.AfterFunc(kViewerAuthTimeout, func() { c.Close(websocket.StatusPolicyViolation, "auth timeout") })
+	defer timer.Stop()
+	msgType, data, err := c.Read(context.Background())
 	if err != nil {
 		return ViewerGrant{}, err
 	}
