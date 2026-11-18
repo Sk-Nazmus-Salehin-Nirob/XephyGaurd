@@ -12,7 +12,8 @@ Rules for every step: one component, <300 changed lines, one kind of change, tes
 - [ ] Step 2: Bind to `XG_ANALYSIS_BIND` default `127.0.0.1` (fixes I-ANALYSIS-1; touches F9) [CROSS: ccc-deploy compose sets it explicitly, I-CCC-18]
 - [ ] Step 3: Skip v2 scoring (no stored v2 score) for exempt students (fixes I-ANALYSIS-2; touches F48, F56)
 - [ ] Step 4: Duplicate `students.login` no longer raises; ambiguous login is reported as a result with a reason, never a 422 for the whole session (fixes I-ANALYSIS-3; touches F48)
-- [ ] Step 5: Research export pseudonym handling is a server fix (Server Step 13); here only add a test that the CLI export never includes `student_number` (fixes I-ANALYSIS-4 part; touches F52) [CROSS]
+- [x] Step 5: Research export pseudonym handling is a server fix (Server Step 13); here only add a test that the CLI export never includes `student_number` (fixes I-ANALYSIS-4 part; touches F52) [CROSS]
+  Done 2026-11-18: `test_research_export_never_has_student_number_name_or_login` (CSV and Parquet: no `student_number`/`name`/`login`/`student_id`/`user` column, no such value in any cell). Server part was S-41. Passes on current code. 18 tests pass; ruff not installed locally, not run.
 
 ## Phase 2: Tooling
 - [ ] Step 6: Ruff baseline clean for `analysis/` (no behavior change) (fixes none; touches F9, F48)
