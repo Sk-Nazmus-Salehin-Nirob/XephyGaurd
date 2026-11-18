@@ -121,7 +121,7 @@ Overall proposal: **policy as a versioned, cached, signed document, built by one
 | F99-F101 Downloads/install/CA | Public page with key and fingerprint | Authenticated enroll page; public page serves only the CA cert and verification instructions | |
 | F102 Text share | Public board | Remove, or instructor-only | Ethics (needs approval) |
 | F104 Settings | Key/value rows | Typed settings classes with defaults and validation | Fixes `full` default bug class |
-| F105 Audit log | Silent failure | Hash-chained rows (each row stores previous hash) | Tamper-evident |
+| F105 Audit log | Silent failure | Hash-chained rows (each row stores previous hash) | Tamper-evident (done as S-36) |
 | F106 Eval results endpoint | Internal endpoint | Keep; internal token separate | |
 | F109 Retention | Partial purge | Table-driven retention registry (one place lists each table and its class) | New tables cannot be forgotten |
 | F111 Scoring queue | Job calls analysis HTTP | Keep; separate analysis token; retry with backoff | Matches I-ANALYSIS-17 |
