@@ -187,12 +187,14 @@ class SessionManager
         $defaultTimeout = max(10, (int) config('xephyguard.heartbeat_timeout_s', 45));
         $sessions = [];
         $cutoffs = [];
+        $timeouts = [];
         foreach (Lab::all() as $lab) {
             $session = LabSession::activeFor($lab->id);
             $sessions[$lab->id] = $session;
             $customHb = (int) data_get($session?->profile?->agent, 'intervals.heartbeat_s', 0);
             $timeout = $customHb > 0 ? max(10, $customHb * 3) : $defaultTimeout;
             $cutoffs[$lab->id] = now()->subSeconds($timeout);
+            $timeouts[$lab->id] = $timeout;
         }
         $n = 0;
         $silent = Pc::query()->active()->whereNotNull('last_seen_at')
@@ -202,7 +204,16 @@ class SessionManager
 
                 return $pc->last_seen_at->lt($cutoff);
             });
+        // Lab snapshot for the health classifier: one query, only when something is silent.
+        $neighbours = $silent->isEmpty() ? collect() : Pc::query()->active()->whereNotNull('last_seen_at')
+            ->get(['id', 'lab_id', 'last_seen_at', 'clean_shutdown'])->groupBy('lab_id');
         foreach ($silent as $pc) {
+            $health = AgentHealthClassifier::assess(
+                ['id' => $pc->id, 'last_seen_at' => $pc->last_seen_at, 'sleep_or_shutdown' => $pc->clean_shutdown],
+                ($neighbours[$pc->lab_id] ?? collect())->map(fn (Pc $o) => ['id' => $o->id, 'last_seen_at' => $o->last_seen_at])->all(),
+                now(),
+                $timeouts[$pc->lab_id] ?? $defaultTimeout,
+            );
             $pc->silent_alerted_at = now();
             $was = $pc->status;
             $pc->status = 'offline';
@@ -216,7 +227,11 @@ class SessionManager
                 'pc_id' => $pc->id, 'lab_session_id' => $session?->id, 'rule_id' => 'tamper.machine_silent',
                 'severity' => $session ? 'high' : 'low', 'category' => 'tamper',
                 'title' => 'Machine silent: no heartbeat since '.$pc->last_seen_at->format('H:i:s').' (agent killed, network cut or power off)',
-                'details' => ['last_seen' => $pc->last_seen_at->toIso8601String()], 'user' => $pc->current_user,
+                'details' => [
+                    'last_seen' => $pc->last_seen_at->toIso8601String(),
+                    'health' => $health['status'],
+                    'reasons' => $health['reasons'],
+                ], 'user' => $pc->current_user,
                 'occurred_at' => now(),
             ]);
             broadcast(new AlertRaised($alert));

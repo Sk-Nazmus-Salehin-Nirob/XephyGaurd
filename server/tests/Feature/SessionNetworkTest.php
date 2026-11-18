@@ -8,6 +8,7 @@ use App\Models\Command;
 use App\Models\LabSession;
 use App\Models\NetEvent;
 use App\Models\TimetableEntry;
+use App\Services\AgentHealthClassifier;
 use App\Services\PolicyService;
 use App\Services\SessionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -125,6 +126,33 @@ class SessionNetworkTest extends TestCase
         $this->assertSame('tamper.machine_silent', $alert->rule_id);
         $this->assertSame('high', $alert->severity);
         $this->assertSame(0, app(SessionManager::class)->detectSilent());   // alerted once
+    }
+
+    public function test_machine_silent_alert_carries_health_label_and_reasons(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        [$pc] = $this->enrolledPc();
+        [$pc2] = $this->enrolledPc('192.168.10.22', 'PC-02');
+        app(SessionManager::class)->start($lab, $this->profile('Test: AI blocked'), 'CS101');
+        $pc2->update(['last_seen_at' => now()->subSeconds(5), 'status' => 'clean']);
+
+        // Just over the timeout: unavailable, with the numbers that led to the label.
+        $pc->update(['last_seen_at' => now()->subSeconds(50), 'status' => 'clean']);
+        $this->assertSame(1, app(SessionManager::class)->detectSilent());
+        $details = Alert::sole()->details;
+        $this->assertSame(AgentHealthClassifier::STATUS_UNAVAILABLE, $details['health']);
+        $this->assertContains('silent for 5 minutes or less', $details['reasons']);
+        $this->assertContains('1 of 1 other PCs in the lab are connected (100%, at least 80%)', $details['reasons']);
+
+        // Silent for over 5 minutes while the neighbour is fine: suspected tampering, reasons say why.
+        Alert::query()->delete();
+        $pc->fresh()->update(['last_seen_at' => now()->subSeconds(400), 'status' => 'clean', 'silent_alerted_at' => null]);
+        $this->assertSame(1, app(SessionManager::class)->detectSilent());
+        $details = Alert::sole()->details;
+        $this->assertSame(AgentHealthClassifier::STATUS_TAMPERING, $details['health']);
+        $this->assertContains('silent for more than 5 minutes', $details['reasons']);
+        $this->assertContains('no sleep or shutdown was reported', $details['reasons']);
     }
 
     public function test_proxy_net_events_need_internal_token(): void

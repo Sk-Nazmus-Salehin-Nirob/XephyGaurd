@@ -52,7 +52,7 @@ Privacy defaults (ETHICS):
 - [x] Step 29: Move the unacknowledged-alert count out of `layouts/app.blade.php` into a view composer, behavior identical (fixes none; prepares I-SERVER-41; touches F40) (done as S-33)
 
 ## Phase 5: Duplication and dead code
-- [ ] Step 30: Wire `AgentHealthClassifier` into `detectSilent` and store its reasons in alert details (keeps F25/F108 as documented) (fixes I-SERVER-35; touches F25, F108)
+- [x] Step 30: (done as S-45) Wire `AgentHealthClassifier` into `detectSilent` and store its reasons in alert details (keeps F25/F108 as documented) (fixes I-SERVER-35; touches F25, F108)
 - [x] Step 31: Update docs/PROTOCOL.md for `observed` action and `network/ports/devices` rescan (fixes I-SERVER-37; touches F37, F70) (done as S-26)
 
 ## Phase 6: Errors, logging, validation
