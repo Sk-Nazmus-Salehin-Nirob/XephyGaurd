@@ -22,6 +22,7 @@ const (
 	kMsgTypeAck      = uint8(3)
 	kMsgTypeKeyReq   = uint8(4)
 	kMsgTypeStatus   = uint8(5)
+	kMsgTypeMonitors = uint8(6)
 
 	// Frame flags (core/protocol.h Flags).
 	kFlagKey    = uint16(1)
@@ -33,7 +34,8 @@ const (
 	kKeyframeCacheTTL = 5 * time.Second
 
 	// kKeyframeReqInterval: at most one KeyframeReq per stream per interval reaches the agent (screen Step 25).
-	kKeyframeReqInterval = time.Second
+	kKeyframeReqInterval   = time.Second
+	kMonitorSwitchInterval = 500 * time.Millisecond
 )
 
 type Viewer struct {
@@ -60,6 +62,8 @@ type Stream struct {
 	viewers        map[uint64]*Viewer
 	nextViewerID   uint64
 	lastKeyframe   []byte
+	lastMonitorReq time.Time // last monitor switch let through the keyframe rate limit
+	lastMonitors   []byte    // newest Monitors message (screen Step 35); replayed to a new viewer, cleared when the agent goes
 	lastKeyframeAt time.Time
 	lastFrameSeq   uint32      // seq of the newest frame fanned out
 	lastKeyReqAt   time.Time   // last KeyframeReq sent to the agent
@@ -368,7 +372,12 @@ func (st *Stream) requestKeyframeLocked(now time.Time, monitorID uint16) bool {
 	if st.agentConn == nil {
 		return false
 	}
-	if wait := st.lastKeyReqAt.Add(kKeyframeReqInterval).Sub(now); !st.lastKeyReqAt.IsZero() && wait > 0 {
+	// A monitor switch (monitorID != 0, user-initiated) is not held back by the 1/s limit, but at most 2 per second.
+	switchNow := monitorID != 0 && now.Sub(st.lastMonitorReq) >= kMonitorSwitchInterval
+	if switchNow {
+		st.lastMonitorReq = now
+	}
+	if wait := st.lastKeyReqAt.Add(kKeyframeReqInterval).Sub(now); !switchNow && !st.lastKeyReqAt.IsZero() && wait > 0 {
 		if st.keyReqTimer == nil {
 			st.keyReqTimer = time.AfterFunc(wait, func() {
 				st.mu.Lock()

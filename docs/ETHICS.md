@@ -30,6 +30,8 @@ personal messages, file contents, microphone or camera. Keystrokes and clipboard
 numbers on the PC (`agent/core/src/keystats.cpp`, `paste.cpp`) and the originals are discarded
 immediately.
 
+Monitor layout (screen Step 35): the number of monitors and each one's position and size in pixels (a few numbers), sent to the viewer during a staff-requested live view so it can offer a monitor picker; no names, no content, not stored.
+
 Live view pointer position (screen Step 34): two numbers (x, y), up to 30 per second, sent only during a staff-requested live view and never while the screen is masked; not stored, no cursor image, not logged.
 
 ## Screen privacy mask

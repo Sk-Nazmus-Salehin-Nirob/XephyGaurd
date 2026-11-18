@@ -13,6 +13,22 @@ static uint64_t get_now_ms() {
           .count());
 }
 
+// The monitor list for the viewer's selector (Step 35): geometry and the active monitor only.
+static std::vector<uint8_t> monitors_wire(const std::vector<MonitorInfo>& mons, uint16_t active, bool all_view,
+                                          uint32_t stream_id) {
+  Message m{};
+  m.type = MsgType::Monitors;
+  m.flags = all_view ? Flags::ALL_SCREENS : 0;
+  m.monitor_id = active;
+  m.stream_id = stream_id;
+  for (const auto& r : mons) {
+    if (m.monitors.size() >= kMaxMonitors) break;
+    auto u16 = [](int v) { return static_cast<uint16_t>(std::max(0, std::min(v, 65535))); };
+    m.monitors.push_back({u16(r.x), u16(r.y), u16(std::max(1, r.w)), u16(std::max(1, r.h))});
+  }
+  return encode(m);
+}
+
 AgentStateMachine::AgentStateMachine(std::shared_ptr<ScreenCapture> capture,
                                      EncoderConfig enc_cfg,
                                      FrameSender sender)
@@ -269,6 +285,16 @@ void AgentStateMachine::on_incoming_message(const uint8_t* data, size_t len) {
       wake_cv_.notify_all();
     }
   } else if (msg.type == MsgType::KeyframeReq) {
+    // A viewer picked a monitor (1..N) or all screens (0xFFFF); 0 means "keep what is shown". The picture changes
+    // size, so the tracker starts over (the next frame is a full one) and tiles queued for the old one are dropped.
+    if (msg.monitor_id != 0 && capture_) {
+      const uint16_t want = msg.monitor_id == kAllScreens ? 0 : msg.monitor_id;
+      if (want != capture_->selected_monitor() && capture_->select_monitor(msg.monitor_id)) {
+        staged_.reset();
+        refine_.clear();
+        tracker_.reset();
+      }
+    }
     flow_->reset();
     if (tracker_) {
       tracker_->force_all_pending();
@@ -281,6 +307,11 @@ void AgentStateMachine::on_incoming_message(const uint8_t* data, size_t len) {
       placeholder.flags = state_ == AgentState::PausedMasked ? Flags::MASKED : Flags::SECURE;
       placeholder.stream_id = stream_id_;
       sender_(encode(placeholder));
+    }
+    if (sender_ && capture_) {  // the selector's list goes out before the picture it describes
+      const auto mons = capture_->monitors();
+      if (mons.size() >= 2)
+        sender_(monitors_wire(mons, capture_->selected_monitor(), capture_->all_screens_view(), stream_id_));
     }
     wake_cv_.notify_all();
     if (capture_) capture_->interrupt_wait();  // answer a new viewer now, not at the next wait timeout

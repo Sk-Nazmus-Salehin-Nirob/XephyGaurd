@@ -82,6 +82,7 @@
         <div id="status" class="status">Status: Disconnected</div>
       </div>
       <div class="controls">
+        <select id="monitorSelect" hidden title="Monitor"></select>
         <button id="btnConnect">Connect (Live)</button>
         <button id="btnDisconnect" class="stop" disabled>Disconnect</button>
       </div>
@@ -94,7 +95,7 @@
   </div>
 
   <script type="module">
-    import { ScreenViewer } from './viewer.js';
+    import { ScreenViewer, ALL_SCREENS } from './viewer.js';
     import { ViewerStats } from './stats.js';
 
     const canvas = document.getElementById('screenCanvas');
@@ -124,7 +125,20 @@
 
       // ?debug=1 shows fps, kbit/s and paint lag (numbers only).
       const stats = params.get('debug') === '1' ? new ViewerStats() : null;
-      viewer = new ScreenViewer(wsUrl, canvas, { stats });
+      const monitorSelect = document.getElementById('monitorSelect');
+      monitorSelect.hidden = true;
+      viewer = new ScreenViewer(wsUrl, canvas, {
+        stats,
+        // The agent lists its monitors (geometry only); the picker asks it to show one of them or all screens.
+        onMonitors: ({ monitors, active, allScreens }) => {
+          monitorSelect.replaceChildren();
+          if (allScreens) monitorSelect.add(new Option('All screens', String(ALL_SCREENS)));
+          monitors.forEach((m) => monitorSelect.add(new Option(`Monitor ${m.id} (${m.w}x${m.h})`, String(m.id))));
+          monitorSelect.value = String(active === 0 ? (allScreens ? ALL_SCREENS : 1) : active);
+          monitorSelect.hidden = false;
+        }
+      });
+      monitorSelect.onchange = () => viewer && viewer.selectMonitor(Number(monitorSelect.value));
       viewer.connect(undefined, token);
       if (stats) {
         const statsEl = document.getElementById('stats');

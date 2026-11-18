@@ -44,6 +44,7 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 	stream.mu.Lock()
 	if stream.agentConn != c {
 		stream.lastKeyframe = nil
+		stream.lastMonitors = nil
 	}
 	stream.agentConn = c
 	stream.agentID = agentID
@@ -131,6 +132,10 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			if data[3] == kMsgTypeMonitors {
+				stream.lastMonitors = append([]byte(nil), data...)
+			}
+
 			if data[3] == kMsgTypeFrame {
 				s.metrics.framesIn.Add(1)
 				s.metrics.bytesIn.Add(uint64(len(data)))
@@ -150,6 +155,7 @@ func (s *RelayServer) HandleAgent(w http.ResponseWriter, r *http.Request) {
 	if stream.agentConn == c {
 		stream.agentConn = nil
 		stream.lastKeyframe = nil
+		stream.lastMonitors = nil
 		s.broadcastStatusLocked(stream, false)
 	}
 	stream.mu.Unlock()

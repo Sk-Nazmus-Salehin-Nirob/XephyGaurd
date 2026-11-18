@@ -1,5 +1,6 @@
 #if defined(__linux__)
 #include "x11_capture.h"
+#include "monitors.h"
 #include <X11/extensions/dpms.h>
 #include <poll.h>
 #include <sys/eventfd.h>
@@ -101,6 +102,44 @@ bool X11Capture::initialize() {
   int r_event, r_error;
   if (XRRQueryExtension(display_, &r_event, &r_error)) {
     XRRSelectInput(display_, root_, RRScreenChangeNotifyMask);
+  }
+
+  // Monitors for the selector (XRandR 1.5). Primary first, then by position; a lone monitor offers no choice.
+  {
+    std::vector<MonitorInfo> found;
+    int n = 0;
+    XRRMonitorInfo* mons = XRRGetMonitors(display_, root_, True, &n);
+    if (mons) {
+      std::vector<std::pair<int, MonitorInfo>> tmp;
+      for (int i = 0; i < n; ++i) {
+        MonitorInfo m{mons[i].x, mons[i].y, mons[i].width, mons[i].height};
+        if (m.x < 0 || m.y < 0 || m.w <= 0 || m.h <= 0 || m.x + m.w > width_ || m.y + m.h > height_) continue;
+        tmp.push_back({mons[i].primary ? 0 : 1, m});
+      }
+      XRRFreeMonitors(mons);
+      // A monitor that contains another one (a server's catch-all "screen" next to user-defined monitors) is just the
+      // all-screens view again: leave it out.
+      std::vector<std::pair<int, MonitorInfo>> kept;
+      for (const auto& a : tmp) {
+        bool contains_other = false;
+        for (const auto& b : tmp) {
+          const MonitorInfo &x = a.second, &y = b.second;
+          if (&a != &b && y.x >= x.x && y.y >= x.y && y.x + y.w <= x.x + x.w && y.y + y.h <= x.y + x.h) contains_other = true;
+        }
+        if (!contains_other) kept.push_back(a);
+      }
+      tmp = std::move(kept);
+      std::sort(tmp.begin(), tmp.end(), [](const auto& a, const auto& b) {
+        if (a.first != b.first) return a.first < b.first;
+        if (a.second.y != b.second.y) return a.second.y < b.second.y;
+        return a.second.x < b.second.x;
+      });
+      if (tmp.size() >= 2 && tmp.size() <= 16)
+        for (const auto& t : tmp) found.push_back(t.second);
+    }
+    std::lock_guard<std::mutex> lock(mon_mu_);
+    monitors_ = std::move(found);
+    if (selected_.load() > monitors_.size()) selected_.store(0);  // the layout shrank
   }
 
   XSync(display_, False);
@@ -255,6 +294,7 @@ CaptureStatus X11Capture::capture(Frame& out) {
   if (lost_) {
     return CaptureStatus::Lost;
   }
+  if (selection_changed_.exchange(false)) damage_all_ = true;  // a new monitor is shown whole
   // Monitor off (DPMS standby/suspend/off): no screen read, and the first capture after it re-reads everything.
   if (display_blanked()) {
     pending_.clear();
@@ -304,8 +344,42 @@ CaptureStatus X11Capture::capture(Frame& out) {
   out.stride = width_ * 4;
   out.bgra.assign(shadow_.begin(), shadow_.end());
   out.secure_desktop = false;
+  out.monitor_id = 0;
 
+  MonitorInfo mon;
+  if (monitor_rect(mon)) {
+    if (!crop_frame(out, mon)) return CaptureStatus::Error;
+    out.monitor_id = selected_.load();
+    if (!out.full_dirty && out.dirty.empty()) return CaptureStatus::NoChange;  // changes were on other monitors
+  }
   return CaptureStatus::Ok;
+}
+
+std::vector<MonitorInfo> X11Capture::monitors() {
+  std::lock_guard<std::mutex> lock(mon_mu_);
+  return monitors_;
+}
+
+bool X11Capture::select_monitor(uint16_t id) {
+  {
+    std::lock_guard<std::mutex> lock(mon_mu_);
+    if (id == kAllScreens) id = 0;
+    else if (id < 1 || id > monitors_.size()) return false;
+  }
+  if (selected_.exchange(id) != id) {
+    selection_changed_.store(true);
+    interrupt_wait();  // the capture thread may be waiting for damage
+  }
+  return true;
+}
+
+bool X11Capture::monitor_rect(MonitorInfo& out) {
+  const uint16_t sel = selected_.load();
+  if (sel == 0) return false;
+  std::lock_guard<std::mutex> lock(mon_mu_);
+  if (sel > monitors_.size()) return false;
+  out = monitors_[sel - 1];
+  return true;
 }
 
 void X11Capture::stop() {
@@ -325,6 +399,12 @@ bool X11Capture::cursor_position(int& x, int& y) {
   if (!XQueryPointer(cursor_display_, DefaultRootWindow(cursor_display_), &root_ret, &child_ret, &rx, &ry, &wx, &wy,
                      &mask))
     return false;
+  MonitorInfo mon;
+  if (monitor_rect(mon)) {  // relative to the selected monitor; off it = no position
+    if (rx < mon.x || ry < mon.y || rx >= mon.x + mon.w || ry >= mon.y + mon.h) return false;
+    rx -= mon.x;
+    ry -= mon.y;
+  }
   x = std::max(0, std::min(rx, width_ - 1));
   y = std::max(0, std::min(ry, height_ - 1));
   return true;

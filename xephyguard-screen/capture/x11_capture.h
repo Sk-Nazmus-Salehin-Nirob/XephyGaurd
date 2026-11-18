@@ -6,6 +6,7 @@
 #include <X11/extensions/XShm.h>
 #include <X11/extensions/Xdamage.h>
 #include <X11/extensions/Xrandr.h>
+#include <atomic>
 #include <mutex>
 #include <vector>
 
@@ -27,6 +28,11 @@ public:
   void request_full() override { damage_all_ = true; }
   /// Uses its own X connection (opened on first call), so it never races the capture thread's Display.
   bool cursor_position(int& x, int& y) override;
+
+  /// XRandR monitors (read in initialize(); fewer than 2 = none). Primary first, then top to bottom, left to right.
+  std::vector<MonitorInfo> monitors() override;
+  bool select_monitor(uint16_t id) override;
+  uint16_t selected_monitor() const override { return selected_.load(); }
 
   /// SysV shared memory id of the capture image (-1 when none); for tests.
   int shm_segment_id() const { return shminfo_.shmaddr ? shminfo_.shmid : -1; }
@@ -64,6 +70,12 @@ private:
   int width_ = 0;
   int height_ = 0;
   bool running_ = false;
+
+  std::mutex mon_mu_;
+  std::vector<MonitorInfo> monitors_;      // guarded by mon_mu_
+  std::atomic<uint16_t> selected_{0};      // 0 whole screen, else a 1-based monitors_ index
+  std::atomic<bool> selection_changed_{false};
+  bool monitor_rect(MonitorInfo& out);     // the selected monitor's rectangle, false = whole screen
 };
 
 }  // namespace xg

@@ -93,6 +93,7 @@ endif()
 add_library(xgcore STATIC
   core/protocol.cpp
   core/tiles.cpp
+  capture/monitors.cpp
   core/encoder.cpp
   core/flow.cpp
   core/downscale.cpp
@@ -156,6 +157,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     tests/test_capabilities.cpp
     tests/test_privacy.cpp
     tests/test_x11_shm.cpp
+    tests/test_monitors.cpp
+    tests/test_x11_monitors.cpp
   )
   target_include_directories(xgtests PRIVATE core capture agent third_party)
   target_link_libraries(xgtests PRIVATE xgcore)

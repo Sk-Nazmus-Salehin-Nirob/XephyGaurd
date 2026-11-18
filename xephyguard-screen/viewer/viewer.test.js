@@ -16,7 +16,8 @@ import {
   Codec,
   ScreenViewer,
   MAX_QUEUED_FRAMES,
-  HEADER_SIZE
+  HEADER_SIZE,
+  ALL_SCREENS
 } from './viewer.js';
 import { ViewerStats } from './stats.js';
 
@@ -415,4 +416,73 @@ test('Viewer connect: the token goes out as the first message, never in the URL 
   } finally {
     delete globalThis.WebSocket;
   }
+});
+
+function monitorsBytes(active, flags, recs) {
+  const b = new Uint8Array(HEADER_SIZE + recs.length * 8);
+  const v = new DataView(b.buffer);
+  v.setUint16(0, MAGIC, true);
+  v.setUint8(2, VERSION);
+  v.setUint8(3, MsgType.Monitors);
+  v.setUint16(4, flags, true);
+  v.setUint16(6, active, true);
+  v.setUint16(24, recs.length, true);
+  recs.forEach((r, i) => r.forEach((n, j) => v.setUint16(HEADER_SIZE + i * 8 + j * 2, n, true)));
+  return b;
+}
+
+test('Monitors message: parsed with ids 1..N, malformed ones refused', () => {
+  const ok = parseMessage(monitorsBytes(2, Flags.ALL_SCREENS, [[0, 0, 1920, 1080], [1920, 0, 1280, 1024]]));
+  assert.equal(ok.type, MsgType.Monitors);
+  assert.equal(ok.monitorId, 2);
+  assert.deepEqual(ok.monitors.map((m) => [m.id, m.x, m.w, m.h]), [[1, 0, 1920, 1080], [2, 1920, 1280, 1024]]);
+  assert.equal(parseMessage(monitorsBytes(0, 0, [[0, 0, 0, 10]])), null); // zero width
+  const long = monitorsBytes(0, 0, [[0, 0, 10, 10]]);
+  assert.equal(parseMessage(long.subarray(0, long.length - 1)), null); // length must match
+  assert.equal(parseMessage(new Uint8Array([...long, 0])), null);
+  const v2 = monitorsBytes(0, 0, [[0, 0, 10, 10]]);
+  v2[2] = 2;
+  assert.equal(parseMessage(v2), null);
+});
+
+test('Viewer: onMonitors, selectMonitor sends a KeyframeReq with the monitor, recoveries say "keep" (0)', () => {
+  const sent = [];
+  const viewer = new ScreenViewer({});
+  viewer.ws = { readyState: 1, send: (d) => sent.push(d) };
+  const seen = [];
+  viewer.options.onMonitors = (m) => seen.push(m);
+  viewer.handleBinaryFrame(monitorsBytes(0, Flags.ALL_SCREENS, [[0, 0, 640, 720], [640, 0, 640, 720]]).buffer);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].allScreens, true);
+  assert.equal(viewer.selectMonitor(3), false); // not in the list
+  assert.equal(sent.length, 0);
+  assert.equal(viewer.selectMonitor(2), true);
+  const req = new DataView(sent[0].buffer ?? sent[0]);
+  assert.equal(req.getUint8(3), MsgType.KeyframeReq);
+  assert.equal(req.getUint16(6, true), 2);
+  assert.equal(viewer.waitingForKeyframe, true);
+  assert.equal(viewer.selectMonitor(ALL_SCREENS), true);
+  assert.equal(new DataView(sent[1].buffer ?? sent[1]).getUint16(6, true), ALL_SCREENS);
+});
+
+test('Protocol: a frame with 5000 tiles parses (limit 16384), a count over the limit is refused', () => {
+  const n = 5000;
+  const b = new Uint8Array(HEADER_SIZE + n * 11);
+  const v = new DataView(b.buffer);
+  v.setUint16(0, MAGIC, true);
+  v.setUint8(2, VERSION);
+  v.setUint8(3, MsgType.Frame);
+  v.setUint16(20, 8192, true);
+  v.setUint16(22, 8192, true);
+  v.setUint16(24, n, true);
+  for (let i = 0; i < n; ++i) {
+    const o = HEADER_SIZE + i * 11;
+    v.setUint16(o, i % 128, true);
+    v.setUint16(o + 2, Math.floor(i / 128), true);
+    v.setUint8(o + 4, Codec.Raw);
+    v.setUint32(o + 6, 1, true);
+  }
+  assert.equal(parseMessage(b).tiles.length, n);
+  v.setUint16(24, 16385, true);
+  assert.equal(parseMessage(b), null);
 });

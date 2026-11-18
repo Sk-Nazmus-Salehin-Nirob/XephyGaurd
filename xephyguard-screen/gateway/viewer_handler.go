@@ -85,6 +85,13 @@ func (s *RelayServer) HandleView(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		if stream.lastMonitors != nil { // the monitor list for the selector, best effort
+			select {
+			case v.ch <- stream.lastMonitors:
+			default:
+			}
+		}
+
 		// Tell the agent the viewer count and mode first (it picks wall/snapshot/live from it), then ask for a
 		// keyframe (rate-limited to 1/s per stream) unless the cache already gave a current picture.
 		stream.sendViewerStatusLocked()

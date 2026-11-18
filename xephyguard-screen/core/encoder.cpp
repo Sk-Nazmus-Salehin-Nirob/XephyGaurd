@@ -139,7 +139,7 @@ Message FrameEncoder::build(const Frame& f, const std::vector<uint32_t>& tile_in
   Message m;
   m.version = cfg_.rectangles ? kVersion2 : kVersion;
   m.type = MsgType::Frame;
-  m.monitor_id = 0;
+  m.monitor_id = f.monitor_id;
   m.stream_id = stream_id;
   m.seq = seq;
   m.width = static_cast<uint16_t>(f.width);

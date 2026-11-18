@@ -5,7 +5,10 @@ export const VERSION = 1;
 export const VERSION_2 = 2; // Frame records are pixel rectangles
 export const HEADER_SIZE = 28;
 export const TILE_HEADER_SIZE = 10;
-export const MAX_TILES = 4096;
+export const MAX_TILES = 16384;
+export const MONITOR_REC_SIZE = 8;
+export const MAX_MONITORS = 16;
+export const ALL_SCREENS = 0xFFFF; // KeyframeReq monitor_id: the whole desktop
 export const MAX_PAYLOAD = 64 * 64 * 4;
 export const RECT_HEADER_SIZE = 14;
 export const MAX_RECT_SIDE = 256;
@@ -17,7 +20,8 @@ export const MsgType = {
   Cursor: 2,
   Ack: 3,
   KeyframeReq: 4,
-  Status: 5
+  Status: 5,
+  Monitors: 6 // list of monitors for the selector (Step 35)
 };
 
 export const Flags = {
@@ -27,6 +31,7 @@ export const Flags = {
   MASKED: 8,
   SECURE: 16,
   CURSOR_F: 32,
+  ALL_SCREENS: 128, // Monitors message only: the agent can show the whole desktop
   CACHED: 64 // gateway replayed its cached keyframe (up to 5 s old); the next live frame replaces it
 };
 
@@ -86,6 +91,18 @@ export function parseMessage(input) {
     const width = view.getUint16(20, true);
     const height = view.getUint16(22, true);
     const tileCount = view.getUint16(24, true);
+
+    if (type === MsgType.Monitors) { // monitor rectangles, v1 only; the length must match the count exactly
+      if (v2 || tileCount > MAX_MONITORS || byteLength !== HEADER_SIZE + tileCount * MONITOR_REC_SIZE) return null;
+      const monitors = [];
+      for (let i = 0; i < tileCount; ++i) {
+        const o = HEADER_SIZE + i * MONITOR_REC_SIZE;
+        const m = { id: i + 1, x: view.getUint16(o, true), y: view.getUint16(o + 2, true), w: view.getUint16(o + 4, true), h: view.getUint16(o + 6, true) };
+        if (m.w === 0 || m.h === 0) return null;
+        monitors.push(m);
+      }
+      return { version, type, flags, monitorId, streamId, seq, baseSeq, width, height, tiles: [], monitors };
+    }
 
     if (tileCount > MAX_TILES) {
       return null;
@@ -394,6 +411,15 @@ export class ScreenViewer {
    */
   handleBinaryFrame(data) {
     const msg = parseMessage(data);
+    if (msg && msg.type === MsgType.Monitors) { // not a frame: no ACK, nothing drawn
+      this.monitors = msg.monitors;
+      this.activeMonitor = msg.monitorId;
+      this.allScreens = (msg.flags & Flags.ALL_SCREENS) !== 0;
+      if (this.options.onMonitors) {
+        this.options.onMonitors({ monitors: msg.monitors, active: msg.monitorId, allScreens: this.allScreens });
+      }
+      return this.drainPromise || Promise.resolve();
+    }
     if (msg && msg.type === MsgType.Cursor) { // pointer position only (Step 34): width/height carry x/y, no ACK
       if (this.tileCanvas) this.tileCanvas.setCursor(msg.width, msg.height);
       if (this.options.onCursor) this.options.onCursor(msg.width, msg.height);
@@ -415,7 +441,7 @@ export class ScreenViewer {
       this.clearQueue();
       if (this.stats) this.stats.queueDrops++;
       this.waitingForKeyframe = true;
-      this.requestKeyframeLimited(msg.streamId, msg.monitorId);
+      this.requestKeyframeLimited(msg.streamId, 0);
     }
     this.frameQueue.push(msg);
     return this.drain();
@@ -495,12 +521,12 @@ export class ScreenViewer {
       if (isKey) this.waitingForKeyframe = false;
     } else if (isDelta) {
       if (this.waitingForKeyframe) {
-        this.requestKeyframeLimited(msg.streamId, msg.monitorId);
+        this.requestKeyframeLimited(msg.streamId, 0);
         return; // Drop deltas until requested keyframe arrives
       }
       if (msg.baseSeq !== this.lastAppliedSeq) {
         // Gap or mismatch detected: send keyframe request
-        this.requestKeyframe(msg.streamId, msg.monitorId);
+        this.requestKeyframe(msg.streamId, 0);
         this.waitingForKeyframe = true;
         this.keyframeReqTime = Date.now();
         return;
@@ -543,6 +569,20 @@ export class ScreenViewer {
       const ackBytes = encodeAck(streamId, monitorId, seq);
       this.ws.send(ackBytes);
     }
+  }
+
+  /**
+   * Asks the agent to show monitor `id` (1..monitors.length) or ALL_SCREENS (Step 35). The picture changes size, so
+   * frames of the old one are dropped until the keyframe of the new one arrives. False when the list does not
+   * contain it (nothing sent).
+   */
+  selectMonitor(id) {
+    const ok = id === ALL_SCREENS ? this.allScreens === true : Array.isArray(this.monitors) && id >= 1 && id <= this.monitors.length;
+    if (!ok || !this.ws || this.ws.readyState !== 1 /* OPEN */) return false;
+    this.waitingForKeyframe = true;
+    this.clearQueue();
+    this.requestKeyframe(0, id);
+    return true;
   }
 
   requestKeyframe(streamId, monitorId) {
