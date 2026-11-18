@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use App\Http\Controllers\Web\AdminController;
 use App\Http\Controllers\Web\AlertController;
 use App\Http\Controllers\Web\AuthController;
@@ -24,10 +26,6 @@ Route::get('/proxy.pac', [PublicController::class, 'proxyPac'])->name('proxy.pac
 Route::get('/downloads', [PublicController::class, 'downloadsIndex'])->name('downloads.index');
 Route::get('/downloads.html', [PublicController::class, 'downloadsIndex'])->name('downloads.html');
 Route::get('/downloads/{file}', [PublicController::class, 'download'])->name('downloads');
-Route::get('/share', [PublicController::class, 'shareIndex'])->name('share.index');
-Route::get('/share.html', [PublicController::class, 'shareIndex'])->name('share.html');
-Route::post('/share', [PublicController::class, 'shareSave'])->name('share.save');
-Route::get('/share/raw', [PublicController::class, 'shareRaw'])->name('share.raw');
 
 Route::group([], function () {
     Route::get('/setup', [SetupController::class, 'show'])->name('setup.show');
@@ -73,6 +71,11 @@ Route::group([], function () {
 
         // instructor: sessions, overrides, timetable, reports, roster
         Route::middleware('role:instructor')->group(function () {
+            // F102 shared clipboard: staff-only, labelled with the real user name (S-8)
+            Route::get('/share', [PublicController::class, 'shareIndex'])->name('share.index');
+            Route::get('/share.html', [PublicController::class, 'shareIndex'])->name('share.html');
+            Route::post('/share', [PublicController::class, 'shareSave'])->name('share.save');
+            Route::get('/share/raw', [PublicController::class, 'shareRaw'])->name('share.raw');
             Route::post('/sessions/{session}/pcs/{pc}/override', [SessionController::class, 'override'])->name('sessions.override');
             Route::get('/profiles', [ProfileController::class, 'index'])->name('profiles.index');
             Route::get('/profiles.html', [ProfileController::class, 'index'])->name('profiles.html');

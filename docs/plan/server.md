@@ -16,8 +16,8 @@ Screen access chain:
 - [x] Step 3: (revised by DECISIONS #24) `PolicyBuilder::screenGatewayConfig` stops sending `agent_secret`; the agent needs no screen credential, only the `wss://<ccc>:8443/screen-gw/agent` URL (its mTLS cert identifies the PC) (fixes I-SERVER-11; touches F32, F45) [CROSS: after screen Step 62; PROTOCOL.md]
 
 Access control and enrollment:
-- [ ] Step 4: Move `POST /share` and `GET /share/raw` into the `auth` + role group (fixes I-SERVER-2 part; touches F102) 
-- [ ] Step 5: Owner decision: remove F102 or keep it authenticated with no anonymous "Instructor" label (fixes I-SERVER-2; touches F102) [APPROVAL]
+- [x] Step 4: Move `POST /share` and `GET /share/raw` into the `auth` + role group (fixes I-SERVER-2 part; touches F102) (done as S-8)
+- [x] Step 5: Owner decision: remove F102 or keep it authenticated with no anonymous "Instructor" label (fixes I-SERVER-2; touches F102) [APPROVAL]
 - [ ] Step 6: First-run wizard requires `XG_SETUP_TOKEN` (env) or localhost (fixes I-SERVER-22; touches F1, F2) [CROSS: ccc-deploy prints the token, I-CCC-6]
 - [ ] Step 7: Remove `XG_REQUIRE_MTLS=false`; always require `X-SSL-Client-Verify=SUCCESS` + fingerprint match (fixes I-SERVER-6; touches F20, F21)
 - [ ] Step 8: Enrollment key off the public `/downloads` page; show on authenticated `/enroll` only, or per-PC one-time token (fixes I-SERVER-4 part 1; touches F99, F17, F6, F15) [APPROVAL: reverses e9ded61]

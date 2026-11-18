@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
@@ -11,7 +13,10 @@ use App\Services\PolicyBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
-/** Unauthenticated pages: the student notice, the CA certificate and the agent install scripts. */
+/**
+ * Unauthenticated pages: the student notice, the CA certificate and the agent install scripts.
+ * The share* actions (F102) are routed behind auth + role:instructor, not public.
+ */
 class PublicController extends Controller
 {
     public function notice()
@@ -164,7 +169,8 @@ JS;
         $text = (string) request()->input('text', '');
         $cmd = (bool) request()->boolean('cmd');
         $at = now()->format('H:i');
-        $by = auth()->user()?->name ?: 'Instructor';
+        // The route requires auth + role:instructor, so there is always a real, named user.
+        $by = (string) request()->user()->name;
         $last = "Today {$at} by {$by}";
         Setting::put('shared_clipboard', mb_substr($text, 0, 65000));
         Setting::put('shared_clipboard_at', $last);
