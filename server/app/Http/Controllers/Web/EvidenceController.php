@@ -10,11 +10,13 @@ use App\Models\LabSession;
 use App\Models\Pc;
 use App\Models\ScreenViewAudit;
 use App\Services\Audit;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /** Handles storing and streaming instructor-captured screenshot evidence. */
 class EvidenceController extends Controller
@@ -53,9 +55,10 @@ class EvidenceController extends Controller
 
         $sha256 = hash('sha256', $bytes);
         $size = strlen($bytes);
-        $path = 'evidence/pc_'.$pc->id.'/'.Str::uuid().'.'.$ext;
+        $path = 'evidence/pc_'.$pc->id.'/'.Str::uuid().'.bin';
 
-        Storage::disk('local')->put($path, $bytes);
+        // At rest only the APP_KEY-encrypted blob is kept; sha256 of the plain image is in the row (S-13).
+        Storage::disk('local')->put($path, Crypt::encryptString($bytes));
 
         $session = $view->lab_session_id ? null : LabSession::query()->where('status', 'active')->first();
         $capture = EvidenceCapture::create([
@@ -70,6 +73,7 @@ class EvidenceController extends Controller
             'mime_type' => $mime,
             'sha256' => $sha256,
             'size_bytes' => $size,
+            'encrypted' => true,
             'note' => $d['note'] ?? null,
             'occurred_at' => now(),
         ]);
@@ -90,17 +94,30 @@ class EvidenceController extends Controller
         ], 201);
     }
 
-    public function show(EvidenceCapture $capture): StreamedResponse
+    public function show(EvidenceCapture $capture): Response
     {
-        if (! Storage::disk('local')->exists($capture->file_path)) {
+        $disk = Storage::disk('local');
+        if (! $disk->exists($capture->file_path)) {
             abort(404);
+        }
+        $raw = (string) $disk->get($capture->file_path);
+        try {
+            $bytes = $capture->encrypted ? Crypt::decryptString($raw) : $raw;
+        } catch (DecryptException) {
+            abort(409, 'Evidence file cannot be decrypted (changed, or APP_KEY rotated).');
+        }
+        // Integrity: the stored hash is of the plain image; a changed blob is never served.
+        if (! hash_equals((string) $capture->sha256, hash('sha256', $bytes))) {
+            abort(409, 'Evidence file does not match its recorded hash.');
         }
         Audit::log('evidence.view', $capture, ['evidence_id' => $capture->id, 'pc_id' => $capture->pc_id]);
 
-        return Storage::disk('local')->response($capture->file_path, 'evidence-'.$capture->id, [
+        return response($bytes, 200, [
             'Content-Type' => $capture->mime_type,
+            'Content-Disposition' => 'inline; filename="evidence-'.$capture->id.'"',
             'X-Content-Type-Options' => 'nosniff',
-        ], 'inline');
+            'Cache-Control' => 'private, no-store',
+        ]);
     }
 
     /**

@@ -22,6 +22,7 @@ class EvidenceCapture extends Model
         'mime_type',
         'sha256',
         'size_bytes',
+        'encrypted',
         'note',
         'occurred_at',
     ];
@@ -29,6 +30,7 @@ class EvidenceCapture extends Model
     protected $casts = [
         'monitor' => 'integer',
         'size_bytes' => 'integer',
+        'encrypted' => 'boolean',
         'occurred_at' => 'datetime',
     ];
 

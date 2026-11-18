@@ -14,6 +14,7 @@ use App\Models\ScreenViewAudit;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\BuildsLab;
 use Tests\TestCase;
@@ -78,7 +79,10 @@ class EvidenceCaptureTest extends TestCase
 
         $capture = EvidenceCapture::query()->firstOrFail();
         Storage::disk('local')->assertExists($capture->file_path);
-        $this->assertSame($png, Storage::disk('local')->get($capture->file_path));
+        $stored = Storage::disk('local')->get($capture->file_path);
+        $this->assertTrue($capture->encrypted);
+        $this->assertStringNotContainsString(substr($png, 0, 8), $stored);   // no PNG header at rest
+        $this->assertSame($png, Crypt::decryptString($stored));
         $this->assertDatabaseHas('audit_log', [
             'action' => 'pc.evidence',
             'subject_id' => $pc->id,
@@ -92,7 +96,7 @@ class EvidenceCaptureTest extends TestCase
 
         $imgRes = $this->actingAs($instructor)->get(route('evidence.show', $capture));
         $imgRes->assertOk()->assertHeader('Content-Type', 'image/png');
-        $this->assertSame($png, $imgRes->streamedContent());
+        $this->assertSame($png, $imgRes->getContent());
         $this->assertDatabaseHas('audit_log', ['action' => 'evidence.view', 'subject_id' => $capture->id]);
         $this->assertSame($session->id, $capture->lab_session_id);
 
@@ -168,5 +172,27 @@ class EvidenceCaptureTest extends TestCase
         $this->assertSame($view->id, $capture->screen_view_audit_id);
         $this->actingAs($assistant)->get(route('evidence.show', $capture))->assertForbidden();
         $this->actingAs($assistant)->getJson(route('pcs.show', $pc))->assertOk()->assertJsonCount(0, 'evidence');
+    }
+
+    public function test_tampered_blob_is_refused_and_legacy_plain_file_still_served(): void
+    {
+        Storage::fake('local');
+        $this->bootLab();
+        [$pc] = $this->enrolledPc();
+        $instructor = $this->user('instructor');
+        $png = $this->tinyPng();
+        $base = ['pc_id' => $pc->id, 'captured_by' => $instructor->id, 'mime_type' => 'image/png',
+            'sha256' => hash('sha256', $png), 'size_bytes' => strlen($png), 'occurred_at' => now()];
+
+        Storage::disk('local')->put('evidence/legacy.png', $png);
+        $legacy = EvidenceCapture::create($base + ['file_path' => 'evidence/legacy.png', 'encrypted' => false]);
+        $this->assertSame($png, $this->actingAs($instructor)->get(route('evidence.show', $legacy))->assertOk()->getContent());
+
+        Storage::disk('local')->put('evidence/swapped.bin', Crypt::encryptString('other image'));
+        $swapped = EvidenceCapture::create($base + ['file_path' => 'evidence/swapped.bin', 'encrypted' => true]);
+        $this->actingAs($instructor)->get(route('evidence.show', $swapped))->assertStatus(409);
+        $this->assertDatabaseMissing('audit_log', ['action' => 'evidence.view', 'subject_id' => $swapped->id]);
+        Storage::disk('local')->put('evidence/swapped.bin', 'garbage');
+        $this->actingAs($instructor)->get(route('evidence.show', $swapped))->assertStatus(409);
     }
 }
