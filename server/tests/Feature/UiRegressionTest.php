@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Alert;
-use App\Models\Command;
+use App\Models\Lab;
 use App\Models\Pc;
 use App\Models\Setting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,7 +43,7 @@ class UiRegressionTest extends TestCase
             ->assertSessionHasNoErrors()
             ->assertSessionHas('status', 'Settings saved.');
 
-        $this->assertSame('Lab Updated 51', \App\Models\Lab::current()->name);
+        $this->assertSame('Lab Updated 51', Lab::current()->name);
         $this->assertSame('https://www.google.com/search?q={searchTerms}&udm=14', Setting::get('google_search_url'));
         $logUrls = Setting::get('privacy.log_urls');
         $this->assertTrue((bool) ($logUrls['enabled'] ?? false));

@@ -11,7 +11,9 @@ use App\Models\TimetableEntry;
 use App\Services\PolicyBuilder;
 use App\Services\SessionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\BuildsLab;
 use Tests\TestCase;
@@ -67,7 +69,7 @@ class SessionNetworkTest extends TestCase
     public function test_ending_a_session_survives_an_unreachable_analysis_service(): void
     {
         $lab = $this->bootLab();      // sync queue, analysis.test does not resolve
-        \Illuminate\Support\Facades\Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('down'));
+        Http::fake(fn () => throw new ConnectionException('down'));
         $s = app(SessionManager::class)->start($lab, $this->profile('Test: AI blocked'), 'CS101');
         app(SessionManager::class)->stop($s);
         $this->assertSame('ended', $s->fresh()->status);

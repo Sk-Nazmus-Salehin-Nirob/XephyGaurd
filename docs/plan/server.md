@@ -35,7 +35,7 @@ Privacy defaults (ETHICS):
 - [x] Step 16: `composer test` and `composer lint` scripts wrapping the commands in CLAUDE.md (no new packages) (fixes none; touches none)
 - [x] Step 17: Pint formatting only for `app/Http/Controllers/Web` (no logic; split by directory if >300 lines) (fixes none; touches F10-F111 web pages)
 - [x] Step 18: Pint formatting only for `app/Services`, `app/Jobs`, `app/Http/Middleware` (fixes none; touches F20, F32, F108-F111)
-- [ ] Step 19: Pint formatting only for `routes`, `config`, `database`, `tests` (fixes none; touches none)
+- [x] Step 19: Pint formatting only for `routes`, `config`, `database`, `tests` (fixes none; touches none)
 - [ ] Step 20: Make the CI pint job blocking once Steps 17-19 are in (needs approval to edit CI) (fixes none) [APPROVAL]
 - [ ] Step 21: Larastan/PHPStan level 5 would be a new dev dependency: ask first. Until then use `declare(strict_types=1)` on files touched by later steps (fixes none)
 

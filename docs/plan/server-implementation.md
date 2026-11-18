@@ -52,7 +52,8 @@ Deferred (not scheduled, ask again later):
   Done: 3 files (Alert, Dashboard, Profile controllers), inline FQCNs became `use` imports. No `strict_types` added (Pint-only steps stay formatting-only). 128 tests pass.
 - [x] S-5 Pint only: `app/Services`, `app/Jobs`, `app/Http/Middleware` (was 18)
   Done: 6 files (AgentHealthClassifier, CertificateAuthority, EventIngestor, NetworkPolicyWriter, ScoreSession, AuthenticateAgent). Only change beyond whitespace/quotes: unused `LabSession` import removed, inline `Log` FQCN became a `use`. 128 tests pass.
-- [ ] S-6 Pint only: `routes`, `config`, `database`, `tests` (was 19)
+- [x] S-6 Pint only: `routes`, `config`, `database`, `tests` (was 19)
+  Done: 7 tracked files (1 migration, routes/console.php, 5 tests); config was already clean. 3 unused imports removed, inline FQCNs became `use`. Untracked FeatureAdminTest/FeatureSessionsTest left untouched. 128 tests pass.
 - [ ] S-7 CI pint job blocking (was 20)
 
 Formatting goes first so that every later diff is logic only.

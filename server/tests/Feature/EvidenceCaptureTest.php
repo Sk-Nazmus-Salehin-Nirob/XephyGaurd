@@ -116,7 +116,7 @@ class EvidenceCaptureTest extends TestCase
         $capture->forceFill(['occurred_at' => now()->subDays(200)])->save();
         Storage::disk('local')->assertExists($capture->file_path);
 
-        (new PurgeRetention())->handle();
+        (new PurgeRetention)->handle();
 
         Storage::disk('local')->assertMissing($capture->file_path);
         $this->assertDatabaseMissing('evidence_captures', ['id' => $capture->id]);

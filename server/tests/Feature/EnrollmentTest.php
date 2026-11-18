@@ -2,7 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Events\AgentCommand;
+use App\Models\Command;
 use App\Models\Enrollment;
+use App\Models\Pc;
+use App\Services\CertificateAuthority;
 use App\Services\EnrollmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\BuildsLab;
@@ -14,7 +18,7 @@ class EnrollmentTest extends TestCase
 
     private function csr(): string
     {
-        $conf = app(\App\Services\CertificateAuthority::class)->opensslConfig();
+        $conf = app(CertificateAuthority::class)->opensslConfig();
         $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1', 'config' => $conf]);
         openssl_csr_export(openssl_csr_new(['commonName' => 'lab-pc-07'], $key, ['digest_alg' => 'sha256', 'config' => $conf]), $pem);
         @unlink($conf);
@@ -91,7 +95,7 @@ class EnrollmentTest extends TestCase
         $pcB = $svc->approve($b->fresh(), null);
 
         $this->assertNotSame($pcA->id, $pcB->id);
-        $this->assertSame(2, \App\Models\Pc::whereNull('retired_at')->count());
+        $this->assertSame(2, Pc::whereNull('retired_at')->count());
         $this->assertNotSame($pcA->name, $pcB->name);
         $this->assertSame(1, $pcA->agents()->whereNull('revoked_at')->count());
         $this->assertSame(1, $pcB->agents()->whereNull('revoked_at')->count());
@@ -100,7 +104,7 @@ class EnrollmentTest extends TestCase
         $a2 = $svc->register($lab, $base + ['machine_uid' => $uidA, 'csr_pem' => $this->csr()], '10.0.0.1')['enrollment'];
         $this->assertSame($pcA->id, $svc->approve($a2->fresh(), null)->id);
         $this->assertSame(1, $pcB->agents()->whereNull('revoked_at')->count());
-        $this->assertSame(2, \App\Models\Pc::whereNull('retired_at')->count());
+        $this->assertSame(2, Pc::whereNull('retired_at')->count());
     }
 
     public function test_commands_only_reach_their_own_pc_even_with_shared_hostname(): void
@@ -112,9 +116,9 @@ class EnrollmentTest extends TestCase
             $e = $svc->register($lab, ['hostname' => 'SAME', 'macs' => [], 'machine_uid' => str_repeat($ch, 32), 'csr_pem' => $this->csr()], '10.0.0.3')['enrollment'];
             $pcs[] = $svc->approve($e->fresh(), null);
         }
-        $cmd = \App\Models\Command::make(['type' => 'lock']);
+        $cmd = Command::make(['type' => 'lock']);
         $cmd->pc_id = $pcs[0]->id;
-        $channels = (new \App\Events\AgentCommand($cmd))->broadcastOn();
+        $channels = (new AgentCommand($cmd))->broadcastOn();
         $this->assertCount(1, $channels);
         $this->assertSame('private-pc.'.$pcs[0]->id, $channels[0]->name);
     }
