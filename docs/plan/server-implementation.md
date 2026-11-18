@@ -72,7 +72,8 @@ Formatting goes first so that every later diff is logic only.
   Done: the `require_mtls` config key and branch are gone; `AuthenticateAgent` always needs `X-SSL-Client-Verify=SUCCESS` and a matching SHA-256 fingerprint (empty stored fingerprint refused, log no longer prints fingerprints). New `test_mtls_cannot_be_switched_off`. THREAT_MODEL row 28. 138 tests pass. Note: `new_setup_scripts` no-nginx mode still writes `XG_REQUIRE_MTLS=false` (now ignored; agents there need nginx).
 - [x] S-11 [O] The agent bearer token is valid only with the cert fingerprint it was issued to (alternative F20). THREAT_MODEL.md.
   Done: `Agent::tokenHash` = HMAC-SHA256(token, key = cert fingerprint); `AuthenticateAgent` checks the cert first, then looks the agent up by the bound hash + fingerprint; legacy `sha256(token)` rows are upgraded on first use with their own cert only. Same 401/403 split as before. 2 new tests; THREAT_MODEL row 28. 140 tests pass.
-- [ ] S-12 [O] Evidence screenshots: instructor+ only, accepted only during an audited screen view, and every `show` is audited (was 14).
+- [x] S-12 [O] Evidence screenshots: instructor+ only, accepted only during an audited screen view, and every `show` is audited (was 14).
+  Done: evidence routes moved to `role:instructor`; `store` needs `screen_view_id` of the caller's own open view of that PC (not stopped, opened/renewed within 2×TTL+10 s; `renewToken` now touches the audit row); new column `evidence_captures.screen_view_audit_id`; `show` writes `evidence.view` audit; assistants get an empty evidence list in PC detail; app.js sends the audit id. New test (8 refusals + success); THREAT_MODEL row 29, ETHICS row wording. 141 tests pass. JS not run in a browser.
 - [ ] S-13 [O] Evidence is stored as sha256 + a `Crypt`-encrypted blob (built into Laravel, no new dependency). Its retention entry is added in S-37 (was 15).
 
 ## M2: enrollment (was 8, 9, 10, 25 part)

@@ -23,7 +23,7 @@ such controls work.
 | Visited hosts/paths of allowed sites | – | off by default | off by default |
 | Live screen view by lab staff (on demand, not stored; every view is logged in `screen_view_audits`) | on request | on request | on request |
 | Streaming cost while viewed: frames/s, kbit/s, CPU % and throttle level (numbers only, in the heartbeat) | on request | on request | on request |
-| Screenshot saved as evidence by staff (with a note; audited; deleted with raw data) | on request | on request | on request |
+| Screenshot saved as evidence by an instructor, only from their own open audited live view (with a note; saving and every viewing audited; deleted with raw data) | on request | on request | on request |
 
 **Never collected:** typed characters, clipboard text, continuous screen recordings, passwords,
 personal messages, file contents, microphone or camera. Keystrokes and clipboard text are reduced to

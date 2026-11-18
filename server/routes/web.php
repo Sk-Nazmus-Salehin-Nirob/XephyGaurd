@@ -57,8 +57,6 @@ Route::group([], function () {
             Route::post('/pcs/{pc}/isolate', [SessionController::class, 'isolate'])->name('pcs.isolate');
             Route::post('/pcs/{pc}/kill', [SessionController::class, 'kill'])->name('pcs.kill');
             Route::post('/pcs/{pc}/rescan', [SessionController::class, 'rescan'])->name('pcs.rescan');
-            Route::post('/pcs/{pc}/evidence', [EvidenceController::class, 'store'])->name('pcs.evidence');
-            Route::get('/evidence/{capture}', [EvidenceController::class, 'show'])->name('evidence.show');
 
             Route::get('/enroll', [EnrollmentController::class, 'index'])->name('enroll.index');
             Route::get('/enroll.html', [EnrollmentController::class, 'index'])->name('enroll.html');
@@ -71,6 +69,9 @@ Route::group([], function () {
 
         // instructor: sessions, overrides, timetable, reports, roster
         Route::middleware('role:instructor')->group(function () {
+            // F46 screen evidence: instructor+, only inside an audited live view, every view audited (S-12)
+            Route::post('/pcs/{pc}/evidence', [EvidenceController::class, 'store'])->name('pcs.evidence');
+            Route::get('/evidence/{capture}', [EvidenceController::class, 'show'])->name('evidence.show');
             // F102 shared clipboard: staff-only, labelled with the real user name (S-8)
             Route::get('/share', [PublicController::class, 'shareIndex'])->name('share.index');
             Route::get('/share.html', [PublicController::class, 'shareIndex'])->name('share.html');

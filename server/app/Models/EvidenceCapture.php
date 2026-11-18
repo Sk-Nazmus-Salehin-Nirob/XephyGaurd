@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +15,7 @@ class EvidenceCapture extends Model
         'lab_session_id',
         'user',
         'captured_by',
+        'screen_view_audit_id',
         'monitor',
         'source_mode',
         'file_path',

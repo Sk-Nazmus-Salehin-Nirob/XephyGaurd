@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -178,6 +180,7 @@ class ViewTokenController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        $audit->touch(); // marks the view as still open (evidence needs an open view, S-12)
         [$token, $exp] = $this->leaseToken($audit);
 
         return response()->json([

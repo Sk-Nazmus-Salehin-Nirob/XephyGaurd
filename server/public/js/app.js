@@ -1066,6 +1066,7 @@ document.addEventListener('alpine:init', () => {
         fd.append('image', blob, `evidence-pc-${pcId}.png`);
         fd.append('monitor', String(this.monitor || 0));
         fd.append('source_mode', this.screenMode === 'live' ? 'live' : 'snapshot');
+        fd.append('screen_view_id', String(this.screenAuditId || ''));
         const res = await fetch(`/pcs/${pcId}/evidence`, {
           method: 'POST',
           credentials: 'same-origin',

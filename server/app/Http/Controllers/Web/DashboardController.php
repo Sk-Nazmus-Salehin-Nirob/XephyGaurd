@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
@@ -63,7 +65,7 @@ class DashboardController extends Controller
     }
 
     /** Detail drawer: timeline, processes, network log, key-rate chart, paste log. */
-    public function pc(Pc $pc, EventIngestor $ingestor): JsonResponse
+    public function pc(Request $request, Pc $pc, EventIngestor $ingestor): JsonResponse
     {
         $session = LabSession::activeFor($pc->lab_id);
         $inSession = $session && SessionPc::query()->where('lab_session_id', $session->id)->where('pc_id', $pc->id)->exists();
@@ -217,7 +219,7 @@ class DashboardController extends Controller
                     'target_app' => $p->target_app, 'occurred_at' => $p->occurred_at?->format('H:i:s'),
                 ]),
             'keyrate' => ['labels' => $perMinute->keys()->values(), 'series' => $perMinute->values()],
-            'evidence' => EvidenceCapture::query()->with('capturer:id,name')->where('pc_id', $pc->id)
+            'evidence' => ! $request->user()?->hasRole('instructor') ? [] : EvidenceCapture::query()->with('capturer:id,name')->where('pc_id', $pc->id)
                 ->where('occurred_at', '>=', $since)->latest('occurred_at')->limit(20)
                 ->get()->map->toApiArray()->values(),
         ]);
