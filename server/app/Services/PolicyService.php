@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Models\LabSession;
@@ -56,7 +58,7 @@ class PolicyService
             'mode' => $mode,
             'session_id' => $session?->id ?? 0,
             'profile' => $profile->name,
-            'title_capture' => Setting::get("privacy.title_capture.$mode", 'full'),
+            'title_capture' => PrivacySettings::effectiveTitleCapture($mode, $agent['title_capture'] ?? null),
             'collect' => array_merge(['window' => true, 'clipboard' => true, 'keys' => true], $agent['collect'] ?? []),
             'intervals' => $agent['intervals'] ?? null,
             'actions' => array_filter(['default' => $agent['default_actions'] ?? null, 'rules' => $ruleActions ?: null]),

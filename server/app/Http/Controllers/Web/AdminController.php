@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
@@ -11,6 +13,7 @@ use App\Models\User;
 use App\Services\Audit;
 use App\Services\Doctor;
 use App\Services\NetworkPolicyWriter;
+use App\Services\PrivacySettings;
 use App\Services\ScreenGatewayRevoker;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -46,9 +49,9 @@ class AdminController extends Controller
         $values['google_search_url'] ??= 'https://www.google.com/search?q={searchTerms}&udm=14';
         $values['screen_cpu_budget_pct'] = Setting::get('screen.cpu_budget_pct', 8);
         foreach (['always_on', 'practice', 'test'] as $m) {
-            $values["title_capture_$m"] = Setting::get("privacy.title_capture.$m", $m === 'always_on' ? 'off' : 'app_only');
+            $values["title_capture_$m"] = PrivacySettings::titleCaptureSetting($m);
         }
-        $values['log_urls'] = Setting::get('privacy.log_urls', ['enabled' => false, 'query' => false]);
+        $values['log_urls'] = PrivacySettings::logUrls();
         $values['inspect_hosts'] = implode("\n", Setting::get('inspect_hosts', NetworkPolicyWriter::DEFAULT_INSPECT_HOSTS));
         $values['google_hide_selectors'] = implode("\n", Setting::get('google_hide_selectors', []));
 

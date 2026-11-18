@@ -5,7 +5,7 @@
   $netMode = ($v['network_mode'] ?? 'proxy_only') === 'gateway' ? 'gateway' : 'proxy_only';
   $tAlwaysRaw = $v['title_capture_always_on'] ?? 'off';
   $tPracticeRaw = $v['title_capture_practice'] ?? 'app_only';
-  $tTestRaw = $v['title_capture_test'] ?? 'full';
+  $tTestRaw = $v['title_capture_test'] ?? 'app_only';
   $tAlways = $tAlwaysRaw === 'app_only' ? 'app' : $tAlwaysRaw;
   $tPractice = $tPracticeRaw === 'app_only' ? 'app' : $tPracticeRaw;
   $tTest = $tTestRaw === 'app_only' ? 'app' : $tTestRaw;

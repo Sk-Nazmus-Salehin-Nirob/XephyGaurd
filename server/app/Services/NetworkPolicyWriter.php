@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Models\BlocklistEntry;
@@ -66,7 +68,7 @@ class NetworkPolicyWriter
             };
         }
         $version = (int) Setting::get('net_state_version', 0) + 1;
-        $logUrls = Setting::get('privacy.log_urls', ['enabled' => false, 'query' => false]);
+        $logUrls = PrivacySettings::logUrls();
 
         return [
             'version' => $version,

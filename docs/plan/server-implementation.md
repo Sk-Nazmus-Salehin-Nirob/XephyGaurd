@@ -92,7 +92,8 @@ Formatting goes first so that every later diff is logic only.
 ## M3: PolicyService (was 11, 12, 22, 27, 42, 48, 49)
 - [x] S-19 Move only: rename `PolicyBuilder` to `PolicyService` and update its callers. Behaviour is identical.
   Done: `git mv` to `app/Services/PolicyService.php`, class renamed, 6 app files and 3 tracked tests updated (plus the untracked FeatureSessionsTest locally). Name change only, no `strict_types` (move step). 145 tests pass.
-- [ ] S-20 [O] Typed `PrivacySettings` with safe defaults (`title_capture` off/app_only). Effective value = the stricter of profile and setting, per DECISIONS #26 (was 12).
+- [x] S-20 [O] Typed `PrivacySettings` with safe defaults (`title_capture` off/app_only). Effective value = the stricter of profile and setting, per DECISIONS #26 (was 12).
+  Done: new `App\Services\PrivacySettings` (title levels `off` < `app_only` < `full`, defaults Always-on `off`, Practice/Test `app_only`, unknown mode or invalid value = `off`; `effectiveTitleCapture` = stricter of profile and setting, missing profile value defers to the setting; typed `logUrls`, query only with URLs on). PolicyService, AdminController and NetworkPolicyWriter use it; settings page Test fallback `app_only`. New `PrivacySettingsTest` (3 tests). Untracked FeatureSessionsTest "known bug" assertion updated locally (`full` → `off`). 148 tests pass.
 - [ ] S-21 [O] Built-in profiles in `Bootstrap` match the ETHICS table (was 11; changes F30).
 - [ ] S-22 `switchProfile` / `setOverride` reject non-active sessions (was 42).
 - [ ] S-23 The resolved policy is stored per `(pc_id, version)` and invalidated on profile, rule, session, setting and override changes. Query-budget test (was 48).
