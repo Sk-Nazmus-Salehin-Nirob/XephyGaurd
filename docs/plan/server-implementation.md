@@ -122,7 +122,8 @@ Formatting goes first so that every later diff is logic only.
   Done: migration + append-only `AlertReview` model (alert, user, note, reviewed_at). `Alert::acknowledgeBy()` does a conditional update (`whereNull acknowledged_at`) and the review insert in one transaction, so a second or concurrent ack changes nothing and writes no review or audit row. Single ack returns `already: true` then; batch only takes alerts of `Lab::current()` that are still open. `alerts.acknowledged_*`/`comment` stay as the first-review summary the UI reads. `strict_types` on AlertController. New `AlertReviewTest` (3 tests). 171 tests pass, pint clean.
 - [x] S-32 Index on `alerts.acknowledged_at`, checked with `EXPLAIN` (was 47).
   Done: migration `2026_11_18_000700` adds index `alerts_acknowledged_at_index`. New `AlertIndexTest` (2 tests): index exists; `EXPLAIN QUERY PLAN` of the open-alert count uses it, no table scan (SQLite only; MySQL EXPLAIN not run, no MySQL on this machine). Moving the layout query is S-33. 173 tests pass, pint clean.
-- [ ] S-33 Move only: the unacknowledged-alert count moves into a view composer (was 29).
+- [x] S-33 Move only: the unacknowledged-alert count moves into a view composer (was 29).
+  Done: `App\View\Composers\OpenAlertsComposer` registered for `layouts.app` in `AppServiceProvider`; same query, same fallback to 0 on error; the two lines are gone from the layout. New `OpenAlertsComposerTest` (2 tests): badge count, no badge at 0. 175 tests pass, pint clean.
 - [ ] S-34 [O] When `Audit::log` fails, the action fails (was 32).
 - [ ] S-35 The audit log records that an exemption changed, not the reason (was 37).
 - [ ] S-36 [O] Audit hash chain: a `prev_hash` column plus an `xg:audit-verify` command.

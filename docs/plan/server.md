@@ -49,7 +49,7 @@ Privacy defaults (ETHICS):
 
 ## Phase 4: Structure (moves only)
 - [ ] Step 28: Move inspector query code from `DashboardController` into an `InspectorQueries` service, behavior identical (fixes none; prepares I-SERVER-34, I-SERVER-41; touches F24)
-- [ ] Step 29: Move the unacknowledged-alert count out of `layouts/app.blade.php` into a view composer, behavior identical (fixes none; prepares I-SERVER-41; touches F40)
+- [x] Step 29: Move the unacknowledged-alert count out of `layouts/app.blade.php` into a view composer, behavior identical (fixes none; prepares I-SERVER-41; touches F40) (done as S-33)
 
 ## Phase 5: Duplication and dead code
 - [ ] Step 30: Wire `AgentHealthClassifier` into `detectSilent` and store its reasons in alert details (keeps F25/F108 as documented) (fixes I-SERVER-35; touches F25, F108)

@@ -11,7 +11,6 @@
         $xgLab = \App\Models\Lab::query()->first();
         $xgActiveSession = $xgLab ? \App\Models\LabSession::activeFor($xgLab->id)?->load('profile') : null;
         $xgLatestEndedSession = $xgLab ? \App\Models\LabSession::query()->where('lab_id', $xgLab->id)->where('status', 'ended')->latest('ended_at')->first(['id']) : null;
-        $xgOpenAlerts = \App\Models\Alert::query()->whereNull('acknowledged_at')->count();
         $xgTotalPcs = $xgLab ? \App\Models\Pc::query()->active()->where('lab_id', $xgLab->id)->count() : 0;
         $xgOnlinePcs = $xgLab ? \App\Models\Pc::query()->active()->where('lab_id', $xgLab->id)->get()->filter->online()->count() : 0;
         $xgTz = \App\Models\Setting::get('timezone') ?: config('app.timezone', 'UTC');
@@ -21,7 +20,6 @@
         $xgLab = null;
         $xgActiveSession = null;
         $xgLatestEndedSession = null;
-        $xgOpenAlerts = 0;
         $xgTotalPcs = 0;
         $xgOnlinePcs = 0;
         $xgTz = config('app.timezone', 'UTC');
