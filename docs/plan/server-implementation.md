@@ -40,7 +40,11 @@ Deferred (not scheduled, ask again later):
 - Larastan
 
 ## M0: groundwork (no behaviour change)
-- [ ] S-1 Baseline: run server tests and `pint --test` on the whole tree and record the pass/fail counts here. No code.
+- [x] S-1 Baseline: run server tests and `pint --test` on the whole tree and record the pass/fail counts here. No code.
+  Result (2026-11-18, PHP 8.3.6, Pint 1.32.1, commit ddca73b):
+  - `php artisan test`: 128 passed, 0 failed, 859 assertions. That includes 33 tests (301 assertions) in the untracked `tests/Feature/FeatureAdminTest.php` and `FeatureSessionsTest.php`. Committed tests only: 95 passed, 558 assertions.
+  - `pint --test`: 53 of 154 tracked PHP files fail. By directory: app/Models 25, app/Console 6, app/Events 4, app/Services 4, app/Http/Controllers/Web 3, app/Http/Controllers/Agent 1, app/Http/Middleware 1, app/Jobs 1, bootstrap 1, database 1, routes 1, tests 5.
+  - Gap: S-4 to S-6 cover only 16 of these. app/Models, app/Console, app/Events, app/Http/Controllers/Agent and bootstrap (37 files) are in no Pint step, so S-7 (blocking CI) would fail. They need an extra Pint-only step before S-7.
 - [ ] S-2 Docs only: DECISIONS #26 PolicyService (effective `title_capture` = the stricter of profile and mode setting, `off` < `app_only` < `full`), #27 ingest schema, #28 enrollment token, #29 append-only alert reviews + audit chain. FEATURES.md notes for F16, F46, F102.
 - [ ] S-3 `composer test` / `composer lint` scripts (was 16)
 - [ ] S-4 Pint only: `app/Http/Controllers/Web` (was 17)
