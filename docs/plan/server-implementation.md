@@ -108,7 +108,8 @@ Formatting goes first so that every later diff is logic only.
 ## M4: ingest schema and commands (was 31, 33, 34, 35)
 - [x] S-26 Docs: PROTOCOL.md documents the `observed` action and the `network/ports/devices` rescan (was 31). The allow-lists below come from this.
   Done: net-events section lists `observed`, the field limits from `NetEventsController` and when an alert is raised; the `rescan` row lists every `what` the dashboard sends and what the agent scans for each (plus its `installed`/`browser` aliases). Checked against `agent.cpp` rescan, `xephyguard_addon.py`, `NetEventsController`, `SessionController::rescan`. Docs only.
-- [ ] S-27 Move only: `validate()` and the heartbeat checks move from `EventIngestor` into `Ingest\BatchValidator`.
+- [x] S-27 Move only: `validate()` and the heartbeat checks move from `EventIngestor` into `Ingest\BatchValidator`.
+  Done: `TYPES`, `validate()` (now public) and `screenCost()` (heartbeat `usage.screen`) moved to new `App\Services\Ingest\BatchValidator`, injected into `EventIngestor`; no other callers. Bodies byte-identical, no `strict_types` (move step; it would change `strlen(json_encode(...))` on invalid UTF-8). 161 tests pass.
 - [ ] S-28 [O] Per-event-type schema: field allow-list, plus type and length limits for heartbeat strings, `description` and `subject` (was 33, 34 part).
 - [ ] S-29 [O] Titles that the effective `title_capture` from PolicyService does not allow are dropped (was 34).
 - [ ] S-30 [O] Per-type command validators in CommandBus. `kill` needs `pid` `integer|min:2` and the pid must be in the latest snapshot (was 35).
