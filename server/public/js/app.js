@@ -84,10 +84,11 @@ window.xgApi = async function (url, opts = {}) {
   const VERSION = 1;
   const HEADER_SIZE = 28;
   const TILE_HEADER_SIZE = 10;
-  const MAX_TILES = 4096;
+  const MAX_TILES = 16384;
+  const MONITOR_REC_SIZE = 8, MAX_MONITORS = 16, ALL_SCREENS = 0xFFFF;
   const MAX_PAYLOAD = 64 * 64 * 4;
-  const MsgType = { Frame: 1, Cursor: 2, Ack: 3, KeyframeReq: 4, Status: 5 };
-  const Flags = { KEY: 1, FULL: 2, DELTA: 4, MASKED: 8, SECURE: 16, CURSOR_F: 32 };
+  const MsgType = { Frame: 1, Cursor: 2, Ack: 3, KeyframeReq: 4, Status: 5, Monitors: 6 };
+  const Flags = { KEY: 1, FULL: 2, DELTA: 4, MASKED: 8, SECURE: 16, CURSOR_F: 32, ALL_SCREENS: 128 };
   const Codec = { Raw: 0, Webp: 1, Jpeg: 2 };
 
   class TileCanvas {
@@ -167,6 +168,17 @@ window.xgApi = async function (url, opts = {}) {
       const type = view.getUint8(3), flags = view.getUint16(4, true), monitorId = view.getUint16(6, true);
       const streamId = view.getUint32(8, true), seq = view.getUint32(12, true), baseSeq = view.getUint32(16, true);
       const width = view.getUint16(20, true), height = view.getUint16(22, true), tileCount = view.getUint16(24, true);
+      if (type === MsgType.Monitors) { // monitor rectangles for the picker; length must match the count exactly
+        if (tileCount > MAX_MONITORS || byteLength !== HEADER_SIZE + tileCount * MONITOR_REC_SIZE) return null;
+        const monitors = [];
+        for (let i = 0; i < tileCount; ++i) {
+          const o = HEADER_SIZE + i * MONITOR_REC_SIZE;
+          const m = { id: i + 1, x: view.getUint16(o, true), y: view.getUint16(o + 2, true), w: view.getUint16(o + 4, true), h: view.getUint16(o + 6, true) };
+          if (m.w === 0 || m.h === 0) return null;
+          monitors.push(m);
+        }
+        return { type, flags, monitorId, streamId, seq, baseSeq, width, height, tiles: [], monitors };
+      }
       if (tileCount > MAX_TILES) return null;
       let offset = HEADER_SIZE;
       const tiles = [];
@@ -235,6 +247,12 @@ window.xgApi = async function (url, opts = {}) {
     }
     async handleBinaryFrame(data) {
       const msg = parseMessage(data);
+      if (msg && msg.type === MsgType.Monitors) { // not a frame: no ACK, nothing drawn
+        this.monitors = msg.monitors;
+        this.allScreens = (msg.flags & Flags.ALL_SCREENS) !== 0;
+        if (this.options.onMonitors) this.options.onMonitors({ monitors: msg.monitors, active: msg.monitorId, allScreens: this.allScreens });
+        return;
+      }
       if (!msg || msg.type !== MsgType.Frame || !this.tileCanvas) return;
       if (msg.flags & Flags.MASKED) this.tileCanvas.setBanner('PRIVACY MASKED');
       else if (msg.flags & Flags.SECURE) this.tileCanvas.setBanner('SECURE DESKTOP');
@@ -247,7 +265,7 @@ window.xgApi = async function (url, opts = {}) {
         this.waitingForKeyframe = false;
       } else if ((msg.flags & Flags.DELTA) !== 0) {
         if (this.waitingForKeyframe || msg.baseSeq !== this.lastAppliedSeq) {
-          this.requestKeyframe(msg.streamId, msg.monitorId);
+          this.requestKeyframe(msg.streamId, 0); // 0 = keep the monitor that is shown
           this.waitingForKeyframe = true;
           return;
         }
@@ -285,6 +303,15 @@ window.xgApi = async function (url, opts = {}) {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(encodeKeyframeReq(streamId, monitorId));
       }
+    }
+    // Asks the agent to show monitor `id` (1..N) or ALL_SCREENS; frames of the old picture are dropped until its keyframe.
+    selectMonitor(id) {
+      const ok = id === ALL_SCREENS ? this.allScreens === true : Array.isArray(this.monitors) && id >= 1 && id <= this.monitors.length;
+      if (!ok || !this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+      this.waitingForKeyframe = true;
+      this._rxQueue = Promise.resolve();
+      this.requestKeyframe(0, id);
+      return true;
     }
     // Hands the token from POST /api/screen/{audit}/renew to the gateway; without it the socket closes at the lease end.
     renewLease(token) {
@@ -515,7 +542,7 @@ document.addEventListener('alpine:init', () => {
     pcs: (window.XG_LIVE && Array.isArray(window.XG_LIVE.pcs)) ? structuredClone(window.XG_LIVE.pcs) : [],
     alerts: (window.XG_LIVE && Array.isArray(window.XG_LIVE.alerts)) ? structuredClone(window.XG_LIVE.alerts) : [],
     serverDetails: {},
-    activePcId: null, inspector: false, tab: 'screen', screenMode: 'snapshot', monitor: 0, snapT: 4200, snapAt: '',
+    activePcId: null, inspector: false, tab: 'screen', screenMode: 'snapshot', monitor: 0, screenMonitors: [], screenMonitorActive: 0, screenAllScreens: false, snapT: 4200, snapAt: '',
     screenStreaming: false, screenHasFrame: false, screenStatus: '', screenAuditId: null, screenViewer: null, screenRenewTimer: null,
     wallStreams: {},
     tile: 240, flagged: false, blur: false, pinned: [], dock: { att: true, props: true, list: true }, pcFilter: 'all',
@@ -879,6 +906,11 @@ document.addEventListener('alpine:init', () => {
                 setTimeout(() => { if (this.screenMode === 'snapshot') this.stopScreen(true); }, 60);
               }
             },
+            onMonitors: ({ monitors, active, allScreens }) => {
+              this.screenMonitors = monitors;
+              this.screenMonitorActive = active;
+              this.screenAllScreens = allScreens;
+            },
             onControlMessage: msg => {
               if (msg && msg.type === 'status' && msg.agent_connected === false && !this.screenHasFrame && !warnedOffline) {
                 warnedOffline = true;
@@ -915,7 +947,11 @@ document.addEventListener('alpine:init', () => {
         Alpine.store('toasts').add(e.message || 'Screen stream unavailable.', 'watch');
       }
     },
+    pickMonitor(id) {
+      if (this.screenViewer && this.screenViewer.selectMonitor(id)) this.screenMonitorActive = id === 0xFFFF ? 0 : id;
+    },
     async stopScreen(keepCanvas = false) {
+      this.screenMonitors = []; this.screenMonitorActive = 0; this.screenAllScreens = false;
       if (this.screenRenewTimer) { clearInterval(this.screenRenewTimer); this.screenRenewTimer = null; }
       if (this.screenViewer) { this.screenViewer.disconnect(); this.screenViewer = null; }
       if (this.screenAuditId) {

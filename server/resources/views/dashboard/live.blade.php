@@ -282,7 +282,8 @@
           <div class="row" style="margin-bottom:14px;--gap:10px">
             <div class="seg"><button :aria-pressed="screenMode === 'snapshot'" @click="screenMode = 'snapshot'">Snapshot</button><button :aria-pressed="screenMode === 'live'" @click="goLive()" :disabled="!active.caps || !active.caps.live">Live</button></div>
             <button class="btn" @click="snapshot()" :disabled="!screenOk"><svg class="i i-sm" aria-hidden="true"><use href="#i-camera"/></svg> Take snapshot</button>
-            <div class="seg" x-show="(active.monitors || 1) > 1"><template x-for="m in (active.monitors || 1)" :key="m"><button :aria-pressed="monitor === m - 1" @click="monitor = m - 1" x-text="'Monitor ' + m"></button></template></div>
+            <div class="seg" x-show="screenMonitors.length > 1"><button x-show="screenAllScreens" :aria-pressed="screenMonitorActive === 0" @click="pickMonitor(0xFFFF)">All screens</button><template x-for="m in screenMonitors" :key="m.id"><button :aria-pressed="screenMonitorActive === m.id" @click="pickMonitor(m.id)" x-text="'Monitor ' + m.id"></button></template></div>
+            <div class="seg" x-show="screenMonitors.length < 2 && (active.monitors || 1) > 1"><template x-for="m in (active.monitors || 1)" :key="m"><button :aria-pressed="monitor === m - 1" @click="monitor = m - 1" x-text="'Monitor ' + m"></button></template></div>
             <span class="grow"></span>
             <button class="btn" @click="evidence()" :disabled="!screenOk">Save as evidence</button>
           </div>
