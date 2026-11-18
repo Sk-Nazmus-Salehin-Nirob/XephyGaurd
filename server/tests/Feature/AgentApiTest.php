@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Agent;
 use App\Models\Alert;
 use App\Models\Command;
 use App\Models\Event;
@@ -55,6 +56,37 @@ class AgentApiTest extends TestCase
         $this->withHeaders(['X-SSL-Client-Verify' => 'FAILED:unknown ca'] + $h)->getJson('/api/agent/v1/policy')->assertForbidden();
         $this->withHeaders(['X-SSL-Client-Verify' => 'NONE'] + $h)->getJson('/api/agent/v1/policy')->assertForbidden();
         $this->withHeaders(['X-SSL-Client-Cert' => 'not-a-cert'] + $h)->getJson('/api/agent/v1/policy')->assertForbidden();
+    }
+
+    public function test_token_is_bound_to_its_cert(): void
+    {
+        $this->bootLab();
+        [$pc, $token, $cert] = $this->enrolledPc();
+        [, , $otherCert] = $this->enrolledPc('192.168.10.22', 'PC-02');
+        $agent = $pc->agents()->first();
+        $this->assertNotSame(hash('sha256', $token), $agent->token_hash);
+
+        // Re-pointing the row at another cert (e.g. a bad DB write) does not make the token work with it.
+        $realFp = $agent->cert_fingerprint;
+        $agent->update(['cert_fingerprint' => openssl_x509_fingerprint($otherCert, 'sha256')]);
+        $this->withHeaders($this->agentHeaders($token, $otherCert))->getJson('/api/agent/v1/policy')->assertForbidden();
+        $agent->update(['cert_fingerprint' => $realFp]);
+        $this->withHeaders($this->agentHeaders($token, $cert))->getJson('/api/agent/v1/policy')->assertOk();
+    }
+
+    public function test_legacy_token_hash_is_upgraded_only_with_its_own_cert(): void
+    {
+        $this->bootLab();
+        [$pc, $token, $cert] = $this->enrolledPc();
+        [, , $otherCert] = $this->enrolledPc('192.168.10.22', 'PC-02');
+        $agent = $pc->agents()->first();
+        $agent->update(['token_hash' => hash('sha256', $token)]); // enrolled before S-11
+
+        $this->withHeaders($this->agentHeaders($token, $otherCert))->getJson('/api/agent/v1/policy')->assertForbidden();
+        $this->assertSame(hash('sha256', $token), $agent->fresh()->token_hash);
+        $this->withHeaders($this->agentHeaders($token, $cert))->getJson('/api/agent/v1/policy')->assertOk();
+        $this->assertSame(Agent::tokenHash($token, $agent->cert_fingerprint), $agent->fresh()->token_hash);
+        $this->withHeaders($this->agentHeaders($token, $cert))->getJson('/api/agent/v1/policy')->assertOk();
     }
 
     public function test_batch_ingest_alerts_dedup_and_ack(): void

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Concerns;
 
 use App\Models\Agent;
@@ -48,7 +50,7 @@ trait BuildsLab
         $pc = Pc::create(['lab_id' => Lab::current()->id, 'name' => $name, 'hostname' => strtolower($name), 'ip' => $ip,
             'os' => 'Linux', 'macs' => ['aa:bb:cc:00:00:'.substr(md5($name), 0, 2)]]);
         $token = Str::random(64);
-        Agent::create(['pc_id' => $pc->id, 'token_hash' => hash('sha256', $token), 'cert_fingerprint' => $signed['fingerprint'],
+        Agent::create(['pc_id' => $pc->id, 'token_hash' => Agent::tokenHash($token, $signed['fingerprint']), 'cert_fingerprint' => $signed['fingerprint'],
             'cert_expires_at' => $signed['expires_at']]);
 
         return [$pc, $token, $signed['pem']];

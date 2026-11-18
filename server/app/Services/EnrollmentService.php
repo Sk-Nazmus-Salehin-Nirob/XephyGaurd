@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Models\Agent;
@@ -173,7 +175,7 @@ class EnrollmentService
             Agent::query()->where('pc_id', $pc->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
             Agent::create([
                 'pc_id' => $pc->id,
-                'token_hash' => hash('sha256', $token),
+                'token_hash' => Agent::tokenHash($token, $signed['fingerprint']),
                 'cert_serial' => $signed['serial'],
                 'cert_fingerprint' => $signed['fingerprint'],
                 'cert_expires_at' => $signed['expires_at'],
