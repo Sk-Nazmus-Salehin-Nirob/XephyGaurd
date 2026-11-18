@@ -58,7 +58,8 @@ Deferred (not scheduled, ask again later):
   Done: 25 files, one-line relation/scope methods expanded, blank lines between properties. No logic change. 128 tests pass.
 - [x] S-6b Pint only: `app/Console`, `app/Events`, `app/Http/Controllers/Agent`, `bootstrap/app.php` (gap from S-1, needed before S-7)
   Done: 12 files; 6 console commands lost unused imports, event one-liners expanded, one inline `Log` FQCN became a `use`, `bootstrap/app.php` imports ordered. No logic change. 128 tests pass; `pint --test` on the 4 paths passes.
-- [ ] S-7 CI pint job blocking (was 20)
+- [x] S-7 CI pint job blocking (was 20)
+  Done: removed `continue-on-error` from the pint step in `.github/workflows/ci.yml`. `pint --test` on the whole server tree passes (0 failing files).
 
 Formatting goes first so that every later diff is logic only.
 

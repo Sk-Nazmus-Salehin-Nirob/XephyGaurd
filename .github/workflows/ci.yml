@@ -114,7 +114,6 @@ jobs:
       - run: npm ci && npm run build
       - run: cp .env.example .env && php artisan key:generate
       - run: vendor/bin/pint --test
-        continue-on-error: true
       - run: php artisan test
 
   python:
