@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Concerns;
 
 use App\Models\Agent;
+use App\Models\Event;
 use App\Models\Lab;
 use App\Models\Pc;
 use App\Models\Profile;
@@ -65,6 +66,14 @@ trait BuildsLab
     protected function profile(string $name): Profile
     {
         return Profile::query()->where('name', $name)->firstOrFail();
+    }
+
+    /** Stores a process_snapshot as the agent's latest (a pid kill must target one of these, S-30). */
+    protected function processSnapshot(Pc $pc, array $list, int $seq = 1): void
+    {
+        Event::create(['pc_id' => $pc->id, 'agent_id' => Agent::where('pc_id', $pc->id)->value('id'), 'seq' => $seq,
+            'type' => 'process_snapshot', 'occurred_at' => now(), 'received_at' => now(),
+            'data' => ['count' => count($list), 'list' => $list]]);
     }
 
     protected function netState(): array

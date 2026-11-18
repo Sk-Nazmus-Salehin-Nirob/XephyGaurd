@@ -136,13 +136,16 @@ signs the agent's own channel. Event name `command`, data `{id, type, args}`:
 |---|---|---|
 | `policy_updated` | – | re-fetch policy/signatures now (mode switch, override, publish) |
 | `message` | `text, title?, urgent?` | notification in the user session |
-| `kill` | `pid` (+ optional `start_time` from `process_snapshot.list[].start`) or `exe` | terminate (exempt system processes are never killed); with `start_time` only that exact process, never a reused pid |
+| `kill` | `pid` (+ optional `start_time` from `process_snapshot.list[].start`) or `exe` [128] | terminate (exempt system processes are never killed); with `start_time` only that exact process, never a reused pid. The CCC sends a `pid` only if it is ≥ 2 and in the PC's latest `process_snapshot` (with the same `start` when `start_time` is given) |
 | `isolate_notice` | `isolated` | tell the student network access was paused/restored |
 | `rescan` | `what` ∈ processes, network, ports, devices, extensions, artifacts, all (the dashboard sends `processes` when none is chosen; the agent treats a missing `what` as `all`) | immediate scan: `processes` = process scan + `process_snapshot`; `network`/`ports` = port, adapter and AI-traffic scan (the known-port cache is cleared); `devices` = USB/device scan (`network` also includes it); `extensions` = extension + artifact scan; `artifacts` = local-model artifact scan; `all` = everything. The agent also accepts the aliases `installed` (= `extensions`) and `browser` (= `ports`); other values do nothing and still get `ok` |
 | `ping`, `flush` | – | flush the queue now |
-| `screen_lease` | `ttl_s` (1..120) | the CCC has a live-view lease on this PC for `ttl_s` more seconds; sent with every screen token and every renewal. The agent captures the screen only while a lease is active (screen Step 15) |
+| `screen_lease` | `ttl_s` (1..3600, the agent's cap; the CCC sends the viewer lease, default 30) | the CCC has a live-view lease on this PC for `ttl_s` more seconds; sent with every screen token and every renewal. The agent captures the screen only while a lease is active (screen Step 15) |
 
 Every command is acknowledged with a `command_result` event.
+The CCC checks the arguments of every type before storing or sending a command (`CommandBus`, S-30): arguments not
+listed above are dropped, invalid ones are refused with 422 (`message`: `text` ≤ 500, `title` ≤ 120; `rescan`: one of
+the listed targets; `isolate_notice`: boolean).
 
 ## Screen relay (agent → CCC)
 `wss://<ccc>:8443/screen-gw/agent`, mTLS required (403 without a verified client cert). Opened by the
