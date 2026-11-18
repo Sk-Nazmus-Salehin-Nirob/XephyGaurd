@@ -40,7 +40,7 @@ Privacy defaults (ETHICS):
 - [ ] Step 21: Larastan/PHPStan level 5 would be a new dev dependency: ask first. Until then use `declare(strict_types=1)` on files touched by later steps (fixes none)
 
 ## Phase 3: Config and secrets
-- [ ] Step 22: `NetworkPolicyWriter` writes `state.json` with mode 0640 (umask), or pass the internal token to sidecars via env (fixes I-SERVER-17; touches F5) [CROSS: proxy I-PROXY-13]
+- [x] Step 22: `NetworkPolicyWriter` writes `state.json` with mode 0640 (umask), or pass the internal token to sidecars via env (fixes I-SERVER-17; touches F5) [CROSS: proxy I-PROXY-13] (done as S-24)
 - [ ] Step 23: Reverb `allowed_origins` limited to the dashboard origin from config (fixes I-SERVER-42; touches F13, F21)
 - [ ] Step 24: Serve PAC over HTTPS and remove the `DIRECT` fallback in Test mode (fixes I-SERVER-24; touches F71, F32) [CROSS: ccc-deploy nginx]
 - [ ] Step 25: Install script and CA fingerprint delivered over HTTPS/pinned fingerprint instructions (fixes I-SERVER-23; touches F100, F101, F99) [CROSS: ccc-deploy I-CCC-2]
@@ -78,7 +78,7 @@ Each step first adds a failing-budget test (query count via `DB::listen`) or an 
 - [ ] Step 46: Index `events (pc_id, type, seq)` migration, verified with `EXPLAIN` (fixes I-SERVER-28; touches F39, F24)
 - [ ] Step 47: Index `alerts.acknowledged_at` migration (fixes I-SERVER-41; touches F40)
 - [x] Step 48: Cache policy version per PC/session, invalidate on profile/rule/session/setting changes (fixes I-SERVER-26; touches F32, F72) (done as S-23)
-- [ ] Step 49: `NetworkPolicyWriter::build` resolves sessions/overrides in memory with a fixed query count (fixes I-SERVER-27; touches F5)
+- [x] Step 49: `NetworkPolicyWriter::build` resolves sessions/overrides in memory with a fixed query count (fixes I-SERVER-27; touches F5) (done as S-24)
 - [ ] Step 50: Report controller resolves `Student::forLogin` once into a map (fixes I-SERVER-32; touches F49, F50)
 - [ ] Step 51: Research export filters consent in SQL and streams with `lazy()` (fixes I-SERVER-33; touches F52)
 

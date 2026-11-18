@@ -19,15 +19,50 @@ class PolicyService
     /** @return array{profile: Profile, session: ?LabSession, override: ?SessionPc} */
     public function effective(Pc $pc): array
     {
-        $session = LabSession::activeFor($pc->lab_id);
-        $link = $session ? SessionPc::query()->where('lab_session_id', $session->id)->where('pc_id', $pc->id)->first() : null;
-        if ($session && $link) {
-            $profile = $link->overrideProfile ?? $session->profile;
+        return $this->effectiveMany([$pc])[$pc->id];
+    }
 
-            return ['profile' => $profile, 'session' => $session, 'override' => $link->override_profile_id ? $link : null];
+    /**
+     * effective() for many PCs with a fixed query count (S-24): active sessions of their labs, the
+     * session profiles, the PC links with their override profiles, and the Always-on profile once.
+     *
+     * @param  iterable<Pc>  $pcs
+     * @return array<int, array{profile: Profile, session: ?LabSession, override: ?SessionPc}>
+     */
+    public function effectiveMany(iterable $pcs): array
+    {
+        $pcs = collect($pcs);
+        $sessions = [];   // lab_id => latest active session (same pick as LabSession::activeFor)
+        $labIds = $pcs->pluck('lab_id')->unique()->filter()->values();
+        if ($labIds->isNotEmpty()) {
+            foreach (LabSession::query()->with('profile')->whereIn('lab_id', $labIds)->active()
+                ->orderByDesc('started_at')->orderByDesc('id')->get() as $s) {
+                $sessions[$s->lab_id] ??= $s;
+            }
+        }
+        $links = [];      // "session_id:pc_id" => link
+        if ($sessions !== []) {
+            foreach (SessionPc::query()->with('overrideProfile')
+                ->whereIn('lab_session_id', array_map(fn ($s) => $s->id, array_values($sessions)))
+                ->whereIn('pc_id', $pcs->pluck('id'))->get() as $l) {
+                $links[$l->lab_session_id.':'.$l->pc_id] ??= $l;
+            }
+        }
+        $alwaysOn = null;
+        $out = [];
+        foreach ($pcs as $pc) {
+            $session = $sessions[$pc->lab_id] ?? null;
+            $link = $session ? ($links[$session->id.':'.$pc->id] ?? null) : null;
+            if ($session && $link) {
+                $out[$pc->id] = ['profile' => $link->overrideProfile ?? $session->profile, 'session' => $session,
+                    'override' => $link->override_profile_id ? $link : null];
+
+                continue;
+            }
+            $out[$pc->id] = ['profile' => $alwaysOn ??= self::alwaysOnProfile(), 'session' => null, 'override' => null];
         }
 
-        return ['profile' => self::alwaysOnProfile(), 'session' => null, 'override' => null];
+        return $out;
     }
 
     public static function alwaysOnProfile(): Profile
