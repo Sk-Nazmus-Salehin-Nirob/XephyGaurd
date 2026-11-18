@@ -70,7 +70,9 @@ Paths are relative to the repo root. `S/` = `server/app/`, `A/` = `agent/`.
   `BlocklistService::importSeed`, `SignatureCompiler::importSeed/publish`.
 - **In/out/side effects:** reads `data/blocklists/*.txt`, `data/signatures/*.yaml`; writes `labs`,
   `profiles`, `blocklist_entries`, `rules`, `signature_versions`; writes `state.json`.
-- **Status:** working (`bootstrap_publishes_bundle_with_ai_and_ide_domains`).
+- **Status:** working (`bootstrap_publishes_bundle_with_ai_and_ide_domains`). Seed import inserts missing
+  rules and updates the others from the YAML, except rules saved in the dashboard (`rules.edited`), which
+  it never overwrites (S-49, `SignatureSeedImportTest`).
 - **Test:** 1. `cd server && php artisan xephyguard:bootstrap`. 2. `/profiles` lists 5 profiles;
   `/signatures` shows an active version.
 
@@ -611,8 +613,9 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 ### F60. Edit detection rules
 - **What:** save or toggle process/extension/port/artifact/adapter/device rules.
 - **Trigger:** `POST /rules`, `POST /rules/{rule}/toggle`.
-- **Code:** `SignatureController::saveRule`, `toggleRule`; writes `rules`; audit.
-- **Status:** unclear (no test for the endpoints).
+- **Code:** `SignatureController::saveRule`, `toggleRule`; writes `rules`; audit. `saveRule` sets
+  `edited`, so a later bootstrap seed import keeps the edit (S-49).
+- **Status:** saving tested (`SignatureSeedImportTest`); toggle has no test.
 - **Test:** 1. Disable a rule. 2. After publish (F61/F110) the agent stops flagging it.
 
 ### F61. Publish and roll back signature bundles

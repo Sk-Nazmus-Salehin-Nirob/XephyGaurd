@@ -24,7 +24,11 @@ class SignatureCompiler
 
     public function __construct(private readonly CertificateAuthority $ca) {}
 
-    /** Imports data/signatures/*.yaml into the rules table (new rules only; edits are preserved). */
+    /**
+     * Imports data/signatures/*.yaml into the rules table and returns the number of new rules.
+     * Missing rules are inserted. Existing rules take the seed's definition and description only
+     * while `edited` is false; a rule saved in the dashboard (edited) is never overwritten.
+     */
     public function importSeed(?string $dir = null): int
     {
         $dir ??= config('xephyguard.data_dir').'/signatures';
@@ -50,7 +54,7 @@ class SignatureCompiler
                         'enabled' => true,
                     ]);
                     $n++;
-                } else {
+                } elseif (! $rule->edited) {
                     $rule->update([
                         'description' => $r['description'] ?? $rule->description,
                         'definition' => $r,

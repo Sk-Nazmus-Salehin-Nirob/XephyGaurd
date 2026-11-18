@@ -11,7 +11,7 @@ class Rule extends Model
 {
     use InvalidatesPolicies;
 
-    protected $fillable = ['rule_id', 'kind', 'severity', 'description', 'definition', 'enabled', 'actions'];
+    protected $fillable = ['rule_id', 'kind', 'severity', 'description', 'definition', 'enabled', 'edited', 'actions'];
 
-    protected $casts = ['definition' => 'array', 'actions' => 'array', 'enabled' => 'boolean'];
+    protected $casts = ['definition' => 'array', 'actions' => 'array', 'enabled' => 'boolean', 'edited' => 'boolean'];
 }

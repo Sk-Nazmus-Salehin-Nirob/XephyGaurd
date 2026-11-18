@@ -90,7 +90,7 @@ class SignatureController extends Controller
         ]);
         $rule = Rule::query()->updateOrCreate(['rule_id' => $d['rule_id']], [
             'kind' => $d['kind'], 'severity' => $d['severity'], 'description' => $d['description'],
-            'definition' => json_decode($d['definition'], true), 'enabled' => (bool) ($d['enabled'] ?? true),
+            'definition' => json_decode($d['definition'], true), 'enabled' => (bool) ($d['enabled'] ?? true), 'edited' => true,
             'actions' => ! empty($d['test_actions']) ? ['test' => array_values($d['test_actions'])] : null,
         ]);
         Audit::log('rule.save', $rule, ['rule_id' => $rule->rule_id]);
