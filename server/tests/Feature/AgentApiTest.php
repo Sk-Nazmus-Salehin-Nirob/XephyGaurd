@@ -228,10 +228,15 @@ class AgentApiTest extends TestCase
         [$pc, $token, $cert] = $this->enrolledPc();
         $h = $this->agentHeaders($token, $cert);
 
-        // 1. Policy includes clipboard and keys collection
+        // 1. Always-on collects no clipboard/keys (ETHICS, S-21); a Practice session does.
+        $pol = $this->withHeaders($h)->getJson('/api/agent/v1/policy')->assertOk()->json('policy');
+        $this->assertFalse($pol['collect']['clipboard']);
+        $this->assertFalse($pol['collect']['keys']);
+        app(SessionManager::class)->start($lab, $this->profile('Practice: AI allowed, logged'), 'CS100');
         $pol = $this->withHeaders($h)->getJson('/api/agent/v1/policy')->assertOk()->json('policy');
         $this->assertTrue($pol['collect']['clipboard']);
         $this->assertTrue($pol['collect']['keys']);
+        $this->assertFalse($pol['collect']['files']);
 
         // 2. Student copies in Chrome
         $events = [

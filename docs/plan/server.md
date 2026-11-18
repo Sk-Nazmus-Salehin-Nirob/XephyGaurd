@@ -25,7 +25,7 @@ Access control and enrollment:
 - [x] Step 10: Never adopt an existing PC by MAC/hostname without `machine_uid` or explicit staff choice; flag conflicts (fixes I-SERVER-5; touches F15, F19, F20) (done as S-17)
 
 Privacy defaults (ETHICS):
-- [ ] Step 11: Built-in profiles match the ETHICS table (Always-on: window/clipboard/keys off, files only in Test, `title_capture` off/app_only) (fixes I-SERVER-7; touches F30, F29, F75, F77, F78, F79) [APPROVAL: changes F30]
+- [x] Step 11: Built-in profiles match the ETHICS table (Always-on: window/clipboard/keys off, files only in Test, `title_capture` off/app_only) (fixes I-SERVER-7; touches F30, F29, F75, F77, F78, F79) [APPROVAL: changes F30] (done as S-21)
 - [x] Step 12: `PolicyBuilder` default `title_capture` = `off`/`app_only`; one source of truth (profile or setting) documented in DECISIONS.md (fixes I-SERVER-8; touches F32, F104, F29) (done as S-20)
 - [ ] Step 13: Research export always uses the pseudonym; the toggle no longer affects it (fixes I-SERVER-9, I-ANALYSIS-4; touches F52, F57, F55)
 - [x] Step 14: Evidence screenshots: instructor+ only, tied to an audited screen view, audit every `show` (fixes I-SERVER-10 part, I-SERVER-38; touches F46)  (done as S-12)
