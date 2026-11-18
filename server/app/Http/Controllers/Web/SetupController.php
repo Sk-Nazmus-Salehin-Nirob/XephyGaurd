@@ -10,6 +10,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Audit;
 use App\Services\NetworkPolicyWriter;
+use App\Services\NoticeText;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules\Password;
@@ -31,7 +32,7 @@ class SetupController extends Controller
             'defaults' => [
                 'ccc_ip' => Setting::get('ccc_ip'), 'lab_subnet' => Setting::get('lab_subnet'),
                 'network_mode' => Setting::get('network_mode'), 'retention_days_raw' => Setting::get('retention_days_raw'),
-                'notice_text' => Setting::get('notice_text'),
+                'notice_text' => NoticeText::adminText(), 'notice_generated' => NoticeText::featureSentences(),
             ],
         ]);
     }

@@ -58,7 +58,7 @@
         <div class="fhead"><b>5. Privacy</b></div>
         <div class="fbody stack">
           <label class="field" style="max-width:220px"><span>Keep raw events for (days)</span><input name="retention_days_raw" type="number" class="input" value="{{ old('retention_days_raw', $defaults['retention_days_raw']) }}"></label>
-          <label class="field"><span>Notice shown to students</span><textarea name="notice_text" rows="4" class="textarea">{{ old('notice_text', $defaults['notice_text']) }}</textarea></label>
+          <label class="field"><span>Notice shown to students</span><textarea name="notice_text" rows="4" class="textarea">{{ old('notice_text', $defaults['notice_text']) }}</textarea><span class="help">Added automatically: “{{ $defaults['notice_generated'] }}”</span></label>
         </div>
       </section>
       <button class="btn btn-solid">Finish setup</button>

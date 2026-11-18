@@ -91,12 +91,13 @@ class PolicyService
         return $policy;
     }
 
-    /** Inputs that are not DB rows: config/env values (Setting falls back to them) and the privacy-rules file. */
+    /** Inputs that are not DB rows: config/env values (Setting falls back to them), notice features, the privacy-rules file. */
     private function stamp(): string
     {
         $rules = config('xephyguard.data_dir').'/screen/privacy_rules.yaml';
 
-        return hash('sha256', json_encode(config('xephyguard')).'|'.(is_file($rules) ? (string) filemtime($rules) : '-'));
+        return hash('sha256', json_encode(config('xephyguard')).'|'.json_encode(NoticeText::features()).'|'
+            .(is_file($rules) ? (string) filemtime($rules) : '-'));
     }
 
     /** Resolves the policy from scratch (no cache). */
@@ -131,7 +132,7 @@ class PolicyService
             'work_dirs' => $agent['work_dirs'] ?? Setting::get('work_dirs', ['~/lab', '~/Documents/Lab', '%USERPROFILE%\\Documents\\Lab']),
             'kill_exempt' => $agent['kill_exempt'] ?? [],
             'signatures_version' => SignatureVersion::active()?->version ?? '',
-            'notice_text' => Setting::get('notice_text'),
+            'notice_text' => NoticeText::text(),   // screen sentences generated from the enabled features (S-25)
             // cpu_budget_pct only once an admin has set it; the agent's default is 8 (docs/PROTOCOL.md).
             'screen' => array_filter([
                 'privacy_rules' => app(ScreenPrivacyRules::class)->rules(),

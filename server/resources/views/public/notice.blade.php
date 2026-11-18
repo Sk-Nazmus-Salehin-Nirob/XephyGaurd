@@ -18,7 +18,7 @@
   <div class="window-body notice-doc" style="padding:36px 40px">
     <div class="row" style="--gap:10px;margin-bottom:22px"><img src="images/logo-icon-only.svg" alt="" width="28" height="28" style="border-radius:7px"><b>XephyGuard</b><span class="chip plain" style="margin-left:auto">Student notice</span></div>
     <h1>This lab uses XephyGuard. Here is exactly what it does.</h1>
-    <p style="color:var(--text-2);max-width:68ch;font-size:15px">{{ !empty($text) ? $text : 'This computer is monitored by XephyGuard during lab time. We record which programs and websites are used and typing/paste statistics. We never record what you type, your clipboard text or your passwords. Lab staff can view this screen live and may save a screenshot as evidence; every view is logged.' }}</p>
+    <p style="color:var(--text-2);max-width:68ch;font-size:15px">{{ $text }}</p>
     <h2>What is noticed, and when</h2>
     <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden"><table class="tbl matrix">
       <thead><tr><th>What</th><th>Outside class</th><th>Practice</th><th>Test or exam</th></tr></thead>
@@ -28,13 +28,13 @@
         <tr><td>Which program is in front</td><td class="no">–</td><td class="yes"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></td><td class="yes"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></td></tr>
         <tr><td>Typing pace, never which keys</td><td class="no">–</td><td class="yes"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></td><td class="yes"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></td></tr>
         <tr><td>Size of a paste, never what it says</td><td class="no">–</td><td class="yes"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></td><td class="yes"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></td></tr>
-        <tr><td>Your screen, when an instructor opens it</td><td class="no">–</td><td class="no">–</td><td class="yes"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></td></tr>
+        <tr><td>Your screen, when staff open it (live, not recorded)</td>@for($i = 0; $i < 3; $i++)@if($features['live_view'])<td class="yes"><svg class="i i-sm" aria-hidden="true"><use href="#i-check"/></svg></td>@else<td class="no">–</td>@endif @endfor</tr>
       </tbody></table></div>
     <h2>Never collected</h2>
     <ul class="never">
       <li><svg class="i i-lg" aria-hidden="true"><use href="#i-keyboard"/></svg><b>Typed text</b><span>The keys you press are never recorded.</span></li>
       <li><svg class="i i-lg" aria-hidden="true"><use href="#i-clipboard"/></svg><b>Clipboard content</b><span>What you copy is never stored.</span></li>
-      <li><svg class="i i-lg" aria-hidden="true"><use href="#i-eyeoff"/></svg><b>Screen recordings</b><span>No continuous recording. Staff can view a screen live and save a still as evidence; every view is logged.</span></li>
+      <li><svg class="i i-lg" aria-hidden="true"><use href="#i-eyeoff"/></svg><b>Screen recordings</b><span>No continuous recording. @if($features['live_view']) Staff can view a screen live @if($features['screenshots']) and save a still as evidence @endif (every view is logged). @endif</span></li>
       <li><svg class="i i-lg" aria-hidden="true"><use href="#i-key"/></svg><b>Passwords</b><span>Credentials are never looked at.</span></li>
     </ul>
     <h2>A person decides</h2>

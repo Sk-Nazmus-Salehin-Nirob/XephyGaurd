@@ -45,7 +45,7 @@ Privacy defaults (ETHICS):
 - [ ] Step 24: Serve PAC over HTTPS and remove the `DIRECT` fallback in Test mode (fixes I-SERVER-24; touches F71, F32) [CROSS: ccc-deploy nginx]
 - [ ] Step 25: Install script and CA fingerprint delivered over HTTPS/pinned fingerprint instructions (fixes I-SERVER-23; touches F100, F101, F99) [CROSS: ccc-deploy I-CCC-2]
 - [ ] Step 26: Move inspect hosts, Google hide selectors, port probe paths to `data/` YAML and seed them (fixes I-SERVER-36; touches F5, F59, F69) [CROSS: data/, proxy I-PROXY-21]
-- [ ] Step 27: Default notice text states live viewing and screenshots truthfully (fixes I-SERVER-12; touches F33, F98) [APPROVAL; same text as agent Step 38]
+- [x] Step 27: Default notice text states live viewing and screenshots truthfully (fixes I-SERVER-12; touches F33, F98) [APPROVAL; same text as agent Step 38] (done as S-25)
 
 ## Phase 4: Structure (moves only)
 - [ ] Step 28: Move inspector query code from `DashboardController` into an `InspectorQueries` service, behavior identical (fixes none; prepares I-SERVER-34, I-SERVER-41; touches F24)

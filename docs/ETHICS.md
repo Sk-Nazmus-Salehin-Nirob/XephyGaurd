@@ -48,6 +48,8 @@ Window names and titles are sent to the CCC only under the existing "Name of the
 * An always-visible indicator on every PC ("Monitored by XephyGuard · mode: Test").
 * A login banner on Windows and Linux.
 * A public page on the CCC (`http://<ccc>/notice`) explaining the table above.
+* The notice text (indicator and `/notice`) is the lab's own text plus sentences generated from the screen features
+  that are really on (live view, screenshot evidence), so a custom text cannot leave them out.
 * Students may ask to see the data recorded about them.
 
 ## Decisions

@@ -9,6 +9,7 @@ use App\Models\Lab;
 use App\Models\Pc;
 use App\Models\Setting;
 use App\Services\CertificateAuthority;
+use App\Services\NoticeText;
 use App\Services\PolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -21,7 +22,7 @@ class PublicController extends Controller
 {
     public function notice()
     {
-        return view('public.notice', ['text' => Setting::get('notice_text'), 'lab' => Lab::query()->first()]);
+        return view('public.notice', ['text' => NoticeText::text(), 'features' => NoticeText::features(), 'lab' => Lab::query()->first()]);
     }
 
     public function caCert(): Response

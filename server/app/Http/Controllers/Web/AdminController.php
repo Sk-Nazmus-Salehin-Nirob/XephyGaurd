@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Audit;
 use App\Services\Doctor;
 use App\Services\NetworkPolicyWriter;
+use App\Services\NoticeText;
 use App\Services\PrivacySettings;
 use App\Services\ScreenGatewayRevoker;
 use Illuminate\Http\Request;
@@ -47,6 +48,8 @@ class AdminController extends Controller
         $values['paste_alert_chars'] ??= 800;
         $values['timezone'] ??= config('app.timezone', 'UTC');
         $values['google_search_url'] ??= 'https://www.google.com/search?q={searchTerms}&udm=14';
+        $values['notice_text'] = NoticeText::adminText();
+        $values['notice_generated'] = NoticeText::featureSentences();
         $values['screen_cpu_budget_pct'] = Setting::get('screen.cpu_budget_pct', 8);
         foreach (['always_on', 'practice', 'test'] as $m) {
             $values["title_capture_$m"] = PrivacySettings::titleCaptureSetting($m);
