@@ -27,7 +27,7 @@ Access control and enrollment:
 Privacy defaults (ETHICS):
 - [x] Step 11: Built-in profiles match the ETHICS table (Always-on: window/clipboard/keys off, files only in Test, `title_capture` off/app_only) (fixes I-SERVER-7; touches F30, F29, F75, F77, F78, F79) [APPROVAL: changes F30] (done as S-21)
 - [x] Step 12: `PolicyBuilder` default `title_capture` = `off`/`app_only`; one source of truth (profile or setting) documented in DECISIONS.md (fixes I-SERVER-8; touches F32, F104, F29) (done as S-20)
-- [ ] Step 13: Research export always uses the pseudonym; the toggle no longer affects it (fixes I-SERVER-9, I-ANALYSIS-4; touches F52, F57, F55)
+- [x] Step 13: (done as S-41) Research export always uses the pseudonym; the toggle no longer affects it (fixes I-SERVER-9, I-ANALYSIS-4; touches F52, F57, F55)
 - [x] Step 14: Evidence screenshots: instructor+ only, tied to an audited screen view, audit every `show` (fixes I-SERVER-10 part, I-SERVER-38; touches F46)  (done as S-12)
 - [x] Step 15: Owner decision: ethics approval for F46 or remove it (fixes I-SERVER-10; touches F46) [APPROVAL] (done as S-13)
 
@@ -80,7 +80,7 @@ Each step first adds a failing-budget test (query count via `DB::listen`) or an 
 - [x] Step 48: Cache policy version per PC/session, invalidate on profile/rule/session/setting changes (fixes I-SERVER-26; touches F32, F72) (done as S-23)
 - [x] Step 49: `NetworkPolicyWriter::build` resolves sessions/overrides in memory with a fixed query count (fixes I-SERVER-27; touches F5) (done as S-24)
 - [x] Step 50: (done as S-40) Report controller resolves `Student::forLogin` once into a map (fixes I-SERVER-32; touches F49, F50)
-- [ ] Step 51: Research export filters consent in SQL and streams with `lazy()` (fixes I-SERVER-33; touches F52)
+- [x] Step 51: (done as S-41) Research export filters consent in SQL and streams with `lazy()` (fixes I-SERVER-33; touches F52)
 
 ## Phase 9: Dependency updates
 - [ ] Step 52: Caret ranges for `barryvdh/laravel-dompdf`, `firebase/php-jwt`, `symfony/yaml` matching `composer.lock` (fixes I-SERVER-29; touches F51, F44)

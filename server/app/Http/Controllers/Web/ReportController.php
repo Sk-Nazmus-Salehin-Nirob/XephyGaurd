@@ -8,11 +8,10 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ScoreSession;
 use App\Models\LabSession;
 use App\Models\Report;
-use App\Models\Score;
-use App\Models\Setting;
 use App\Models\Student;
 use App\Services\Audit;
 use App\Services\ReportModel;
+use App\Services\ResearchExport;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -87,27 +86,17 @@ class ReportController extends Controller
         }, "xephyguard-session-{$session->id}.csv");
     }
 
-    /** Research export: only consenting students, pseudonymized, no names/logins. */
+    /** Research export: only consenting students, always pseudonymised, no names/logins/student numbers. */
     public function research(Request $request): StreamedResponse
     {
         $d = $request->validate(['from' => 'nullable|date', 'until' => 'nullable|date']);
         Audit::log('report.research_export', null, $d);
-        $pseudo = (bool) Setting::get('pseudonymize_exports', true);
-        $rows = Score::query()->with(['student.latestConsent', 'pc:id,name'])
-            ->join('lab_sessions', 'lab_sessions.id', '=', 'scores.lab_session_id')
-            ->when($d['from'] ?? null, fn ($q, $v) => $q->where('lab_sessions.starts_at', '>=', $v))
-            ->when($d['until'] ?? null, fn ($q, $v) => $q->where('lab_sessions.starts_at', '<=', $v))
-            ->select('scores.*', 'lab_sessions.mode', 'lab_sessions.course', 'lab_sessions.experiment_condition',
-                'lab_sessions.experiment_group', 'lab_sessions.starts_at')->get()
-            ->filter(fn ($s) => $s->student && $s->student->consentsToResearch());
 
-        return response()->streamDownload(function () use ($rows, $pseudo) {
+        return response()->streamDownload(function () use ($d) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['session_id', 'course', 'mode', 'condition', 'group', 'participant', 'method', 'score', 'confidence', 'features_json']);
-            foreach ($rows as $s) {
-                fputcsv($out, [$s->lab_session_id, $s->course, $s->mode, $s->experiment_condition, $s->experiment_group,
-                    $pseudo ? $s->student->pseudonym : $s->student->student_number, $s->method, $s->score, $s->confidence,
-                    json_encode($s->features)]);
+            fputcsv($out, ResearchExport::COLUMNS);
+            foreach (ResearchExport::rows($d['from'] ?? null, $d['until'] ?? null) as $row) {
+                fputcsv($out, $row);
             }
             fclose($out);
         }, 'xephyguard-research-export.csv');
