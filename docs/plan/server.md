@@ -53,7 +53,7 @@ Privacy defaults (ETHICS):
 
 ## Phase 5: Duplication and dead code
 - [ ] Step 30: Wire `AgentHealthClassifier` into `detectSilent` and store its reasons in alert details (keeps F25/F108 as documented) (fixes I-SERVER-35; touches F25, F108)
-- [ ] Step 31: Update docs/PROTOCOL.md for `observed` action and `network/ports/devices` rescan (fixes I-SERVER-37; touches F37, F70)
+- [x] Step 31: Update docs/PROTOCOL.md for `observed` action and `network/ports/devices` rescan (fixes I-SERVER-37; touches F37, F70) (done as S-26)
 
 ## Phase 6: Errors, logging, validation
 - [ ] Step 32: `Audit::log` reports failures and fails the action (or queues retry) (fixes I-SERVER-14; touches F105)

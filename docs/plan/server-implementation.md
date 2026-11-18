@@ -106,7 +106,8 @@ Formatting goes first so that every later diff is logic only.
   Done: new `App\Services\NoticeText`: admin text (or `BASE`, config default without screen sentence) + sentences generated from `features()` (live view = screen-gateway secret set; screenshots need an audited live view, so same flag); the old default's screen sentence is stripped from stored texts. Policy `notice_text`, `/notice` (screen row ✓ in every mode when on, matching ETHICS "on request") and the settings/wizard help use it; the policy cache stamp includes the features. Agent unchanged (shows the policy text; its fallback is already truthful). ETHICS "Transparency", F33/F98 docs. New `NoticeTextTest` (3 tests); untracked FeatureSessionsTest notice assertion updated locally (exact → starts with). 161 tests pass.
 
 ## M4: ingest schema and commands (was 31, 33, 34, 35)
-- [ ] S-26 Docs: PROTOCOL.md documents the `observed` action and the `network/ports/devices` rescan (was 31). The allow-lists below come from this.
+- [x] S-26 Docs: PROTOCOL.md documents the `observed` action and the `network/ports/devices` rescan (was 31). The allow-lists below come from this.
+  Done: net-events section lists `observed`, the field limits from `NetEventsController` and when an alert is raised; the `rescan` row lists every `what` the dashboard sends and what the agent scans for each (plus its `installed`/`browser` aliases). Checked against `agent.cpp` rescan, `xephyguard_addon.py`, `NetEventsController`, `SessionController::rescan`. Docs only.
 - [ ] S-27 Move only: `validate()` and the heartbeat checks move from `EventIngestor` into `Ingest\BatchValidator`.
 - [ ] S-28 [O] Per-event-type schema: field allow-list, plus type and length limits for heartbeat strings, `description` and `subject` (was 33, 34 part).
 - [ ] S-29 [O] Titles that the effective `title_capture` from PolicyService does not allow are dropped (was 34).

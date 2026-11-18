@@ -133,7 +133,7 @@ signs the agent's own channel. Event name `command`, data `{id, type, args}`:
 | `message` | `text, title?, urgent?` | notification in the user session |
 | `kill` | `pid` (+ optional `start_time` from `process_snapshot.list[].start`) or `exe` | terminate (exempt system processes are never killed); with `start_time` only that exact process, never a reused pid |
 | `isolate_notice` | `isolated` | tell the student network access was paused/restored |
-| `rescan` | `what` ∈ extensions, artifacts, processes, all | immediate scan |
+| `rescan` | `what` ∈ processes, network, ports, devices, extensions, artifacts, all (the dashboard sends `processes` when none is chosen; the agent treats a missing `what` as `all`) | immediate scan: `processes` = process scan + `process_snapshot`; `network`/`ports` = port, adapter and AI-traffic scan (the known-port cache is cleared); `devices` = USB/device scan (`network` also includes it); `extensions` = extension + artifact scan; `artifacts` = local-model artifact scan; `all` = everything. The agent also accepts the aliases `installed` (= `extensions`) and `browser` (= `ports`); other values do nothing and still get `ok` |
 | `ping`, `flush` | – | flush the queue now |
 | `screen_lease` | `ttl_s` (1..120) | the CCC has a live-view lease on this PC for `ttl_s` more seconds; sent with every screen token and every renewal. The agent captures the screen only while a lease is active (screen Step 15) |
 
@@ -246,4 +246,9 @@ no network connection for the screen.
 
 ## Proxy → CCC (internal)
 `POST http://127.0.0.1:8000/api/internal/net-events` with `Authorization: Bearer $XG_INTERNAL_TOKEN`,
-`{events:[{client_ip, host, path?, layer: sni|http|path|search-ai, action: blocked|allowed|rewritten, category?, matched?, ts}]}`.
+`{events:[{client_ip, host, path?, layer: sni|http|path|search-ai, action: blocked|allowed|rewritten|observed, category?, matched?, ts}]}`.
+Limits: ≤ 1000 events, `host` ≤ 255, `path` ≤ 512, `layer` ≤ 16, `category` ≤ 24, `matched` ≤ 255 chars, `ts` in ms.
+`observed` = a passed (not blocked) connection or request to a known AI (`category: ai`) or IDE-AI backend
+(`category: ide`) domain or path; the proxy sends it at most once per (client IP, matched domain) per 30 s. For a known
+PC the CCC raises a `proxy.ai_observed` / `proxy.ide_ai_observed` alert (high, at most one per PC, session and title per
+30 min); other categories and unknown IPs are only stored in `net_events`.
