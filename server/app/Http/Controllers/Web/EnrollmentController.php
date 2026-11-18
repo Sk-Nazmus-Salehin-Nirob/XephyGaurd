@@ -1,9 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Models\Enrollment;
+use App\Models\EnrollmentToken;
 use App\Models\Lab;
 use App\Models\Pc;
 use App\Models\Setting;
@@ -37,7 +40,26 @@ class EnrollmentController extends Controller
             'recent' => Enrollment::query()->where('status', '!=', 'pending')->with('pc')->latest('decided_at')->limit(10)->get(),
             'pcs' => Pc::query()->where('lab_id', $lab->id)->with('agent')->orderByRaw('retired_at is not null')->orderBy('name')->get(),
             'downloads' => $downloads,
+            'tokens' => EnrollmentToken::query()->usable()->where('lab_id', $lab->id)->with('creator:id,name')->latest()->get(),
         ]);
+    }
+
+    /** One-time per-PC enrollment token; the plain value is shown once and stored hashed (S-14). */
+    public function createToken(Request $request)
+    {
+        $d = $request->validate(['pc_name' => 'nullable|string|max:64', 'hours' => 'nullable|integer|min:1|max:720']);
+        [$row, $plain] = EnrollmentToken::issue(Lab::current(), $request->user(), $d['pc_name'] ?? null, (int) ($d['hours'] ?? 72));
+        Audit::log('enrollment.token_create', $row, ['pc_name' => $row->pc_name, 'expires_at' => $row->expires_at->toIso8601String()]);
+
+        return back()->with('enroll_token', $plain)->with('status', 'One-time enrollment token created. Copy it now; it is not shown again.');
+    }
+
+    public function revokeToken(EnrollmentToken $token)
+    {
+        $token->forceFill(['revoked_at' => now()])->save();
+        Audit::log('enrollment.token_revoke', $token, ['pc_name' => $token->pc_name]);
+
+        return back()->with('status', 'Enrollment token revoked.');
     }
 
     public function approve(Request $request, Enrollment $enrollment, EnrollmentService $svc)

@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\Agent;
 use App\Models\Enrollment;
+use App\Models\EnrollmentToken;
 use App\Models\Lab;
 use App\Models\Pc;
 use App\Models\User;
@@ -18,7 +19,7 @@ class EnrollmentService
     public function __construct(private readonly CertificateAuthority $ca) {}
 
     /** @return array{enrollment: Enrollment, poll_token: string} */
-    public function register(Lab $lab, array $data, string $ip): array
+    public function register(Lab $lab, array $data, string $ip, ?EnrollmentToken $enrollToken = null): array
     {
         $pollToken = Str::random(48);
         $macs = array_values(array_unique(array_map('strtolower', $data['macs'] ?? [])));
@@ -55,16 +56,21 @@ class EnrollmentService
             'csr_pem' => $data['csr_pem'],
             'poll_token_hash' => hash('sha256', $pollToken),
         ]);
-        if ($lab->auto_approve && array_intersect($macs, array_map('strtolower', $lab->auto_approve_macs ?? []))) {
-            $this->approve($enrollment, null);
+        if ($enrollToken !== null) {
+            // consume() is atomic: if another request used the token first, this one stays pending.
+            if ($enrollToken->consume($enrollment)) {
+                $this->approve($enrollment, null, $enrollToken->pc_name, 'token');
+            }
+        } elseif ($lab->auto_approve && array_intersect($macs, array_map('strtolower', $lab->auto_approve_macs ?? []))) {
+            $this->approve($enrollment, null, null, 'mac');
         }
 
         return ['enrollment' => $enrollment->fresh(), 'poll_token' => $pollToken];
     }
 
-    public function approve(Enrollment $e, ?User $by, ?string $name = null): Pc
+    public function approve(Enrollment $e, ?User $by, ?string $name = null, string $via = 'staff'): Pc
     {
-        return DB::transaction(function () use ($e, $by, $name) {
+        return DB::transaction(function () use ($e, $by, $name, $via) {
             // If already approved, return associated PC immediately
             if ($e->status === 'approved' && $e->pc_id) {
                 return $e->pc ?: Pc::findOrFail($e->pc_id);
@@ -185,7 +191,7 @@ class EnrollmentService
                 'status' => 'approved', 'pc_id' => $pc->id, 'cert_pem' => $signed['pem'], 'issued_token' => $token,
                 'decided_by' => $by?->id, 'decided_at' => now(),
             ])->save();
-            Audit::log('enrollment.approve', $e, ['pc_id' => $pc->id, 'hostname' => $e->hostname, 'auto' => $by === null, 'new_pc' => $isNew, 'machine_uid' => $uid]);
+            Audit::log('enrollment.approve', $e, ['pc_id' => $pc->id, 'hostname' => $e->hostname, 'auto' => $by === null, 'via' => $via, 'new_pc' => $isNew, 'machine_uid' => $uid]);
 
             return $pc;
         });

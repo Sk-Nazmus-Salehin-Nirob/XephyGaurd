@@ -15,12 +15,12 @@ passes `--trust-on-first-use`, from the first download. Every later TLS connecti
 | Step | Request | Auth |
 |---|---|---|
 | 1 | `GET http://<ccc>/ca.crt` (only if the CA is not installed yet; fingerprint must match) | none |
-| 2 | `POST /api/agent/v1/enroll` `{enroll_key, hostname, os, os_version, macs[], agent_version, csr_pem}` → `201 {enrollment_id, poll_token, status:"pending"}` | lab key (rotatable), rate-limited |
+| 2 | `POST /api/agent/v1/enroll` `{enroll_key \| enroll_token, hostname, os, os_version, macs[], machine_uid, agent_version, csr_pem}` → `201 {enrollment_id, poll_token, status:"pending"\|"approved"}` | lab key (rotatable) → stays `pending` until staff approve; or a one-time per-PC `enroll_token` (`xgen_` + 40 chars, made on `/enroll`, expires, stored hashed) → `approved` at once and the token is used up; a given token that is unknown, used, revoked or expired → 403. Rate-limited |
 | 3 | `GET /api/agent/v1/enroll/{id}?poll_token=…` → `pending` \| `approved {pc_id, name, token, cert_pem, ca_pem}` \| `rejected` \| `collected` | poll token |
 
 The CSR key is EC P-256, generated on the PC (private key 0600, never leaves the PC). The CCC signs a
 client certificate (`extendedKeyUsage=clientAuth`, 825 days) and issues a 64-character bearer token
-(stored hashed). Token and certificate are handed out **once**. Re-enrolling a PC with a known MAC
+(stored hashed, bound to the cert fingerprint). Token and certificate are handed out **once**. Re-enrolling a PC with a known MAC
 keeps its history and revokes the old credentials.
 
 ## Authenticated requests

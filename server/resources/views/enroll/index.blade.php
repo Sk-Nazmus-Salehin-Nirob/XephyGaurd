@@ -64,6 +64,26 @@
             </form>
           </div>
         </div>
+        <div><div class="cmd-label">One-time PC token (auto-approves one PC; the lab key alone waits for approval)</div>
+          @if (session('enroll_token'))
+          <div class="key"><code>{{ session('enroll_token') }}</code><button type="button" class="btn btn-sm" @click="xgCopy(@js(session('enroll_token')), 'Token copied')">Copy</button></div>
+          <p class="help">Shown once. Pass it to the installer as the enrollment token.</p>
+          @endif
+          <form method="post" action="{{ route('enroll.token') }}" class="row" style="--gap:6px">
+            @csrf
+            <input class="input input-sm" name="pc_name" maxlength="64" placeholder="PC name (optional)" style="width:180px">
+            <select class="input input-sm" name="hours"><option value="24">1 day</option><option value="72" selected>3 days</option><option value="168">7 days</option></select>
+            <button type="submit" class="btn btn-sm">Create token</button>
+          </form>
+          @if ($tokens->count())
+          <ul class="small muted" style="margin-top:6px">
+            @foreach ($tokens as $t)
+            <li>{{ $t->pc_name ?: 'any PC' }}, expires {{ $t->expires_at->format('Y-m-d H:i') }}, by {{ $t->creator?->name ?? '—' }}
+              <form method="post" action="{{ route('enroll.token_revoke', $t) }}" style="display:inline">@csrf<button type="submit" class="btn btn-sm btn-quiet">Revoke</button></form></li>
+            @endforeach
+          </ul>
+          @endif
+        </div>
         <div>
           <div class="seg" style="margin-bottom:10px"><button :aria-pressed="os === 'win'" @click="os = 'win'">Windows</button><button :aria-pressed="os === 'linux'" @click="os = 'linux'">Ubuntu / Debian</button></div>
           <div class="cmd"><pre x-text="cmd"></pre><button class="btn btn-sm copy" @click="xgCopy(cmd, 'Command copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg></button></div>

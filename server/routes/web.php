@@ -63,6 +63,8 @@ Route::group([], function () {
             Route::post('/enroll/{enrollment}/approve', [EnrollmentController::class, 'approve'])->name('enroll.approve');
             Route::post('/enroll/approve-all', [EnrollmentController::class, 'approveAll'])->name('enroll.approve_all');
             Route::post('/enroll/{enrollment}/reject', [EnrollmentController::class, 'reject'])->name('enroll.reject');
+            Route::post('/enroll/tokens', [EnrollmentController::class, 'createToken'])->name('enroll.token');
+            Route::post('/enroll/tokens/{token}/revoke', [EnrollmentController::class, 'revokeToken'])->name('enroll.token_revoke');
             Route::post('/pcs/{pc}/rename', [EnrollmentController::class, 'rename'])->name('pcs.rename');
             Route::post('/lab/layout', [DashboardController::class, 'saveLayout'])->name('lab.layout');
         });
