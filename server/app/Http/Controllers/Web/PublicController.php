@@ -25,6 +25,14 @@ class PublicController extends Controller
         return view('public.notice', ['text' => NoticeText::text(), 'features' => NoticeText::features(), 'lab' => Lab::query()->first()]);
     }
 
+    /** F26 demo dataset: served only when APP_ENV=local, 404 everywhere else (S-50). */
+    public function demoData()
+    {
+        abort_unless(app()->environment('local'), 404);
+
+        return response()->file(resource_path('demo/data.js'), ['Content-Type' => 'application/javascript']);
+    }
+
     public function caCert(): Response
     {
         return response(CertificateAuthority::fromConfig()->certPem(), 200, [

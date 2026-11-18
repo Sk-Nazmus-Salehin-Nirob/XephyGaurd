@@ -105,7 +105,7 @@ Overall proposal: **policy as a versioned, cached, signed document, built by one
 | F17 Rotate key | Web action | Keep; rotate invalidates tokens | |
 | F18 Rename | Web | Keep | |
 | F20 Agent auth | mTLS + bearer | mTLS only with fingerprint pin; drop the bearer once enrolled, or bind it to the cert | One credential less to steal |
-| F22, F23, F26 Seat layout/map/demo | Editor + live map | Keep; demo behind `APP_ENV=local` | |
+| F22, F23, F26 Seat layout/map/demo | Editor + live map | Keep; demo behind `APP_ENV=local` (done as S-50) | |
 | F24, F25, F108 Inspector, health classification | Controller queries, dead classifier | `InspectorQueries` + `AgentHealthClassifier` with reasons | Traceable reasons invariant |
 | F27, F28, F29, F30, F31, F107 Sessions/profiles/timetable | Session + profile rows, minute tick | Profile versions are immutable; sessions point to a version | Historic sessions stay explainable |
 | F32, F33, F98 Policy/notice | Built on every batch | Policy service (above); notice generated from the actual enabled features | Truthful notice |

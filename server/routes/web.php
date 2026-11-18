@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Route;
 // ---- public (no login): student notice, CA certificate, agent installers -------------------
 Route::get('/notice', [PublicController::class, 'notice'])->name('notice');
 Route::get('/notice.html', [PublicController::class, 'notice'])->name('notice.html');
+Route::get('/js/data.js', [PublicController::class, 'demoData'])->name('demo.data');
 Route::get('/ca.crt', [PublicController::class, 'caCert'])->name('ca.cert');
 Route::get('/install/linux.sh', [PublicController::class, 'linuxInstaller'])->name('install.linux');
 Route::get('/proxy.pac', [PublicController::class, 'proxyPac'])->name('proxy.pac');
