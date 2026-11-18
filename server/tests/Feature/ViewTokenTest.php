@@ -226,6 +226,26 @@ class ViewTokenTest extends TestCase
         $renewEnded->assertStatus(422);
     }
 
+    public function test_stop_reports_a_positive_duration(): void
+    {
+        $this->bootLab();
+        $instructor = $this->user('instructor');
+        [$pc] = $this->enrolledPc('192.168.10.35', 'PC-06');
+
+        $this->travelTo(now()->startOfSecond());
+        $audit = ScreenViewAudit::create([
+            'instructor_id' => $instructor->id,
+            'pc_id' => $pc->id,
+            'started_at' => now(),
+        ]);
+
+        $this->travel(90)->seconds();
+        $res = $this->actingAs($instructor)->postJson("/api/screen/{$audit->id}/stop");
+
+        $res->assertOk();
+        $this->assertSame(90, $res->json('duration_s'));
+    }
+
     public function test_issue_token_directly_for_pc_without_session(): void
     {
         $this->bootLab();

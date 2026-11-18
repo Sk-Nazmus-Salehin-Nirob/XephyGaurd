@@ -211,7 +211,7 @@ class ViewTokenController extends Controller
         return response()->json([
             'status' => 'stopped',
             'audit_id' => $audit->id,
-            'duration_s' => $audit->ended_at->diffInSeconds($audit->started_at),
+            'duration_s' => (int) $audit->started_at->diffInSeconds($audit->ended_at),
         ]);
     }
 
