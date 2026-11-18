@@ -62,8 +62,8 @@ discuss flags with the student before acting. Students with accommodations can b
 behavioral signals are then ignored and the exemption is logged.
 
 ## Retention and access
-* Raw events: deleted after the configured period (default 140 days ≈ one semester).
-* Reports and scores: kept for the configured period (default 5 years) for academic-integrity appeals.
+* Raw events, commands (including message text sent to students) and evidence images: deleted after the configured period (default 140 days ≈ one semester).
+* Reports, scores, alerts, screen-view audits and student–PC assignments: kept for the configured period (default 5 years) for academic-integrity appeals.
 * Access by role (admin / instructor / assistant); every action is recorded in an append-only audit log.
 
 ## Research use

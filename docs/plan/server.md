@@ -69,7 +69,7 @@ Privacy defaults (ETHICS):
 - [ ] Step 40: `importSeed` inserts only missing rules (or `edited` flag) so dashboard edits survive bootstrap (fixes I-SERVER-19; touches F2, F60, F58)
 - [ ] Step 41: HTML session report shows score/points as stored, adds not-observable column, matches PDF/CSV (fixes I-SERVER-20; touches F49, F51)
 - [x] Step 42: `switchProfile` and `setOverride` reject non-active sessions (fixes I-SERVER-21; touches F27, F28) (done as S-22)
-- [ ] Step 43: Retention purge covers `alerts`, `scores`, `commands`, `screen_view_audits`, `student_pc_assignments` per raw/report retention (fixes I-SERVER-15; touches F109)
+- [x] Step 43: (done as S-37) Retention purge covers `alerts`, `scores`, `commands`, `screen_view_audits`, `student_pc_assignments` per raw/report retention (fixes I-SERVER-15; touches F109)
 - [ ] Step 44: Inspector `browser_tabs` limited to the session window; score refresh moved out of the GET (fixes I-SERVER-34; touches F24, F42)
 - [ ] Step 45: Fix `ended_at` / `started_at` `diffInSeconds` order (fixes I-SERVER-30 part; touches F44)
 
