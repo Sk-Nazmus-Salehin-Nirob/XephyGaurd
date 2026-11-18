@@ -30,7 +30,8 @@ No move-only items in the audit.
 ## Phase 5: Duplication and dead code
 - [ ] Step 11: Remove `alert_titles`, `categories`, `BURST_WINDOW_S`, `ScoreResult.features`, unused `sp.student_id`, `source_app`, `target_app` loads (fixes I-ANALYSIS-24; touches F48)
 - [ ] Step 12: Use `IDLE_GAP_S` in the reason label (fixes I-ANALYSIS-19; touches F48)
-- [ ] Step 13: One research export implementation: the CLI calls the same column list and pseudonym rule as the server, or the CLI is removed (decide) (fixes I-ANALYSIS-22; touches F52) [APPROVAL; CROSS: server Step 13]
+- [x] Step 13: One research export implementation: the CLI calls the same column list and pseudonym rule as the server, or the CLI is removed (decide) (fixes I-ANALYSIS-22; touches F52) [APPROVAL; CROSS: server Step 13]
+  Done 2026-11-18: decided **remove** (DECISIONS #30). `export.py` and the `export` subcommand are gone; the server `ResearchExport` (S-41) is the only export. Reason: the CLI had no role check and no audit row, and auditing from Python would duplicate the audit hash chain. Lost: Parquet output (convert the CSV). Test change (needs your OK): the two CLI export tests (incl. Step 5's) are deleted with the code; their checks (consent order, withdrawal, no number/name/login) live in server `ResearchExportTest`. New `test_cli_has_no_research_export`. pyarrow now unused (Step 27). 17 tests pass; ruff not run (not installed).
 
 ## Phase 6: Errors, logging, validation
 - [ ] Step 14: `ThreadingHTTPServer` handler `timeout`, check token before reading body, negative `Content-Length` rejected (fixes I-ANALYSIS-5, I-ANALYSIS-15; touches F9)
@@ -62,4 +63,4 @@ Overall proposal: **make analysis a library plus a job, not a network service.**
 |---|---|---|---|
 | F9 Scoring service (HTTP) | `ThreadingHTTPServer` on 0.0.0.0 with shared token | Job-queue worker polling the DB (or unix socket), own DB user with read on events and write on scores only | No network surface, least privilege; needs a server job change |
 | F48 Scoring v1 rules + v2 Isolation Forest | Rules with points; v2 min-max per cohort | Keep v1 as the only thing that produces points; v2 shown separately as a "unusual compared to cohort" flag with its top features as reasons, baseline stored per course | Every flag stays explainable; v2 never alone triggers anything |
-| F52 / F53 Research export, rescore | Server and CLI both | Server owns export; analysis exposes `rescore(session)` only | One implementation |
+| F52 / F53 Research export, rescore | Server only (Step 13 done) | Server owns export; analysis exposes `rescore(session)` only | One implementation |

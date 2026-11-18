@@ -1,9 +1,8 @@
 import json
 
-import pandas as pd
 import pytest
 
-from xg_analysis.export import research_export
+from xg_analysis.__main__ import main
 from xg_analysis.features import compute, load_session
 from xg_analysis.pipeline import score_session
 from xg_analysis.scoring import score_v1
@@ -118,25 +117,7 @@ def test_v2_isolation_forest_alongside_v1(lab, db):
     assert db.conn.execute("SELECT count(*) FROM scores WHERE method = 'v1'").fetchone()[0] == 9
 
 
-def test_research_export_only_consenting_and_pseudonymized(lab, db, tmp_path):
-    honest_and_suspicious(lab)
-    db.conn.execute("INSERT INTO consents (student_id, purpose, granted, form_version, recorded_at) VALUES (2, 'research', 0, '1.0', '2026-12-01 00:00:00')")
-    db.conn.commit()
-    score_session(db, 10, v2=False)
-    files = research_export(db, tmp_path, "csv")
-    text = files[0].read_text()
-    assert "P-0001" in text and "P-0002" not in text        # bob withdrew consent
-    assert "alice" not in text and "Student" not in text
-
-
-def test_research_export_never_has_student_number_name_or_login(lab, db, tmp_path):
-    honest_and_suspicious(lab)
-    score_session(db, 10, v2=False)
-    for fmt in ("csv", "parquet"):
-        files = research_export(db, tmp_path / fmt, fmt)
-        table = pd.read_parquet(files[0]) if fmt == "parquet" else pd.read_csv(files[0])
-        assert not table.empty
-        assert not {"student_number", "name", "login", "student_id", "user"} & set(table.columns)
-        cells = set(table.astype(str).to_numpy().ravel())
-        assert not {"S0001", "S0002", "alice", "bob", "Student 1", "Student 2"} & cells
-        assert "S0001" not in files[0].read_bytes().decode("latin-1")
+def test_cli_has_no_research_export():
+    # The one research export is the server's ResearchExport (audited, hash-chained audit log; DECISIONS #30).
+    with pytest.raises(SystemExit):
+        main(["export", "--out", "/tmp/never-written"])

@@ -9,7 +9,7 @@ All tools live in `eval/` and write into `eval/results/<run>/` (git-ignored).
 | Agent CPU / RAM / uplink | `eval/harness/agent_overhead.sh` (on a PC) and `metrics.py overhead` (all PCs) | JSON vs. targets (CPU < 1 %, RSS < 30 MB, < 5 MB/h) |
 | Load: 100 PCs, events < 1 s | `eval/simulator/fake_agents.py --n 100` | p50/p95/max ingest latency |
 | Google AI Overview still suppressed | `eval/live_checks/google_ai_overview.py` (weekly cron) | exit code |
-| Research data export | dashboard *Reports → Research export*, or `python -m xg_analysis export` | pseudonymized CSV/Parquet, consenting students only |
+| Research data export | dashboard *Reports → Research export* | pseudonymized CSV, consenting students only (convert to Parquet with pandas if needed) |
 | Results table for the paper | `eval/export/metrics.py table --out eval/results/<run>` | `results_table.md` |
 
 ## Red-team run
