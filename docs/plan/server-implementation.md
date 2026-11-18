@@ -56,7 +56,8 @@ Deferred (not scheduled, ask again later):
   Done: 7 tracked files (1 migration, routes/console.php, 5 tests); config was already clean. 3 unused imports removed, inline FQCNs became `use`. Untracked FeatureAdminTest/FeatureSessionsTest left untouched. 128 tests pass.
 - [x] S-6a Pint only: `app/Models` (gap from S-1, needed before S-7)
   Done: 25 files, one-line relation/scope methods expanded, blank lines between properties. No logic change. 128 tests pass.
-- [ ] S-6b Pint only: `app/Console`, `app/Events`, `app/Http/Controllers/Agent`, `bootstrap/app.php` (gap from S-1, needed before S-7)
+- [x] S-6b Pint only: `app/Console`, `app/Events`, `app/Http/Controllers/Agent`, `bootstrap/app.php` (gap from S-1, needed before S-7)
+  Done: 12 files; 6 console commands lost unused imports, event one-liners expanded, one inline `Log` FQCN became a `use`, `bootstrap/app.php` imports ordered. No logic change. 128 tests pass; `pint --test` on the 4 paths passes.
 - [ ] S-7 CI pint job blocking (was 20)
 
 Formatting goes first so that every later diff is logic only.

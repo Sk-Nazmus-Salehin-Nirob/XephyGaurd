@@ -8,6 +8,7 @@ use App\Services\EventIngestor;
 use App\Services\PolicyBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AgentController extends Controller
 {
@@ -36,7 +37,8 @@ class AgentController extends Controller
         $agent = $this->agent($request);
 
         if ($data['channel_name'] !== "private-pc.{$agent->pc_id}") {
-            \Illuminate\Support\Facades\Log::warning("AgentController broadcastAuth 403: requested={$data['channel_name']}, expected=private-pc.{$agent->pc_id}");
+            Log::warning("AgentController broadcastAuth 403: requested={$data['channel_name']}, expected=private-pc.{$agent->pc_id}");
+
             return response()->json(['error' => 'agents may only subscribe to their own channel'], 403);
         }
 
