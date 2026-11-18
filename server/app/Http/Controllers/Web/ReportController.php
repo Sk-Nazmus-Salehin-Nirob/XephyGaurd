@@ -1,19 +1,18 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\ScoreSession;
-use App\Models\Alert;
-use App\Models\EvidenceCapture;
 use App\Models\LabSession;
-use App\Models\NetEvent;
-use App\Models\PasteEvent;
 use App\Models\Report;
 use App\Models\Score;
 use App\Models\Setting;
 use App\Models\Student;
 use App\Services\Audit;
+use App\Services\ReportModel;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -29,29 +28,9 @@ class ReportController extends Controller
         ]);
     }
 
-    private function data(LabSession $session): array
-    {
-        $scores = Score::query()->with(['pc:id,name', 'student'])->where('lab_session_id', $session->id)
-            ->orderByDesc('score')->get();
-
-        return [
-            'session' => $session->load('profile'),
-            'scores' => $scores,
-            'alerts' => Alert::query()->with('pc:id,name')->where('lab_session_id', $session->id)->orderBy('occurred_at')->get(),
-            'blocked' => NetEvent::query()->where('lab_session_id', $session->id)->where('action', 'blocked')
-                ->selectRaw('pc_id, host, category, count(*) as n, min(occurred_at) as first_at')
-                ->groupBy('pc_id', 'host', 'category')->orderByDesc('n')->with('pc:id,name')->get(),
-            'pastes' => PasteEvent::query()->where('lab_session_id', $session->id)->where('is_copy', false)
-                ->where('chars', '>=', 300)->orderBy('occurred_at')->get(),
-            'evidence' => EvidenceCapture::query()->with(['pc:id,name', 'capturer:id,name'])
-                ->where('lab_session_id', $session->id)->orderBy('occurred_at')->get(),
-            'report' => Report::query()->where('lab_session_id', $session->id)->where('kind', 'session')->first(),
-        ];
-    }
-
     public function show(LabSession $session)
     {
-        return view('reports.session', $this->data($session));
+        return view('reports.session', ReportModel::build($session));
     }
 
     public function showByNumber(int $num)
@@ -59,13 +38,13 @@ class ReportController extends Controller
         $session = LabSession::find($num);
 
         return $session
-            ? view('reports.session', $this->data($session))
+            ? view('reports.session', ReportModel::build($session))
             : view('reports.session');
     }
 
     public function student(LabSession $session, Student $student)
     {
-        $data = $this->data($session);
+        $data = ReportModel::build($session);
         $data['scores'] = $data['scores']->where('student_id', $student->id)->values();
         $data['student'] = $student;
         $data['alerts'] = $data['alerts']->filter(fn ($a) => Student::forLogin($a->user)?->id === $student->id)->values();
@@ -86,7 +65,7 @@ class ReportController extends Controller
     {
         Audit::log('report.export_pdf', $session);
 
-        return Pdf::loadView('reports.pdf', $this->data($session))->setPaper('a4')
+        return Pdf::loadView('reports.pdf', ReportModel::build($session))->setPaper('a4')
             ->download("xephyguard-session-{$session->id}.pdf");
     }
 
