@@ -46,7 +46,8 @@ Deferred (not scheduled, ask again later):
   - `pint --test`: 53 of 154 tracked PHP files fail. By directory: app/Models 25, app/Console 6, app/Events 4, app/Services 4, app/Http/Controllers/Web 3, app/Http/Controllers/Agent 1, app/Http/Middleware 1, app/Jobs 1, bootstrap 1, database 1, routes 1, tests 5.
   - Gap: S-4 to S-6 cover only 16 of these. app/Models, app/Console, app/Events, app/Http/Controllers/Agent and bootstrap (37 files) are in no Pint step, so S-7 (blocking CI) would fail. They need an extra Pint-only step before S-7.
 - [x] S-2 Docs only: DECISIONS #26 PolicyService (effective `title_capture` = the stricter of profile and mode setting, `off` < `app_only` < `full`), #27 ingest schema, #28 enrollment token, #29 append-only alert reviews + audit chain. FEATURES.md notes for F16, F46, F102.
-- [ ] S-3 `composer test` / `composer lint` scripts (was 16)
+- [x] S-3 `composer test` / `composer lint` scripts (was 16)
+  Done: `test` drops `@no_additional_args` (unsupported by local Composer 2.7.1, so the old script failed) and sets a random `APP_KEY` when unset; `lint` = `pint --test`. `composer test` 128 passed.
 - [ ] S-4 Pint only: `app/Http/Controllers/Web` (was 17)
 - [ ] S-5 Pint only: `app/Services`, `app/Jobs`, `app/Http/Middleware` (was 18)
 - [ ] S-6 Pint only: `routes`, `config`, `database`, `tests` (was 19)

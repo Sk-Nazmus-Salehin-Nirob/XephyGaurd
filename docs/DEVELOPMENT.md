@@ -7,7 +7,7 @@ Development happens on Linux. Each component builds and tests on its own.
 | Agent (C++20) | `cmake -S agent -B build && cmake --build build -j` | `ctest --test-dir build` (Catch2, fake adapters in `agent/tests/fakes.hpp`) |
 | Agent package | `cmake -S agent -B build-rel -DCMAKE_BUILD_TYPE=Release -DXG_BUILD_TESTS=OFF && cmake --build build-rel && (cd build-rel && cpack)` | install test: `docker run ... ubuntu:24.04 apt install ./xephyguard-agent_*.deb` |
 | Windows adapters | MSVC build on Windows (see `installers/windows/README.md`); on Linux a MinGW syntax check (CI job `agent-windows-compile-check`) | `docs/WINDOWS_TEST_CHECKLIST.md` on a real machine |
-| CCC server (Laravel 13) | `cd server && composer install && npm ci && npm run build && php artisan migrate && php artisan xephyguard:ca:init && php artisan xephyguard:bootstrap && php artisan serve` | `php artisan test` |
+| CCC server (Laravel 13) | `cd server && composer install && npm ci && npm run build && php artisan migrate && php artisan xephyguard:ca:init && php artisan xephyguard:bootstrap && php artisan serve` | `composer test` (sets a throwaway `APP_KEY` if none), `composer lint` (Pint `--test`; pass paths after `--`) |
 | Proxy + network policy | `pip install -r proxy/requirements.txt` | `pytest proxy/tests` (uses mitmproxy's test helpers) |
 | Analysis | `pip install -r analysis/requirements.txt`; `python -m xg_analysis serve` | `pytest analysis/tests` (schema generated from the migrations: `scripts/gen_analysis_schema.sh`) |
 | Eval tools | – | `pytest eval/tests` |
