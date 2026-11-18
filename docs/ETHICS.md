@@ -29,6 +29,9 @@ such controls work.
 personal messages, file contents, microphone or camera. Keystrokes and clipboard text are reduced to
 numbers on the PC (`agent/core/src/keystats.cpp`, `paste.cpp`) and the originals are discarded
 immediately.
+The CCC enforces the same rules again on arrival: it stores only the fields listed per event type in
+docs/PROTOCOL.md and drops window titles the PC's title setting does not allow, so a modified agent
+cannot widen what is kept.
 
 Monitor layout (screen Step 35): the number of monitors and each one's position and size in pixels (a few numbers), sent to the viewer during a staff-requested live view so it can offer a monitor picker; no names, no content, not stored.
 

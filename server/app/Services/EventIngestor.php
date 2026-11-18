@@ -20,6 +20,7 @@ use App\Models\SignatureVersion;
 use App\Models\Student;
 use App\Models\StudentPcAssignment;
 use App\Services\Ingest\BatchValidator;
+use App\Services\Ingest\TitleFilter;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -53,6 +54,10 @@ class EventIngestor
         $this->validator->validate($agent, $batch);
         $batch = $this->validator->clean($batch);   // allow-listed fields only (S-28)
         $pc = $agent->pc;
+        // Titles the PC's effective title_capture does not allow are dropped here too, never stored (S-29).
+        $capture = (string) ($this->policies->forPc($pc)['title_capture'] ?? 'off');
+        $batch['events'] = array_map(fn (array $e) => ['data' => TitleFilter::apply($e['type'], $e['data'], $capture)] + $e,
+            $batch['events']);
         $session = LabSession::activeFor($pc->lab_id);
         $inSession = $session && SessionPc::query()->where('lab_session_id', $session->id)->where('pc_id', $pc->id)->exists();
         $session = $inSession ? $session : null;

@@ -10,6 +10,7 @@ use App\Models\Command;
 use App\Models\Event;
 use App\Models\KeyStat;
 use App\Models\PasteEvent;
+use App\Models\Setting;
 use App\Services\SessionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -271,7 +272,12 @@ class AgentApiTest extends TestCase
         $this->assertSame('code', $pastesTab['target_app']);
         $this->assertSame(200, $pastesTab['chars']);
 
-        // 4. Student copies in a.cpp and pastes in b.cpp in the same VS Code
+        // 4. Student copies in a.cpp and pastes in b.cpp in the same VS Code. The agent sends the file part only
+        //    with title_capture=full (I-AGENT-9) and the server drops it otherwise (S-29), so turn full on here.
+        $practice = $this->profile('Practice: AI allowed, logged');
+        $practice->update(['agent' => ['title_capture' => 'full'] + ($practice->agent ?? [])]);
+        Setting::put('privacy.title_capture.practice', 'full');
+        $this->assertSame('full', $this->withHeaders($h)->getJson('/api/agent/v1/policy')->json('policy.title_capture'));
         $events3 = [
             $this->ev(5, 'window_focus', ['app' => 'code', 'title' => 'a.cpp - Project - Visual Studio Code', 'user' => 'student1']),
             $this->ev(6, 'copy', ['chars' => 85, 'lines' => 4, 'code' => true, 'score' => 0.9, 'src' => 'code (a.cpp)', 'dst' => '', 'user' => 'student1']),
