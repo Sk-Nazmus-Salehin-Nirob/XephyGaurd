@@ -15,6 +15,7 @@ use App\Models\Pc;
 use App\Models\Profile;
 use App\Models\Seat;
 use App\Models\SessionPc;
+use App\Models\Student;
 use App\Services\Audit;
 use App\Services\EventIngestor;
 use Illuminate\Http\JsonResponse;
@@ -91,8 +92,8 @@ class DashboardController extends Controller
             'keys' => $g->sum('keys'), 'backspaces' => $g->sum('backspaces'), 'pastes' => $g->sum('paste_chords'),
         ]);
 
-        $sessionPc = $session ? \App\Models\SessionPc::where('lab_session_id', $session->id)->where('pc_id', $pc->id)->first() : null;
-        $student = $sessionPc?->student_id ? \App\Models\Student::find($sessionPc->student_id) : \App\Models\Student::forLogin($pc->current_user);
+        $sessionPc = $session ? SessionPc::where('lab_session_id', $session->id)->where('pc_id', $pc->id)->first() : null;
+        $student = $sessionPc?->student_id ? Student::find($sessionPc->student_id) : Student::forLogin($pc->current_user);
         $netEvents = NetEvent::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)->latest('occurred_at')
             ->limit(100)->get(['host', 'path', 'layer', 'action', 'category', 'matched', 'occurred_at']);
 

@@ -48,7 +48,8 @@ Deferred (not scheduled, ask again later):
 - [x] S-2 Docs only: DECISIONS #26 PolicyService (effective `title_capture` = the stricter of profile and mode setting, `off` < `app_only` < `full`), #27 ingest schema, #28 enrollment token, #29 append-only alert reviews + audit chain. FEATURES.md notes for F16, F46, F102.
 - [x] S-3 `composer test` / `composer lint` scripts (was 16)
   Done: `test` drops `@no_additional_args` (unsupported by local Composer 2.7.1, so the old script failed) and sets a random `APP_KEY` when unset; `lint` = `pint --test`. `composer test` 128 passed.
-- [ ] S-4 Pint only: `app/Http/Controllers/Web` (was 17)
+- [x] S-4 Pint only: `app/Http/Controllers/Web` (was 17)
+  Done: 3 files (Alert, Dashboard, Profile controllers), inline FQCNs became `use` imports. No `strict_types` added (Pint-only steps stay formatting-only). 128 tests pass.
 - [ ] S-5 Pint only: `app/Services`, `app/Jobs`, `app/Http/Middleware` (was 18)
 - [ ] S-6 Pint only: `routes`, `config`, `database`, `tests` (was 19)
 - [ ] S-7 CI pint job blocking (was 20)

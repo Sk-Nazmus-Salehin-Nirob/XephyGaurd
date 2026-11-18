@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Web;
 
+use App\Events\PcUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Alert;
 use App\Models\LabSession;
@@ -92,7 +93,7 @@ class AlertController extends Controller
             ->exists();
         $ingestor->refreshLiveScore($pc, $inSession ? $activeSession : null);
         $pc->save();
-        broadcast(new \App\Events\PcUpdated($pc));
+        broadcast(new PcUpdated($pc));
 
         return $pc->tile();
     }
