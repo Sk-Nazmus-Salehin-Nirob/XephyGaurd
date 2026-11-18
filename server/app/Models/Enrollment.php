@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -22,5 +24,11 @@ class Enrollment extends Model
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);
+    }
+
+    /** A PC that only looks like this machine (same hostname or MAC, not the same machine_uid). */
+    public function conflictPc(): BelongsTo
+    {
+        return $this->belongsTo(Pc::class, 'conflict_pc_id');
     }
 }

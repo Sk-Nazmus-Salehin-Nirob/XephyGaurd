@@ -22,7 +22,7 @@ Access control and enrollment:
 - [x] Step 7: Remove `XG_REQUIRE_MTLS=false`; always require `X-SSL-Client-Verify=SUCCESS` + fingerprint match (fixes I-SERVER-6; touches F20, F21) (done as S-10)
 - [x] Step 8: Enrollment key off the public `/downloads` page; show on authenticated `/enroll` only, or per-PC one-time token (fixes I-SERVER-4 part 1; touches F99, F17, F6, F15) [APPROVAL: reverses e9ded61] (done as S-15)
 - [x] Step 9: Auto-approve by MAC requires human approval or a one-time token (fixes I-SERVER-4 part 2; touches F16, F15) [APPROVAL: changes F16] (done as S-16)
-- [ ] Step 10: Never adopt an existing PC by MAC/hostname without `machine_uid` or explicit staff choice; flag conflicts (fixes I-SERVER-5; touches F15, F19, F20)
+- [x] Step 10: Never adopt an existing PC by MAC/hostname without `machine_uid` or explicit staff choice; flag conflicts (fixes I-SERVER-5; touches F15, F19, F20) (done as S-17)
 
 Privacy defaults (ETHICS):
 - [ ] Step 11: Built-in profiles match the ETHICS table (Always-on: window/clipboard/keys off, files only in Test, `title_capture` off/app_only) (fixes I-SERVER-7; touches F30, F29, F75, F77, F78, F79) [APPROVAL: changes F30]

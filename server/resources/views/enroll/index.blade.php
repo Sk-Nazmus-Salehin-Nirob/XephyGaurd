@@ -16,6 +16,7 @@
           'ip' => $e->ip ?? '—',
           'mac' => collect($e->macs ?? [])->first() ?? '—',
           'name' => $e->hostname,
+          'conflict' => $e->conflictPc ? ['id' => $e->conflictPc->id, 'name' => $e->conflictPc->name] : null,
       ];
   })->values()->all() : [];
 
@@ -102,9 +103,9 @@
       </div>
       <template x-for="p in pending" :key="p.id">
         <div class="row" style="padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:nowrap;--gap:14px">
-          <div class="grow" style="min-width:0"><div class="mono" style="font-weight:500" x-text="p.host"></div><div class="small muted" x-text="p.os + ' · ' + p.ip"></div></div>
+          <div class="grow" style="min-width:0"><div class="mono" style="font-weight:500" x-text="p.host"></div><div class="small muted" x-text="p.os + ' · ' + p.ip"></div><div class="small" x-show="p.conflict" x-text="p.conflict ? 'Looks like ' + p.conflict.name + ' (same hostname or MAC, different machine ID). Approve adds a new PC unless you adopt it.' : ''"></div></div>
           <input class="input input-sm" style="width:110px" x-model="p.name" aria-label="Display name">
-          <button class="btn btn-sm btn-solid" @click="approve(p)">Approve</button><button class="btn btn-sm btn-quiet" @click="reject(p)">Reject</button>
+          <button class="btn btn-sm btn-solid" @click="approve(p)">Approve</button><button class="btn btn-sm" x-show="p.conflict" @click="approve(p, p.conflict.id)" x-text="p.conflict ? 'Adopt ' + p.conflict.name : ''"></button><button class="btn btn-sm btn-quiet" @click="reject(p)">Reject</button>
         </div>
       </template>
       <div class="empty-state" x-show="!pending.length"><b>No PCs waiting</b>New installs appear here.</div>

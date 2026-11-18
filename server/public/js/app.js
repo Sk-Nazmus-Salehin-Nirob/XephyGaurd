@@ -1562,9 +1562,10 @@ document.addEventListener('alpine:init', () => {
         return this.enrolled.filter(p => !q || (p.name + ' ' + p.host + ' ' + p.ip).toLowerCase().includes(q));
       },
       confirmSubmit(evt, msg) { if (!confirm(msg)) evt.preventDefault(); },
-      async approve(p) {
+      async approve(p, adoptPcId = null) {
         try {
-          const res = p.real ? await window.xgApi('/enroll/' + p.id + '/approve', { method: 'POST', body: JSON.stringify({ name: p.name }) }) : null;
+          const body = adoptPcId ? { name: p.name, adopt_pc_id: adoptPcId } : { name: p.name };
+          const res = p.real ? await window.xgApi('/enroll/' + p.id + '/approve', { method: 'POST', body: JSON.stringify(body) }) : null;
           this.pending = this.pending.filter(x => x.id !== p.id);
           if (res && res.pc) this.enrolled.unshift(res.pc);
           Alpine.store('toasts').add('Enrolled ' + (p.name || p.host) + '.', 'ok');

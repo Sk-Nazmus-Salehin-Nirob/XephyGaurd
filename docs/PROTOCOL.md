@@ -20,8 +20,9 @@ passes `--trust-on-first-use`, from the first download. Every later TLS connecti
 
 The CSR key is EC P-256, generated on the PC (private key 0600, never leaves the PC). The CCC signs a
 client certificate (`extendedKeyUsage=clientAuth`, 825 days) and issues a 64-character bearer token
-(stored hashed, bound to the cert fingerprint). Token and certificate are handed out **once**. Re-enrolling a PC with a known MAC
-keeps its history and revokes the old credentials.
+(stored hashed, bound to the cert fingerprint). Token and certificate are handed out **once**. `machine_uid` (32 hex) is required. Re-enrolling with a known `machine_uid`
+keeps the PC's history and revokes the old credentials. A PC that only shares the hostname or a MAC is
+flagged on the request (`conflict_pc_id`) and never merged; staff may adopt it explicitly if it has no uid.
 
 ## Authenticated requests
 Every request after enrollment carries the client certificate (verified by nginx against the lab CA)
