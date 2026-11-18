@@ -11,7 +11,6 @@ use App\Models\LabSession;
 use App\Models\Pc;
 use App\Models\Profile;
 use App\Models\Seat;
-use App\Models\SessionPc;
 use App\Services\Audit;
 use App\Services\EventIngestor;
 use App\Services\InspectorQueries;
@@ -60,16 +59,10 @@ class DashboardController extends Controller
     }
 
     /** Detail drawer: timeline, processes, network log, key-rate chart, paste log. */
-    public function pc(Request $request, Pc $pc, EventIngestor $ingestor, InspectorQueries $inspector): JsonResponse
+    /** Read-only: the live score is kept current where alerts and sessions change (EventIngestor, SessionManager). */
+    public function pc(Request $request, Pc $pc, InspectorQueries $inspector): JsonResponse
     {
         $session = LabSession::activeFor($pc->lab_id);
-        $inSession = $session && SessionPc::query()->where('lab_session_id', $session->id)->where('pc_id', $pc->id)->exists();
-        $prevStatus = $pc->status;
-        $prevScore = (int) $pc->live_score;
-        $ingestor->refreshLiveScore($pc, $inSession ? $session : null);
-        if ($pc->status !== $prevStatus || (int) $pc->live_score !== $prevScore) {
-            $pc->save();
-        }
 
         return response()->json($inspector->forPc($pc, $session, (bool) $request->user()?->hasRole('instructor')));
     }

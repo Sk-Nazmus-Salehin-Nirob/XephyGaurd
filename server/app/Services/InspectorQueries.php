@@ -22,7 +22,6 @@ class InspectorQueries
     public function forPc(Pc $pc, ?LabSession $session, bool $withEvidence): array
     {
         $since = $session?->started_at ?? now()->subHours(24);
-        $since = $session?->started_at ?? now()->subHours(24);
         $events = Event::query()->where('pc_id', $pc->id)->where('occurred_at', '>=', $since)
             ->whereNotIn('type', ['key_stats', 'heartbeat', 'process_snapshot', 'extension_scan', 'artifact_scan'])->latest('occurred_at')->limit(200)->get(['type', 'occurred_at', 'data', 'user'])
             ->reject(fn ($e) => $e->type === 'rule_hit' && (
@@ -110,7 +109,8 @@ class InspectorQueries
             'artifacts' => $latestArt?->data['found'] ?? [],
             'artifacts_visited' => $latestArt?->data['files_visited'] ?? 0,
             'artifacts_updated_at' => $latestArt?->occurred_at?->format('H:i:s'),
-            'browser_tabs' => Event::query()->where('pc_id', $pc->id)->where('type', 'window_focus')->latest('occurred_at')
+            'browser_tabs' => Event::query()->where('pc_id', $pc->id)->where('type', 'window_focus')
+                ->where('occurred_at', '>=', $since)->latest('occurred_at')
                 ->limit(60)->get(['occurred_at', 'user', 'data'])->map(fn ($e) => [
                     'at' => $e->occurred_at->format('H:i:s'),
                     'app' => $e->data['app'] ?? '',

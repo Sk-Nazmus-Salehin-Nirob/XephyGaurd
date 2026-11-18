@@ -50,6 +50,7 @@ class SessionManager
         });
         Audit::log('session.start', $session, ['course' => $course, 'profile' => $profile->name, 'mode' => $profile->mode]);
         $this->propagate($session);
+        $this->reconcileScores($lab->id, $session);
 
         return $session;
     }
@@ -57,6 +58,14 @@ class SessionManager
     public function stop(LabSession $session, ?User $by = null): void
     {
         $this->finish($session, $by, true);
+        $this->reconcileScores($session->lab_id, null);
+    }
+
+    /** The live score counts only the session's alerts while one runs, so it changes when a session starts or ends. */
+    private function reconcileScores(int $labId, ?LabSession $session): void
+    {
+        $pcs = Pc::query()->active()->where('lab_id', $labId)->get();
+        app(EventIngestor::class)->reconcileLiveScores($pcs, $session);
     }
 
     private function finish(LabSession $session, ?User $by, bool $propagate): void
@@ -211,6 +220,9 @@ class SessionManager
                 'occurred_at' => now(),
             ]);
             broadcast(new AlertRaised($alert));
+            $inSession = $session && SessionPc::query()->where('lab_session_id', $session->id)->where('pc_id', $pc->id)->exists();
+            app(EventIngestor::class)->refreshLiveScore($pc, $inSession ? $session : null);
+            $pc->save();
             $n++;
         }
 
