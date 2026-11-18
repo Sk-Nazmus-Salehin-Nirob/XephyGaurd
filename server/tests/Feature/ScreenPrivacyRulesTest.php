@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Services\PolicyBuilder;
+use App\Services\PolicyService;
 use App\Services\ScreenPrivacyRules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Symfony\Component\Yaml\Yaml;
@@ -22,7 +22,7 @@ class ScreenPrivacyRulesTest extends TestCase
 
         $this->assertCount(count($raw), $rules, 'every shipped rule must be valid');
         $this->assertLessThanOrEqual(128, count($rules));
-        $policy = app(PolicyBuilder::class)->forPc($pc);
+        $policy = app(PolicyService::class)->forPc($pc);
         $this->assertSame($rules, $policy['screen']['privacy_rules']);
         $this->assertContains(['process' => 'keepassxc'], $rules);
     }
@@ -67,10 +67,10 @@ Y);
         file_put_contents("$dir/screen/privacy_rules.yaml", "rules: [unterminated\n");
         config(['xephyguard.data_dir' => $dir]);
 
-        $this->assertArrayNotHasKey('screen', app(PolicyBuilder::class)->forPc($pc));
+        $this->assertArrayNotHasKey('screen', app(PolicyService::class)->forPc($pc));
         unlink("$dir/screen/privacy_rules.yaml");
         rmdir("$dir/screen");
         rmdir($dir);
-        $this->assertArrayNotHasKey('screen', app(PolicyBuilder::class)->forPc($pc));
+        $this->assertArrayNotHasKey('screen', app(PolicyService::class)->forPc($pc));
     }
 }

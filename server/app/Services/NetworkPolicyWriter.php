@@ -16,7 +16,7 @@ class NetworkPolicyWriter
         'google.co.in', 'google.de', 'google.fr', 'bing.com', 'www.bing.com', 'huggingface.co', 'duckduckgo.com',
         'search.brave.com'];
 
-    public function __construct(private readonly PolicyBuilder $policies) {}
+    public function __construct(private readonly PolicyService $policies) {}
 
     public function build(): array
     {

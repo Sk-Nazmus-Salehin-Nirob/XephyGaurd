@@ -90,7 +90,8 @@ Formatting goes first so that every later diff is logic only.
   Done: `Lab::rotateEnrollKey` (web button, `xg:enroll-key --rotate`, setup, bootstrap) sets `revoked_at` on every unused token of the lab; used tokens keep their history; audit `enroll.rotate_key` records `tokens_revoked`. New test (web + model path). THREAT_MODEL row 30. 145 tests pass.
 
 ## M3: PolicyService (was 11, 12, 22, 27, 42, 48, 49)
-- [ ] S-19 Move only: rename `PolicyBuilder` to `PolicyService` and update its callers. Behaviour is identical.
+- [x] S-19 Move only: rename `PolicyBuilder` to `PolicyService` and update its callers. Behaviour is identical.
+  Done: `git mv` to `app/Services/PolicyService.php`, class renamed, 6 app files and 3 tracked tests updated (plus the untracked FeatureSessionsTest locally). Name change only, no `strict_types` (move step). 145 tests pass.
 - [ ] S-20 [O] Typed `PrivacySettings` with safe defaults (`title_capture` off/app_only). Effective value = the stricter of profile and setting, per DECISIONS #26 (was 12).
 - [ ] S-21 [O] Built-in profiles in `Bootstrap` match the ETHICS table (was 11; changes F30).
 - [ ] S-22 `switchProfile` / `setOverride` reject non-active sessions (was 42).

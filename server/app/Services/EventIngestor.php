@@ -48,7 +48,7 @@ class EventIngestor
         'network_lock_removed' => 'Session network lock was removed locally (re-applied)',
     ];
 
-    public function __construct(private readonly SessionManager $sessions, private readonly PolicyBuilder $policies) {}
+    public function __construct(private readonly SessionManager $sessions, private readonly PolicyService $policies) {}
 
     public function ingest(Agent $agent, array $batch, string $ip): array
     {

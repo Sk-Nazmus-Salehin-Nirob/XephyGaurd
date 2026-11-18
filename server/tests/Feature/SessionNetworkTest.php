@@ -8,7 +8,7 @@ use App\Models\Command;
 use App\Models\LabSession;
 use App\Models\NetEvent;
 use App\Models\TimetableEntry;
-use App\Services\PolicyBuilder;
+use App\Services\PolicyService;
 use App\Services\SessionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
@@ -29,7 +29,7 @@ class SessionNetworkTest extends TestCase
         [$pc1] = $this->enrolledPc('192.168.10.21', 'PC-01');
         [$pc2] = $this->enrolledPc('192.168.10.22', 'PC-02');
         $sm = app(SessionManager::class);
-        $pb = app(PolicyBuilder::class);
+        $pb = app(PolicyService::class);
         $alwaysVersion = $pb->forPc($pc1)['version'];
 
         $session = $this->actingAs($this->user('assistant'))->post('/sessions', ['course' => 'CS101',

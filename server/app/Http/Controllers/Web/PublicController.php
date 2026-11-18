@@ -9,7 +9,7 @@ use App\Models\Lab;
 use App\Models\Pc;
 use App\Models\Setting;
 use App\Services\CertificateAuthority;
-use App\Services\PolicyBuilder;
+use App\Services\PolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -129,7 +129,7 @@ class PublicController extends Controller
             // A PC in a Test session (or isolated) gets no DIRECT fallback: if the proxy is unreachable its
             // browser fails closed instead of going straight to the Internet (plan alternative F97).
             $pc = Pc::query()->whereNull('retired_at')->where('ip', $request->ip())->first();
-            $strict = $pc && ($pc->isolated || app(PolicyBuilder::class)->effective($pc)['profile']->mode === 'test');
+            $strict = $pc && ($pc->isolated || app(PolicyService::class)->effective($pc)['profile']->mode === 'test');
             $fallback = $strict ? '' : '; DIRECT';
             $js = <<<JS
 function FindProxyForURL(url, host) {

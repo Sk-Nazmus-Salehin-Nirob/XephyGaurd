@@ -11,7 +11,7 @@ use App\Models\Setting;
 use App\Models\SignatureVersion;
 
 /** Resolves the effective policy for one PC: active session -> profile (or per-PC override). */
-class PolicyBuilder
+class PolicyService
 {
     /** @return array{profile: Profile, session: ?LabSession, override: ?SessionPc} */
     public function effective(Pc $pc): array

@@ -6,7 +6,7 @@ use App\Models\LabSession;
 use App\Models\Profile;
 use App\Models\Setting;
 use App\Services\NetworkPolicyWriter;
-use App\Services\PolicyBuilder;
+use App\Services\PolicyService;
 use App\Services\SessionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\BuildsLab;
@@ -22,7 +22,7 @@ class ScreenAndProxyPacTest extends TestCase
         [$pc] = $this->enrolledPc();
 
         config(['services.screen_gateway.url' => 'https://lab.example.edu/screen-gw']);
-        $policy = app(PolicyBuilder::class)->response($pc);
+        $policy = app(PolicyService::class)->response($pc);
         $this->assertArrayNotHasKey('screen', $policy);
         $this->assertStringNotContainsString('agent_token', json_encode($policy));
     }
@@ -41,7 +41,7 @@ class ScreenAndProxyPacTest extends TestCase
         $this->assertNull(Setting::get('screen.cpu_budget_pct'));
 
         $this->actingAs($admin)->post('/settings', $form + ['screen_cpu_budget_pct' => 12])->assertSessionHasNoErrors();
-        $this->assertSame(12, app(PolicyBuilder::class)->forPc($pc)['screen']['cpu_budget_pct']);
+        $this->assertSame(12, app(PolicyService::class)->forPc($pc)['screen']['cpu_budget_pct']);
         $this->actingAs($admin)->get('/settings')->assertOk()->assertSee('name="screen_cpu_budget_pct"', false);
     }
 
@@ -60,7 +60,7 @@ class ScreenAndProxyPacTest extends TestCase
             ->assertHeader('Content-Type', 'application/x-ns-proxy-autoconfig; charset=utf-8')
             ->assertSee('PROXY 192.168.10.2:8080; DIRECT', false);
 
-        $pol = app(PolicyBuilder::class)->forPc($pc);
+        $pol = app(PolicyService::class)->forPc($pc);
         $this->assertSame('proxy_only', $pol['proxy_mode']);
         $this->assertSame('https://192.168.10.2/proxy.pac', $pol['proxy_pac_url']);
     }
@@ -84,7 +84,7 @@ class ScreenAndProxyPacTest extends TestCase
     {
         $lab = $this->bootLab();
         [$pc] = $this->enrolledPc('192.168.10.21');
-        $pb = app(PolicyBuilder::class);
+        $pb = app(PolicyService::class);
         Setting::put('network_mode', 'proxy_only');
         Setting::put('ccc_ip', '192.168.10.2');
         $this->assertArrayNotHasKey('network_lock', $pb->forPc($pc));   // always-on: never locked

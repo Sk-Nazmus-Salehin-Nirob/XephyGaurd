@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * Reusable policy bundle. `network` controls the CCC layers, `agent` is merged into the Policy JSON
- * that agents receive (see App\Services\PolicyBuilder).
+ * that agents receive (see App\Services\PolicyService).
  */
 class Profile extends Model
 {
