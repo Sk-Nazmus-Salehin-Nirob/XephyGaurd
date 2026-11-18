@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Models\Alert;
@@ -196,7 +198,8 @@ class UiRegressionTest extends TestCase
             preg_match('/<script type="application\/json" id="xg-page-data">(.*?)<\/script>/s', $guestHtml, $dm);
             $dlData = json_decode($dm[1], true, 512, JSON_THROW_ON_ERROR);
             $this->assertNotEmpty($dlData['cccHost']);
-            $this->assertNotEmpty($dlData['key']);
+            $this->assertArrayNotHasKey('key', $dlData);                 // S-15: no enrollment key on the public page
+            $this->assertStringContainsString('/KEY=<ENROLL_KEY>', $dlData['win']);
             $this->assertNotEmpty($dlData['fp']);
             $this->assertStringContainsString('/CAFP='.$dlData['fp'], $dlData['win']);
             $this->assertStringContainsString('/CCC='.$dlData['cccHost'], $dlData['win']);

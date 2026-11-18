@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Models\AuditLog;
@@ -128,6 +130,9 @@ class DashboardTest extends TestCase
             preg_match('/<script type="application\/json" id="xg-page-data">(.*?)<\/script>/s', $res->getContent(), $m);
             $page = json_decode($m[1] ?? '{}', true, 512, JSON_THROW_ON_ERROR);
             $this->assertStringStartsWith('curl -fsSL http://192.168.10.2/install/linux.sh', $page['lin'] ?? '');
+            // S-15: the lab key never appears on /downloads, not even for logged-in staff.
+            $this->assertStringNotContainsString($lab->enrollKey(), $res->getContent());
+            $this->assertArrayNotHasKey('key', $page);
         } finally {
             @unlink($deb);
         }

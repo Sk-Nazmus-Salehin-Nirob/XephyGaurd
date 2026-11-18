@@ -83,7 +83,6 @@ class PublicController extends Controller
 
         return response()->view('public.downloads', [
             'ccc' => $ccc,
-            'key' => $lab?->enrollKey(),
             'fingerprint' => $ca->exists() ? $ca->fingerprint() : null,
             'setupFile' => $setupFile,
             'files' => $files,
