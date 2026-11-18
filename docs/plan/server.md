@@ -2,6 +2,7 @@
 
 Sources: [audit/server.md](../audit/server.md) (I-SERVER-1..42), [features/server/](../features/server/README.md) (F1-F7, F10-F13, F15-F34, F37, F39-F42, F44, F46, F49-F61, F71, F98-F111).
 Plan written 2026-11-17. Nothing run while planning.
+**Run order:** [server-implementation.md](server-implementation.md) merges these steps with the alternatives table (2026-11-18); follow it, not the numbering here.
 
 Rules for every step: one component, <300 changed lines, one kind of change, test added in the same step, then
 `cd server && APP_KEY="base64:$(openssl rand -base64 32)" php artisan test` and `./vendor/bin/pint --test <touched files>` (keep touched files clean).
