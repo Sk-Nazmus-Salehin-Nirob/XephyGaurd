@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Alert extends Model
 {
@@ -27,6 +29,34 @@ class Alert extends Model
     public function acknowledger(): BelongsTo
     {
         return $this->belongsTo(User::class, 'acknowledged_by');
+    }
+
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(AlertReview::class);
+    }
+
+    /**
+     * Acknowledge once: appends a review row and stamps the alert. Returns false (and writes nothing)
+     * when the alert was already acknowledged, also under a concurrent request.
+     */
+    public function acknowledgeBy(int $userId, ?string $note): bool
+    {
+        $now = now();
+        $won = DB::transaction(function () use ($userId, $note, $now) {
+            $n = static::query()->whereKey($this->id)->whereNull('acknowledged_at')
+                ->update(['acknowledged_by' => $userId, 'acknowledged_at' => $now, 'comment' => $note ?? $this->comment]);
+            if ($n === 1) {
+                AlertReview::create(['alert_id' => $this->id, 'user_id' => $userId, 'note' => $note, 'reviewed_at' => $now]);
+            }
+
+            return $n === 1;
+        });
+        if ($won) {
+            $this->refresh();
+        }
+
+        return $won;
     }
 
     public function broadcastPayload(): array

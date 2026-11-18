@@ -118,7 +118,8 @@ Formatting goes first so that every later diff is logic only.
   Done: `CommandBus::send` validates args with per-type rules (Laravel `Validator`, unknown args dropped, 422 on invalid); `kill`: `pid` `integer|min:2`, must be in the PC's latest `process_snapshot` (same `start` when `start_time` is given), `start_time` dropped without a pid; `rescan` targets = `RESCAN_TARGETS`; `screen_lease` `ttl_s` 1..3600 (the agent's cap; PROTOCOL said 1..120, corrected so a longer configured viewer TTL does not break tokens). `strict_types`. Test helper `BuildsLab::processSnapshot`; KillCommandTest + untracked FeatureSessionsTest add a snapshot before pid kills; 2 new tests (invalid/old/foreign/reused pid refused, per-type rules). PROTOCOL Commands section. 168 tests pass.
 
 ## M5: alerts, audit, retention (was 29, 32, 37, 38, 43, 47)
-- [ ] S-31 New `alert_reviews` table. Acknowledging appends a review row, skips alerts that are already acknowledged, and scopes batch IDs to the lab (was 38).
+- [x] S-31 New `alert_reviews` table. Acknowledging appends a review row, skips alerts that are already acknowledged, and scopes batch IDs to the lab (was 38).
+  Done: migration + append-only `AlertReview` model (alert, user, note, reviewed_at). `Alert::acknowledgeBy()` does a conditional update (`whereNull acknowledged_at`) and the review insert in one transaction, so a second or concurrent ack changes nothing and writes no review or audit row. Single ack returns `already: true` then; batch only takes alerts of `Lab::current()` that are still open. `alerts.acknowledged_*`/`comment` stay as the first-review summary the UI reads. `strict_types` on AlertController. New `AlertReviewTest` (3 tests). 171 tests pass, pint clean.
 - [ ] S-32 Index on `alerts.acknowledged_at`, checked with `EXPLAIN` (was 47).
 - [ ] S-33 Move only: the unacknowledged-alert count moves into a view composer (was 29).
 - [ ] S-34 [O] When `Audit::log` fails, the action fails (was 32).

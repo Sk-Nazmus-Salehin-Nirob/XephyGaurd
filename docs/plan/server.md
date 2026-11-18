@@ -64,7 +64,7 @@ Privacy defaults (ETHICS):
 - [ ] Step 37: Audit log records only that an exemption changed, not the reason (fixes I-SERVER-39; touches F56, F105)
 
 ## Phase 7: Medium/Low bugs
-- [ ] Step 38: Alert acknowledge skips already-acknowledged alerts; batch IDs scoped to the lab (fixes I-SERVER-13; touches F41)
+- [x] Step 38: Alert acknowledge skips already-acknowledged alerts; batch IDs scoped to the lab (fixes I-SERVER-13; touches F41) (done as S-31)
 - [ ] Step 39: Signature publish: sign first, then switch active version in a locked DB transaction; same for `activate` (fixes I-SERVER-18; touches F61, F7, F110)
 - [ ] Step 40: `importSeed` inserts only missing rules (or `edited` flag) so dashboard edits survive bootstrap (fixes I-SERVER-19; touches F2, F60, F58)
 - [ ] Step 41: HTML session report shows score/points as stored, adds not-observable column, matches PDF/CSV (fixes I-SERVER-20; touches F49, F51)
