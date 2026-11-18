@@ -8,12 +8,25 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Lab extends Model
 {
     protected $fillable = ['name', 'subnet', 'ccc_ip', 'auto_approve', 'auto_approve_macs', 'grid_cols', 'grid_rows'];
+
     protected $hidden = ['enroll_key_hash'];
+
     protected $casts = ['auto_approve' => 'boolean', 'auto_approve_macs' => 'array', 'enroll_key_rotated_at' => 'datetime'];
 
-    public function pcs(): HasMany { return $this->hasMany(Pc::class); }
-    public function seats(): HasMany { return $this->hasMany(Seat::class); }
-    public function sessions(): HasMany { return $this->hasMany(LabSession::class); }
+    public function pcs(): HasMany
+    {
+        return $this->hasMany(Pc::class);
+    }
+
+    public function seats(): HasMany
+    {
+        return $this->hasMany(Seat::class);
+    }
+
+    public function sessions(): HasMany
+    {
+        return $this->hasMany(LabSession::class);
+    }
 
     public static function current(): self
     {

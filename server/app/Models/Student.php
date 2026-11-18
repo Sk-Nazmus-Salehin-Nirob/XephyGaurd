@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Student extends Model
 {
     protected $fillable = ['student_number', 'name', 'login', 'pseudonym', 'exempt', 'exempt_reason'];
+
     protected $casts = ['exempt' => 'boolean'];
 
     protected static function booted(): void
@@ -18,8 +19,15 @@ class Student extends Model
         });
     }
 
-    public function consents(): HasMany { return $this->hasMany(Consent::class); }
-    public function latestConsent(): HasOne { return $this->hasOne(Consent::class)->where('purpose', 'research')->latestOfMany('recorded_at'); }
+    public function consents(): HasMany
+    {
+        return $this->hasMany(Consent::class);
+    }
+
+    public function latestConsent(): HasOne
+    {
+        return $this->hasOne(Consent::class)->where('purpose', 'research')->latestOfMany('recorded_at');
+    }
 
     public function consentsToResearch(): bool
     {

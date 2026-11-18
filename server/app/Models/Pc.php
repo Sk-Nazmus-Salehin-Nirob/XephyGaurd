@@ -20,15 +20,45 @@ class Pc extends Model
         'silent_alerted_at' => 'datetime',
     ];
 
-    public function lab(): BelongsTo { return $this->belongsTo(Lab::class); }
-    public function seat(): BelongsTo { return $this->belongsTo(Seat::class); }
-    public function agent(): HasOne { return $this->hasOne(Agent::class)->whereNull('revoked_at')->latestOfMany(); }
-    public function agents(): HasMany { return $this->hasMany(Agent::class); }
-    public function alerts(): HasMany { return $this->hasMany(Alert::class); }
-    public function events(): HasMany { return $this->hasMany(Event::class); }
-    public function evidenceCaptures(): HasMany { return $this->hasMany(EvidenceCapture::class); }
+    public function lab(): BelongsTo
+    {
+        return $this->belongsTo(Lab::class);
+    }
 
-    public function scopeActive(Builder $q): Builder { return $q->whereNull('retired_at'); }
+    public function seat(): BelongsTo
+    {
+        return $this->belongsTo(Seat::class);
+    }
+
+    public function agent(): HasOne
+    {
+        return $this->hasOne(Agent::class)->whereNull('revoked_at')->latestOfMany();
+    }
+
+    public function agents(): HasMany
+    {
+        return $this->hasMany(Agent::class);
+    }
+
+    public function alerts(): HasMany
+    {
+        return $this->hasMany(Alert::class);
+    }
+
+    public function events(): HasMany
+    {
+        return $this->hasMany(Event::class);
+    }
+
+    public function evidenceCaptures(): HasMany
+    {
+        return $this->hasMany(EvidenceCapture::class);
+    }
+
+    public function scopeActive(Builder $q): Builder
+    {
+        return $q->whereNull('retired_at');
+    }
 
     /** Maps DB tile status, risk score, and active user into Live lab seat state. */
     public static function resolveUiStatus(?string $status, int $score, ?string $user): string

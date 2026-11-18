@@ -10,8 +10,11 @@ use LogicException;
 class AuditLog extends Model
 {
     protected $table = 'audit_log';
+
     public const UPDATED_AT = null;
+
     protected $fillable = ['user_id', 'action', 'subject_type', 'subject_id', 'details', 'ip'];
+
     protected $casts = ['details' => 'array'];
 
     protected static function booted(): void
@@ -20,5 +23,8 @@ class AuditLog extends Model
         static::deleting(fn () => throw new LogicException('audit log is append-only'));
     }
 
-    public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
 }

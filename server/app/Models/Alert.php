@@ -9,13 +9,25 @@ class Alert extends Model
 {
     protected $fillable = ['pc_id', 'lab_session_id', 'event_id', 'rule_id', 'severity', 'category', 'title', 'details',
         'user', 'occurred_at', 'acknowledged_by', 'acknowledged_at', 'comment'];
+
     protected $casts = ['details' => 'array', 'occurred_at' => 'datetime', 'acknowledged_at' => 'datetime'];
 
     public const SEVERITY_POINTS = ['info' => 0, 'low' => 5, 'medium' => 15, 'high' => 30, 'critical' => 50];
 
-    public function pc(): BelongsTo { return $this->belongsTo(Pc::class); }
-    public function session(): BelongsTo { return $this->belongsTo(LabSession::class, 'lab_session_id'); }
-    public function acknowledger(): BelongsTo { return $this->belongsTo(User::class, 'acknowledged_by'); }
+    public function pc(): BelongsTo
+    {
+        return $this->belongsTo(Pc::class);
+    }
+
+    public function session(): BelongsTo
+    {
+        return $this->belongsTo(LabSession::class, 'lab_session_id');
+    }
+
+    public function acknowledger(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'acknowledged_by');
+    }
 
     public function broadcastPayload(): array
     {
