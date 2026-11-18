@@ -48,7 +48,7 @@ Privacy defaults (ETHICS):
 - [x] Step 27: Default notice text states live viewing and screenshots truthfully (fixes I-SERVER-12; touches F33, F98) [APPROVAL; same text as agent Step 38] (done as S-25)
 
 ## Phase 4: Structure (moves only)
-- [ ] Step 28: Move inspector query code from `DashboardController` into an `InspectorQueries` service, behavior identical (fixes none; prepares I-SERVER-34, I-SERVER-41; touches F24)
+- [x] Step 28: Move inspector query code from `DashboardController` into an `InspectorQueries` service, behavior identical (fixes none; prepares I-SERVER-34, I-SERVER-41; touches F24) (done as S-43)
 - [x] Step 29: Move the unacknowledged-alert count out of `layouts/app.blade.php` into a view composer, behavior identical (fixes none; prepares I-SERVER-41; touches F40) (done as S-33)
 
 ## Phase 5: Duplication and dead code
