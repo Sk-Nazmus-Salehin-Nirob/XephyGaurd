@@ -86,7 +86,8 @@ Formatting goes first so that every later diff is logic only.
   Done: MAC branch in `EnrollmentService::register`, `autoApprove` action, `/enroll/auto-approve` route, the enroll-page form and its JS fields removed; `labs.auto_approve*` columns stay but are ignored (no data migration). Old test rewritten: a listed MAC with `auto_approve=true` stays pending, staff approval keeps the PC; route 404. THREAT_MODEL row 30. 144 tests pass.
 - [x] S-17 [O] An existing PC is adopted only by `machine_uid` or an explicit staff choice. Conflicts are flagged and never merged silently (was 10).
   Done: enroll API requires `machine_uid`; `approve()` reuses a PC only by exact uid or `$adopt` (staff choice via `adopt_pc_id`; refused with 422 if that PC has another uid or the uid is already another PC); hostname/MAC legacy matching, legacy auto-adoption and retire-by-hostname removed; look-alikes stored as `enrollments.conflict_pc_id` (new column), shown on the enroll page with an "Adopt" button, and in the approve audit. Legacy-adoption test replaced by a flag/adopt test. PROTOCOL enrollment note, THREAT_MODEL row 30. 144 tests pass. JS not run in a browser.
-- [ ] S-18 [O] Rotating the key (F17) also invalidates unused tokens.
+- [x] S-18 [O] Rotating the key (F17) also invalidates unused tokens.
+  Done: `Lab::rotateEnrollKey` (web button, `xg:enroll-key --rotate`, setup, bootstrap) sets `revoked_at` on every unused token of the lab; used tokens keep their history; audit `enroll.rotate_key` records `tokens_revoked`. New test (web + model path). THREAT_MODEL row 30. 145 tests pass.
 
 ## M3: PolicyService (was 11, 12, 22, 27, 42, 48, 49)
 - [ ] S-19 Move only: rename `PolicyBuilder` to `PolicyService` and update its callers. Behaviour is identical.

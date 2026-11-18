@@ -121,10 +121,11 @@ class EnrollmentController extends Controller
     public function rotateKey()
     {
         $lab = Lab::current();
+        $unused = EnrollmentToken::query()->usable()->where('lab_id', $lab->id)->count();
         $lab->rotateEnrollKey();
-        Audit::log('enroll.rotate_key', $lab);
+        Audit::log('enroll.rotate_key', $lab, ['tokens_revoked' => $unused]);
 
-        return back()->with('status', 'New enrollment key generated. The old key no longer works.');
+        return back()->with('status', 'New enrollment key generated. The old key and '.$unused.' unused PC token(s) no longer work.');
     }
 
     public function rename(Request $request, Pc $pc)

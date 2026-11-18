@@ -68,4 +68,23 @@ class EnrollmentTokenTest extends TestCase
         $this->postJson('/api/agent/v1/enroll', ['enroll_token' => $plainRevoked] + $this->body())->assertForbidden();
         $this->assertSame(0, Pc::count());
     }
+
+    public function test_rotating_the_lab_key_revokes_unused_tokens_only(): void
+    {
+        $lab = $this->bootLab();
+        [$used, $plainUsed] = EnrollmentToken::issue($lab, null, 'PC-41', 24);
+        $this->postJson('/api/agent/v1/enroll', ['enroll_token' => $plainUsed] + $this->body('lab-pc-41'))->assertCreated();
+        [, $plainUnused] = EnrollmentToken::issue($lab, null, null, 24);
+
+        $this->actingAs($this->user('admin'))->post('/enroll/rotate-key')->assertRedirect();
+        $this->postJson('/api/agent/v1/enroll', ['enroll_token' => $plainUnused] + $this->body('lab-pc-42'))->assertForbidden();
+        $this->assertNull($used->fresh()->revoked_at);                  // history of the used one is kept
+        $this->assertSame(1, EnrollmentToken::whereNotNull('revoked_at')->count());
+        $this->assertDatabaseHas('audit_log', ['action' => 'enroll.rotate_key']);
+
+        // CLI rotation (xg:enroll-key --rotate) goes through the same model method.
+        [, $plainCli] = EnrollmentToken::issue($lab, null, null, 24);
+        $lab->fresh()->rotateEnrollKey();
+        $this->postJson('/api/agent/v1/enroll', ['enroll_token' => $plainCli] + $this->body('lab-pc-43'))->assertForbidden();
+    }
 }
