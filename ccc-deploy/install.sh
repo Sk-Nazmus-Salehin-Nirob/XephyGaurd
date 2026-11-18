@@ -137,6 +137,7 @@ XG_INTERNAL_TOKEN=$(rand 24)
 XG_INTERNAL_URL=http://127.0.0.1:8000
 XG_ANALYSIS_URL=http://127.0.0.1:8090
 XG_REQUIRE_MTLS=true
+XG_SETUP_TOKEN=$(rand 24)
 SCREEN_GATEWAY_ADDR=127.0.0.1:8082
 SCREEN_GATEWAY_PORT=8082
 SCREEN_GATEWAY_PATH=/screen-gw
@@ -148,6 +149,7 @@ ENVF
   chmod 0600 "$ENV"
 else
   say "Keeping existing secrets in $ENV"
+  grep -q '^XG_SETUP_TOKEN=' "$ENV" || echo "XG_SETUP_TOKEN=$(rand 24)" >> "$ENV"   # older .env: add the wizard token
 fi
 set -a; . "$ENV"; set +a
 
@@ -195,6 +197,9 @@ cat <<DONE
   XephyGuard CCC is running.
 
   Dashboard:        https://$CCC_IP/        (first visit opens the setup wizard)
+  Setup token:      $XG_SETUP_TOKEN
+                    (the wizard asks for it until the admin account exists; not needed at
+                     https://127.0.0.1/setup on this machine. Keep it private.)
   CA fingerprint:   $FP
   Health check:     sudo xephyguard-ccc doctor
 

@@ -66,7 +66,8 @@ Formatting goes first so that every later diff is logic only.
 ## M1: critical access fixes (small, no new structure)
 - [x] S-8 [O] `/share` routes move into `auth` + `role:instructor`. The label becomes the real user name with no anonymous "Instructor" (was 4, 5).
   Done: 4 routes moved into the instructor group; `shareSave` uses the logged-in user's name (no "Instructor" fallback), the view no "Staff" fallback; menu and rail links hidden from assistants. New `ShareAccessTest` (guest 302/401, assistant and inactive instructor 403, real-name label); untracked `FeatureAdminTest` F102 test now logs in as instructor. THREAT_MODEL row 26. 132 tests pass.
-- [ ] S-9 [O] The setup wizard needs `XG_SETUP_TOKEN` (env) or localhost (was 6) [CROSS ccc-deploy I-CCC-6, same day]
+- [x] S-9 [O] The setup wizard needs `XG_SETUP_TOKEN` (env) or localhost (was 6) [CROSS ccc-deploy I-CCC-6, same day]
+  Done: `SetupController::store` refuses (form error, no token/password flashed) unless the request is direct loopback (`REMOTE_ADDR` loopback and no `X-Forwarded-For`) or `setup_token` matches `config('xephyguard.setup_token')` (`hash_equals`, min 16 chars); wizard shows a token field off-loopback; audit `via`. install.sh writes `XG_SETUP_TOKEN=$(rand 24)` (also appended to an older `.env`) and prints it. New `SetupTokenTest` (5 tests, mutation-checked). THREAT_MODEL row 27. 137 tests pass; install.sh `bash -n` only (not run).
 - [ ] S-10 [O] Remove `XG_REQUIRE_MTLS=false`. Always require `X-SSL-Client-Verify=SUCCESS` and a fingerprint match. Fix the tests that rely on the flag (was 7). THREAT_MODEL.md.
 - [ ] S-11 [O] The agent bearer token is valid only with the cert fingerprint it was issued to (alternative F20). THREAT_MODEL.md.
 - [ ] S-12 [O] Evidence screenshots: instructor+ only, accepted only during an audited screen view, and every `show` is audited (was 14).

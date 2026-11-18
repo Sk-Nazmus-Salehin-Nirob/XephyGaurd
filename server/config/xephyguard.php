@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 // XephyGuard CCC configuration. Most values are set by ccc-deploy/install.sh in .env and many can
 // be changed later from Settings (stored in the `settings` table, which overrides these defaults).
 return [
@@ -23,6 +25,7 @@ return [
     'internal_token' => env('XG_INTERNAL_TOKEN'),            // proxy -> CCC net event shipping
     'internal_url' => env('XG_INTERNAL_URL', 'http://app'),
     'require_mtls' => (bool) env('XG_REQUIRE_MTLS', true),   // agent API must arrive via the mTLS front (nginx)
+    'setup_token' => env('XG_SETUP_TOKEN'),                  // first-run wizard from the LAN (install.sh prints it)
     'analysis_url' => env('XG_ANALYSIS_URL', 'http://analysis:8090'),
 
     // Agent behaviour

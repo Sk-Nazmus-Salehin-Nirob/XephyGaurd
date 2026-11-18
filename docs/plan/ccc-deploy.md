@@ -14,7 +14,7 @@ install.sh and gateway forwarding were never run on a real two-NIC host, so ever
 - [ ] Step 2: install.sh and `.env.local` stop opening `:8082` on all interfaces; `SCREEN_GATEWAY_URL` = `wss://<ccc>:8443/screen-gw` so `PolicyBuilder` sends `tls=true` (fixes I-CCC-1; touches F112) [CROSS: server Step 3, agent Step 9; docs/PROTOCOL.md]
 - [ ] Step 3: mitmproxy and Unbound bind the lab-side address, not `0.0.0.0`; `block_global=true`; `proxy_only` mode gets a minimal WAN input drop (fixes I-CCC-4; touches F112) [CROSS: proxy Step 3]
 - [ ] Step 4: `xephyguard-ccc backup` uses `set -e`, checks `mysqldump`, writes with `umask 077` before creating files (fixes I-CCC-5, I-CCC-8; touches F113)
-- [ ] Step 5: install.sh prints a one-time setup token and passes it as `XG_SETUP_TOKEN` (fixes I-CCC-6; touches F112) [CROSS: server Step 6]
+- [x] Step 5: install.sh prints a one-time setup token and passes it as `XG_SETUP_TOKEN` (fixes I-CCC-6; touches F112) [CROSS: server Step 6] (done with server S-9; install.sh not run)
 - [ ] Step 6: nginx serves `/install/linux.sh` over TLS (self-signed lab CA) with documented `curl --cacert`/pinned-key use; the CA fingerprint is printed at install for out-of-band checking (fixes I-CCC-2; touches F112, F8) [CROSS: server Step 25]
 - [ ] Step 7: Dedicated interception CA for mitmproxy; the lab root `ca.key` is no longer mounted in the proxy container (fixes I-CCC-3, I-CCC-15; touches F112, F114) [APPROVAL: reverses DECISIONS #11; update DECISIONS.md and THREAT_MODEL.md]
 
