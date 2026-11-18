@@ -72,14 +72,15 @@ class ReportController extends Controller
     public function csv(LabSession $session): StreamedResponse
     {
         Audit::log('report.export_csv', $session);
-        $scores = Score::query()->with(['pc:id,name', 'student'])->where('lab_session_id', $session->id)->get();
+        $rows = ReportModel::scoreRows(ReportModel::scores($session));
 
-        return response()->streamDownload(function () use ($scores) {
+        return response()->streamDownload(function () use ($rows) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['pc', 'user', 'student_number', 'student_name', 'method', 'score', 'confidence', 'top_reasons']);
-            foreach ($scores as $s) {
-                fputcsv($out, [$s->pc?->name, $s->user, $s->student?->student_number, $s->student?->name, $s->method, $s->score,
-                    $s->confidence, collect($s->reasons)->take(3)->pluck('label')->implode('; ')]);
+            fputcsv($out, ['pc', 'user', 'student_number', 'student_name', 'method', 'score', 'confidence', 'top_reasons', 'not_observable']);
+            foreach ($rows as $r) {
+                $reasons = array_map(fn ($x) => trim(($x['points'] !== null ? '+'.$x['points'].' ' : '').$x['label'].($x['signal'] !== '' ? ' ('.$x['signal'].')' : '')), $r['reasons']);
+                fputcsv($out, [$r['pc'], $r['user'], $r['student_number'], $r['student_name'], $r['method'], $r['score'],
+                    $r['confidence'], implode('; ', $reasons), implode('; ', $r['not_observable'])]);
             }
             fclose($out);
         }, "xephyguard-session-{$session->id}.csv");
