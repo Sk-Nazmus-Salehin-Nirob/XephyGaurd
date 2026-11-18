@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
@@ -12,6 +14,7 @@ use App\Models\Setting;
 use App\Services\Audit;
 use App\Services\CommandBus;
 use App\Services\SessionManager;
+use App\Services\SessionNotActive;
 use Illuminate\Http\Request;
 
 /** Session control: start/stop, switch mode, broadcast message, isolate, kill, per-PC override. */
@@ -59,7 +62,11 @@ class SessionController extends Controller
     public function networkLock(Request $request, LabSession $session)
     {
         $d = $request->validate(['network_lock' => 'required|in:'.implode(',', LabSession::NETWORK_LOCKS)]);
-        $this->sessions->setNetworkLock($session, $d['network_lock'], $request->user());
+        try {
+            $this->sessions->setNetworkLock($session, $d['network_lock'], $request->user());
+        } catch (SessionNotActive $e) {
+            abort(422, $e->getMessage());
+        }
 
         return back()->with('status', 'Network lock set to '.$d['network_lock'].'. PCs switch within seconds.');
     }
@@ -67,7 +74,11 @@ class SessionController extends Controller
     public function switchProfile(Request $request, LabSession $session)
     {
         $d = $request->validate(['profile_id' => 'required|exists:profiles,id']);
-        $this->sessions->switchProfile($session, Profile::findOrFail($d['profile_id']), $request->user());
+        try {
+            $this->sessions->switchProfile($session, Profile::findOrFail($d['profile_id']), $request->user());
+        } catch (SessionNotActive $e) {
+            abort(422, $e->getMessage());
+        }
 
         return back()->with('status', 'Mode switched.');
     }
@@ -121,8 +132,12 @@ class SessionController extends Controller
     public function override(Request $request, LabSession $session, Pc $pc)
     {
         $d = $request->validate(['profile_id' => 'nullable|exists:profiles,id', 'reason' => 'required|string|max:200']);
-        $this->sessions->setOverride($session, $pc, isset($d['profile_id']) ? Profile::find($d['profile_id']) : null,
-            $d['reason'], $request->user());
+        try {
+            $this->sessions->setOverride($session, $pc, isset($d['profile_id']) ? Profile::find($d['profile_id']) : null,
+                $d['reason'], $request->user());
+        } catch (SessionNotActive $e) {
+            abort(422, $e->getMessage());
+        }
 
         return back()->with('status', 'Override saved (audited).');
     }

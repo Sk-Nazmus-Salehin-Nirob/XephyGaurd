@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Events\AlertRaised;
@@ -78,6 +80,7 @@ class SessionManager
 
     public function switchProfile(LabSession $session, Profile $profile, ?User $by = null): void
     {
+        $this->requireActive($session);
         $from = $session->profile?->name;
         $session->forceFill(['profile_id' => $profile->id, 'mode' => $profile->mode])->save();
         Audit::log('session.switch_mode', $session, ['from' => $from, 'to' => $profile->name, 'mode' => $profile->mode]);
@@ -90,6 +93,7 @@ class SessionManager
         if (! in_array($lock, LabSession::NETWORK_LOCKS, true)) {
             throw new \InvalidArgumentException("unknown network lock $lock");
         }
+        $this->requireActive($session);
         $from = $session->network_lock;
         $session->forceFill(['network_lock' => $lock])->save();
         Audit::log('session.network_lock', $session, ['from' => $from, 'to' => $lock, 'by' => $by?->email]);
@@ -99,6 +103,10 @@ class SessionManager
     /** Per-PC override (e.g. an approved accommodation). Always audited with a reason. */
     public function setOverride(LabSession $session, Pc $pc, ?Profile $profile, string $reason, ?User $by = null): void
     {
+        $this->requireActive($session);
+        if ((int) $pc->lab_id !== (int) $session->lab_id) {
+            throw new SessionNotActive('That PC is not in this session\'s lab.');
+        }
         SessionPc::query()->updateOrCreate(['lab_session_id' => $session->id, 'pc_id' => $pc->id],
             ['override_profile_id' => $profile?->id, 'override_reason' => $profile ? $reason : null]);
         Audit::log('session.override', $pc, ['session_id' => $session->id, 'profile' => $profile?->name, 'reason' => $reason]);
@@ -113,6 +121,14 @@ class SessionManager
         $this->network()->write();
         $this->commands->send($pc, 'isolate_notice', ['isolated' => $isolated], $by);
         broadcast(new PcUpdated($pc));
+    }
+
+    /** Mode switches, locks and overrides only change a running session; ended/scheduled ones are history (S-22). */
+    private function requireActive(LabSession $session): void
+    {
+        if ($session->fresh()?->status !== 'active') {
+            throw new SessionNotActive('This session is not running.');
+        }
     }
 
     /** Pushes a session change everywhere: network layers, agents, dashboards. */
