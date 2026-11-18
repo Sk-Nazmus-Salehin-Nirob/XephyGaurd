@@ -95,27 +95,32 @@ Response: `{ack_seq, server_time_ms, policy_version, signatures_version, isolate
   `strict`). It differs from the session setting while the rules cannot be applied.
 
 ### Event types
+The table is the server's allow-list (`server/app/Services/Ingest/EventSchema.php`, DECISIONS #27): every other field,
+and a listed field with the wrong type, is dropped before storage; strings are cut to the length in brackets
+(default 64). Every event may also carry `user` [64]. Change both together.
+
 | type | data (numbers and names only — never typed text, clipboard text or screen content) |
 |---|---|
-| `heartbeat` | carried in the batch envelope (see above), every 5 s (15 s in Always-on) |
-| `agent_started` | `version, previous_exit (clean\|unclean), os, hostname` |
-| `agent_stopping` | `reason, uptime_s` (clean shutdown announcement) |
-| `process_start` / `process_stop` | `pid, ppid, exe, user, rss_mb, rule_id` — only for processes matching signatures; no command lines |
-| `process_snapshot` | `hash, count, added[], removed[]` (executable names), `list[]` (`pid, ppid, exe, name, user, rss_mb, cpu_pct, net_kbps, net_conns, start, rule_id`; `start` = OS start tick that identifies the process together with `pid`) |
-| `rule_hit` | `rule_id, severity, category, description, subject, actions[], result, context, mode, session_id, user`. Tunnel flags (`category: tunnel`, rule id from `web.tunnel`, sessions only): context `process, pid, remote_ip, remote_port, signal: tcp_destination`, never closed by the agent |
-| `listening_port` | `port, address, process, pid, rule_id, probed` |
-| `window_focus` | `app, title` (title filtered by policy: off / app_only / full) |
-| `paste` / `copy` | `chars, lines, code, score, src, dst, user` |
-| `key_stats` | per 5 s window: `keys, backspaces, iki_mean/median/p90/std, bursts, max_pause, paste_chords` |
-| `net_adapter` | `change, name, driver, description, mac, addresses[], up, wireless, virtual, default_route, kind` |
-| `device` | `action, subsystem, class, vendor, product, model, serial_hash` |
-| `extension_scan` | `count, hash, ai[], added[], removed[]` |
-| `artifact_scan` | `count, files_visited, truncated, found[{path, size_mb, rule_id}]` |
-| `file_activity` | per work folder / 10 s: `saves, created, deleted, bytes_delta, total_bytes, exts[]` |
-| `gpu_sample` | `util_pct, mem_used_mb, mem_total_mb` (only spikes) |
-| `tamper` | `kind` ∈ binary_hash_mismatch, binary_changed, helper_binary_missing, config_changed, ca_removed, ca_changed, clock_change, helper_missing, signature_invalid, isolation_rule_removed, network_lock_removed |
-| `helper_status` | `connected, user, session, caps` |
-| `command_result` | `command_id, status, detail` |
+| `heartbeat` | carried in the batch envelope (see above), every 5 s (15 s in Always-on). Allowed: `agent_version` [32], `uptime_s`, `agent_uptime_s`, `mode` [16], `session_id`, `policy_version` (int or string [20]), `signatures_version` [64], `user` [64], `sessions[]` (≤ 32 × [96]), `clock_offset_ms`, `local_time_ms`, `queue_depth`, `helpers`, `realtime`, `suppressed_hits`, `core_dropped`, `network_lock` [8], `capabilities` (≤ 64 scalar entries or one-level maps, keys ≤ 32), `usage` {`rss_kb`, `cpu_pct`, `bytes_up`, `screen`} |
+| `agent_started` | `version` [32], `previous_exit` (clean\|unclean) [16], `os` [128], `hostname` [255] |
+| `agent_stopping` | `reason` [32], `uptime_s` (clean shutdown announcement) |
+| `process_start` / `process_stop` | `pid, ppid, exe` [256], `rss_mb, rule_id` (stop: `pid, rule_id`) — only for processes matching signatures; no command lines |
+| `process_snapshot` | `hash, count, total_running, added[], removed[]` (≤ 200 executable names each), `list[]` (≤ 250 × `pid, ppid, exe, name, user` [32], `rss_mb, cpu_pct, net_kbps, net_conns, start, rule_id`; `start` = OS start tick that identifies the process together with `pid`) |
+| `rule_hit` | `rule_id, severity` [16], `category` [32], `description` [512], `subject` [512], `actions[]` (≤ 8), `result` {`kill` {`pid, killed, reason`}}, `context`, `mode` [16], `session_id, user`. `context` keys: `exe, pid, user, port, adapter, driver, initial, default_routes, class, vendor, model, process, domain, remote_ip, remote_port, sent_kb, recv_kb, signal, ide, extension, version, activity, path` [512], `size_mb, rule_id, app, title` [256], `ai_site`. Tunnel flags (`category: tunnel`, rule id from `web.tunnel`, sessions only): context `process, pid, remote_ip, remote_port, signal: tcp_destination`, never closed by the agent |
+| `listening_port` | `port, address, process` [128], `pid, rule_id, probed` |
+| `window_focus` | `app` [64], `title` [256] (filtered by policy: off / app_only / full), `ai_site` [128] |
+| `paste` / `copy` | `chars, lines, code, score, src` [128], `dst` [128], `user` |
+| `key_stats` | per 5 s window: `window_start, window_s, keys, backspaces, backspace_ratio, iki_mean/median/p90/std, bursts, max_pause, paste_chords, source` [16] |
+| `net_adapter` | `change` [16], `name` [128], `driver, description` [128], `mac` [32], `addresses[]` (≤ 32), `up, wireless, virtual, default_route, kind, initial` |
+| `device` | `action` [16], `subsystem` [32], `class` [32], `vendor` [16], `product` [16], `model` [128], `serial_hash, rule_id` |
+| `extension_scan` | `count, hash, ai[]` (≤ 300 × `ide` [32], `id` [256], `version, user, rule_id, description` [512], `active, activity`), `added[], removed[]` (≤ 300 × [256]), `initial` |
+| `artifact_scan` | `count, files_visited, truncated, found[]` (≤ 500 × `path` [512], `size_mb, rule_id, description` [512]) |
+| `file_activity` | per work folder / 10 s: `dir` [256], `saves, created, deleted, bytes_delta, total_bytes, exts[]` (≤ 10 × [16]), `first_ts` |
+| `gpu_sample` | `util_pct, mem_used_mb, mem_total_mb, gpu` [128] (only spikes) |
+| `tamper` | `kind` [32] ∈ binary_hash_mismatch, binary_changed, helper_binary_missing, config_changed, ca_removed, ca_changed, clock_change, helper_missing, helper_terminated, signature_invalid, isolation_rule_removed, network_lock_removed; optional `detail` [256], `path` [512], `expected, actual` [128], `pinned, delta_ms, at, bundle_version` |
+| `helper_status` | `connected, pid, session, display, caps` (map), `helper_version` |
+| `command_result` | `command_id, status` [16], `detail` (map ≤ 32 entries) |
+| `capabilities` | reserved (not sent by the current agent): `caps` (map) |
 
 ### Actions (policy per mode)
 `log` (always) → `warn` (notice on the PC) → `kill` (opt-in per rule) → `alert` (CCC raises an alert) →

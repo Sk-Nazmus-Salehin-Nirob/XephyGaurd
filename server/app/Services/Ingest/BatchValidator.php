@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services\Ingest;
 
 use App\Models\Agent;
@@ -8,10 +10,20 @@ use Illuminate\Validation\ValidationException;
 /** Checks an agent batch before EventIngestor stores anything: envelope, event shape, heartbeat values. */
 class BatchValidator
 {
-    public const TYPES = ['heartbeat', 'agent_started', 'agent_stopping', 'process_start', 'process_stop',
-        'process_snapshot', 'rule_hit', 'listening_port', 'window_focus', 'paste', 'copy', 'key_stats', 'net_adapter',
-        'device', 'extension_scan', 'artifact_scan', 'file_activity', 'gpu_sample', 'tamper', 'capabilities',
-        'command_result', 'helper_status'];
+    /**
+     * The batch with only allow-listed fields (EventSchema, S-28): unknown or mistyped fields are dropped and
+     * strings cut to their limit, in every event and in the heartbeat. Call after validate().
+     */
+    public function clean(array $b): array
+    {
+        if (isset($b['heartbeat'])) {
+            $b['heartbeat'] = EventSchema::heartbeat($b['heartbeat']);
+        }
+        $b['events'] = array_map(fn (array $e) => ['seq' => $e['seq'], 'ts' => $e['ts'], 'type' => $e['type'],
+            'data' => EventSchema::clean($e['type'], $e['data'])], array_values($b['events'] ?? []));
+
+        return $b;
+    }
 
     public function validate(Agent $agent, array $b): void
     {
@@ -31,10 +43,10 @@ class BatchValidator
         }
         foreach ($events as $i => $e) {
             if (! is_array($e) || ! is_int($e['seq'] ?? null) || $e['seq'] < 1 || ! is_int($e['ts'] ?? null)
-                || ! in_array($e['type'] ?? null, self::TYPES, true) || ! is_array($e['data'] ?? null)) {
+                || ! is_string($e['type'] ?? null) || ! isset(EventSchema::TYPES[$e['type']]) || ! is_array($e['data'] ?? null)) {
                 $fail("event $i is malformed");
             }
-            if (strlen(json_encode($e['data'])) > 64 * 1024) {
+            if (($json = json_encode($e['data'])) === false || strlen($json) > 64 * 1024) {
                 $fail("event $i is too large");
             }
         }

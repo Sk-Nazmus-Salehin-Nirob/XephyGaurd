@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Events\AlertRaised;
@@ -49,6 +51,7 @@ class EventIngestor
     public function ingest(Agent $agent, array $batch, string $ip): array
     {
         $this->validator->validate($agent, $batch);
+        $batch = $this->validator->clean($batch);   // allow-listed fields only (S-28)
         $pc = $agent->pc;
         $session = LabSession::activeFor($pc->lab_id);
         $inSession = $session && SessionPc::query()->where('lab_session_id', $session->id)->where('pc_id', $pc->id)->exists();
