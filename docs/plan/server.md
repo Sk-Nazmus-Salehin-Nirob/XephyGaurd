@@ -60,7 +60,7 @@ Privacy defaults (ETHICS):
 - [x] Step 33: `EventIngestor` validates type and length of heartbeat strings, `description`, `subject` (fixes I-SERVER-25; touches F39, F72) (done as S-28)
 - [x] Step 34: Per-event-type field allow-list from PROTOCOL.md; drop titles not allowed by effective `title_capture` (fixes I-SERVER-16; touches F39, F75) (done as S-28, S-29)
 - [x] Step 35: `kill` validates `pid` `integer|min:2` and that it is in the PC's latest snapshot (fixes I-SERVER-40; touches F35) (done as S-30)
-- [ ] Step 36: Roster header mapping uses `array_search !== false` and row-length checks (fixes I-SERVER-31; touches F54)
+- [x] Step 36: Roster header mapping uses `array_search !== false` and row-length checks (fixes I-SERVER-31; touches F54)
 - [x] Step 37: Audit log records only that an exemption changed, not the reason (fixes I-SERVER-39; touches F56, F105) (done as S-35)
 
 ## Phase 7: Medium/Low bugs

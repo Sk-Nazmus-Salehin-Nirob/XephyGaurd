@@ -9,7 +9,10 @@ use App\Models\Consent;
 use App\Models\Setting;
 use App\Models\Student;
 use App\Services\Audit;
+use App\Services\RosterImport;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 /** Roster: CSV import (student id, name, login), consents, exemptions, pseudonymization. */
 class RosterController extends Controller
@@ -28,25 +31,25 @@ class RosterController extends Controller
     public function import(Request $request)
     {
         $request->validate(['file' => 'required|file|max:2048']);
-        $rows = array_map('str_getcsv', preg_split('/\R/', trim($request->file('file')->get())));
-        $header = array_map(fn ($h) => strtolower(trim($h)), $rows[0] ?? []);
-        $hasHeader = in_array('login', $header, true) || in_array('student_id', $header, true);
-        $idx = $hasHeader
-            ? ['id' => array_search('student_id', $header) ?: array_search('id', $header) ?: 0,
-                'name' => array_search('name', $header) ?: 1, 'login' => array_search('login', $header) ?: 2]
-            : ['id' => 0, 'name' => 1, 'login' => 2];
-        $n = 0;
-        foreach (array_slice($rows, $hasHeader ? 1 : 0) as $r) {
-            if (count($r) < 3 || trim($r[$idx['id']]) === '') {
-                continue;
-            }
-            Student::query()->updateOrCreate(['student_number' => trim($r[$idx['id']])],
-                ['name' => trim($r[$idx['name']]), 'login' => strtolower(trim($r[$idx['login']]))]);
-            $n++;
+        try {
+            $import = RosterImport::parse((string) $request->file('file')->get());
+        } catch (InvalidArgumentException $e) {
+            throw ValidationException::withMessages(['file' => $e->getMessage()]);
         }
-        Audit::log('roster.import', null, ['rows' => $n]);
+        foreach ($import->rows as $r) {
+            Student::query()->updateOrCreate(['student_number' => $r['student_number']],
+                ['name' => $r['name'], 'login' => $r['login']]);
+        }
+        $n = count($import->rows);
+        Audit::log('roster.import', null, ['rows' => $n, 'skipped' => count($import->skipped)]);
 
-        return back()->with('status', "$n students imported/updated.");
+        $status = "$n students imported/updated.";
+        if ($import->skipped !== []) {
+            $first = array_map(fn ($s) => "line {$s['line']}: {$s['reason']}", array_slice($import->skipped, 0, 5));
+            $status .= ' '.count($import->skipped).' rows skipped ('.implode('; ', $first).(count($import->skipped) > 5 ? '; ...' : '').').';
+        }
+
+        return back()->with('status', $status);
     }
 
     public function consent(Request $request, Student $student)
