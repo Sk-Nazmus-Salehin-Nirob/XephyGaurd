@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
@@ -61,7 +63,8 @@ class RosterController extends Controller
     {
         $d = $request->validate(['exempt' => 'required|boolean', 'reason' => 'nullable|required_if:exempt,1|string|max:200']);
         $student->update(['exempt' => (bool) $d['exempt'], 'exempt_reason' => $d['exempt'] ? $d['reason'] : null]);
-        Audit::log('student.exempt', $student, $d);
+        // The reason may be health data (ETHICS): the audit log records only that the exemption changed.
+        Audit::log('student.exempt', $student, ['exempt' => (bool) $d['exempt']]);
 
         return $request->expectsJson() ? response()->json(['ok' => true]) : back();
     }

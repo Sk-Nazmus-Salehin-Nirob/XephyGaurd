@@ -126,7 +126,8 @@ Formatting goes first so that every later diff is logic only.
   Done: `App\View\Composers\OpenAlertsComposer` registered for `layouts.app` in `AppServiceProvider`; same query, same fallback to 0 on error; the two lines are gone from the layout. New `OpenAlertsComposerTest` (2 tests): badge count, no badge at 0. 175 tests pass, pint clean.
 - [x] S-34 [O] When `Audit::log` fails, the action fails (was 32).
   Done: `Audit::log` no longer catches the insert error; the exception propagates, so the action fails (500) instead of leaving a change with no record. `strict_types`. New `AuditFailureTest` (2 tests: row written; throws when the table is missing). No action ran its change inside a transaction with the audit write, so some state may already be changed when the audit fails; the S-36 hash chain will make the log verifiable. FEATURES F105, THREAT_MODEL row 33. 177 tests pass, pint clean.
-- [ ] S-35 The audit log records that an exemption changed, not the reason (was 37).
+- [x] S-35 The audit log records that an exemption changed, not the reason (was 37).
+  Done: `RosterController::exempt` logs `{exempt: bool}` only; the reason stays on the student row. `strict_types`. New `ExemptAuditTest` (1 test: two toggles, details hold no reason text). Older audit rows written before this step still hold the reason. 178 tests pass, pint clean.
 - [ ] S-36 [O] Audit hash chain: a `prev_hash` column plus an `xg:audit-verify` command.
 - [ ] S-37 Retention registry: purge covers alerts, scores, commands, screen_view_audits, student_pc_assignments, evidence and messages (was 43).
 
