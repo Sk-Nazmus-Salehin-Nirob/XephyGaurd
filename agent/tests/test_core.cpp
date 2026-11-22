@@ -166,6 +166,7 @@ TEST_CASE("protocol batch and command validation") {
     CHECK(protocol::clock_offset(1000, 1100, 2050) == 1000);
 
     CHECK(protocol::parse_command({{"id", "c1"}, {"type", "message"}, {"args", {{"text", "hi"}}}}));
+    CHECK(protocol::parse_command({{"id", "c4"}, {"type", "screen_lease"}, {"args", {{"ttl_s", 30}}}}));
     CHECK_FALSE(protocol::parse_command({{"id", "c1"}, {"type", "rm -rf"}, {"args", json::object()}}));
     CHECK_FALSE(protocol::parse_command({{"id", "bad id!"}, {"type", "ping"}}));
     CHECK_FALSE(protocol::parse_command({{"id", "c2"}, {"type", "kill"}, {"args", json::object()}}));

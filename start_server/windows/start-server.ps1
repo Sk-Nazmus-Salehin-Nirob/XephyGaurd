@@ -134,6 +134,9 @@ if (-not $pGateway) {
     $env:SCREEN_GATEWAY_ALLOWED_ORIGINS = "*:$AppPort"   # dashboard served by Laravel on its own port
     $env:SCREEN_GATEWAY_ISSUER       = $gwIssuer
     $env:SCREEN_GATEWAY_AUDIENCE     = $gwAudience
+    # nginx terminates the agent's mTLS on :8443 and forwards the client cert in X-SSL-Client-* headers.
+    # The gateway only trusts those headers from a listed loopback proxy; without this every agent gets 401.
+    $env:SCREEN_GATEWAY_TRUSTED_PROXY = "127.0.0.1"
 
     $goCmd = Get-Command go -ErrorAction SilentlyContinue
     if ($goCmd) {

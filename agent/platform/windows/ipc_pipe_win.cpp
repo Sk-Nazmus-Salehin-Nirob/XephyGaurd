@@ -267,7 +267,11 @@ public:
     bool connect(const std::string& endpoint) override {
         close();
         // SECURITY_IDENTIFICATION: a squatting server may not impersonate the student.
-        h_ = CreateFileW(to_wide(endpoint).c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+        // Exactly the rights the server's pipe DACL grants authenticated users (0x0012008b). GENERIC_WRITE would
+        // also ask for FILE_APPEND_DATA/FILE_WRITE_ATTRIBUTES/FILE_WRITE_EA, which the DACL withholds, so the
+        // open would fail with ACCESS_DENIED and the helper could never connect.
+        constexpr DWORD kClientAccess = FILE_READ_DATA | FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE;
+        h_ = CreateFileW(to_wide(endpoint).c_str(), kClientAccess, 0, nullptr, OPEN_EXISTING,
                          FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
         if (h_ == INVALID_HANDLE_VALUE) { h_ = nullptr; return false; }
         if (!server_is_agent(h_)) {
