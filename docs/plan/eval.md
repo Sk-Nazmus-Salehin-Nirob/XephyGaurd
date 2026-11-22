@@ -54,15 +54,3 @@ No separate items; `redteam.py` duplicate "any" matching is removed in Step 19.
 
 ## Phase 9: Dependency updates
 No dependency item in the audit (`eval/` reuses `analysis` packages: pandas, scikit-learn, PyYAML; bounds are tracked in the analysis plan, I-ANALYSIS-25).
-
-## Alternative architecture proposals (not scheduled; need owner approval)
-
-Overall proposal: **one `eval` runner with a manifest.** Each run is a directory with `manifest.json` (git commit, signature version, agent version, CCC version, PC ids, scenario set, start/end time), the raw results, and a rendered report. Every tool (red-team, simulator, screen benchmark, overhead, metrics) writes into that directory with the same schema, so numbers in the thesis can be traced to a commit and rerun.
-
-| Feature | Current | Better alternative | Why |
-|---|---|---|---|
-| F119 Red-team harness | SSH commands from YAML, polls CCC | Same, with preflight, destructive flag, results written incrementally, scenario-specific expectations, and a regression scenario for every fixed audit item (the I- IDs go in the scenario's `covers:` field) | Fixes stay fixed; unsafe runs impossible |
-| F120 Load simulator | Python threads, new TLS connection per request | One connection per PC (asyncio/httpx would be a new dependency, so threads with keep-alive), end-to-end latency, staging-only flag, `--cleanup` | Representative load, no pollution |
-| F121 Metrics export | pandas over the live DB | Reads the pseudonymised research export; separates measured from estimated; fails on missing scores | Ethics and honest numbers |
-| F122 Overhead + live Google check | Shell script + Python | Overhead sampled in Python for agent and helper (including streaming), JSON output; Google check structural markers from `data/` | Covers the screen cost |
-| New: screen benchmark | None | `stream_bench` from the screen plan, run through the manifest runner (fps, latency, bytes, CPU) | The most important feature gets a number |

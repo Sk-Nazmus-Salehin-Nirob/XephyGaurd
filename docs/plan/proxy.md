@@ -61,17 +61,3 @@ Steps that touch `xephyguard.nft` or `unbound.conf` are "config-checked only" un
 
 ## Phase 9: Dependency updates
 - [ ] Step 36: `mitmproxy>=11,<13` in `requirements.txt` matching the image pin (fixes I-PROXY-32; touches F67)
-
-## Alternative architecture proposals (not scheduled; need owner approval)
-
-Overall proposal: **policy compiled once, enforced at the lowest layer, proxy as a thin observer.** `xg_netpolicy` compiles state into three immutable artefacts per version (Unbound zone files, one atomic `nft -f` ruleset including the sets, and a typed `PolicySnapshot` for mitmproxy). The compile step validates with `nft -c` and `unbound-checkconf`, swaps files by rename, and the proxy loads the snapshot by version number. This removes the "sets empty after reboot" (I-PROXY-5), partial-failure (I-PROXY-14) and untyped-JSON (I-PROXY-15/19) classes. Second proposal: **nftables does the firewall job, mitmproxy only decrypts what must be decrypted**: transparent redirect only for the small inspected set, everything else SNI-only.
-
-| Feature | Current | Better alternative | Why / cost |
-|---|---|---|---|
-| F64 Network mode | Env var + state | Single source: `network_mode` in the policy snapshot; compose only supplies a default | Fixes I-CCC-9 |
-| F65 DNS sinkhole (Unbound views) | Generated files + reload | Same views; use `unbound-control` over a unix socket; add `local-zone` data via `auth-zone` file swap | No loopback TCP control (I-PROXY-2) |
-| F66 nftables gateway rules | Static table with sets | One generated atomic ruleset (`flush ruleset`-free: `table inet xephyguard` replaced as a whole); WAN input rules; conntrack flush hook | Survives reboot, no ordering bug |
-| F67 SNI blocking (no decrypt) | mitmproxy `tls_clienthello` | Keep (DECISIONS #10). Optional: nftables `tls sni`-less IP-set blocking from the DNS answers as a second layer | Defence in depth; DNS answers are controlled by Unbound |
-| F68 Path rules and selective inspection | Inspect list + path rules | Exact-host inspection list derived from the rules themselves, plus normalised paths; deny list kept in YAML | Closes I-PROXY-8/16/17 |
-| F69 Google AI Overview suppression | CSS/CSP rewrite of Google/Bing pages | Prefer DNS/URL parameter (`udm=14` redirect) or a managed-browser policy over page rewriting; rewrite only as fallback | Less decryption, less CSP weakening |
-| F70 Observe allowed AI/IDE traffic | Host + path events | Host-only by default; path only inside a Test session; events ship through a durable queue with replay | Privacy + no lost evidence |

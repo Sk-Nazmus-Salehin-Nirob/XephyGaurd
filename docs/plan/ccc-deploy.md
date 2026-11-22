@@ -60,17 +60,3 @@ No performance finding in the audit.
 
 ## Phase 9: Dependency updates
 - [ ] Step 32: After Step 20, update base image digests one image per step with `docker compose build` and the server test suite (fixes I-CCC-14 rest; touches F112)
-
-## Alternative architecture proposals (not scheduled; need owner approval)
-
-Overall proposal: **one `xephyguard-ccc` entrypoint with explicit roles** — a short-lived `init` container (migrations, CA/cert generation, state files, setup token) and long-running services each with their own env, user, read-only filesystem and only the secrets they use. Public surface is **one TLS port on the LAN side** (nginx: dashboard, agent API on :8443 mTLS, `/screen-gw/`, `/install/`), everything else on loopback or a unix socket. This addresses I-CCC-1/3/4/13/24/30 together. Host networking is kept only for the proxy/Unbound/netpolicy trio (needs real client IPs, DECISIONS #8).
-
-| Feature | Current | Better alternative | Why / cost |
-|---|---|---|---|
-| F8 Discovery (UDP) | Anonymous responder with CA fingerprint | Reply with name + CCC address only; fingerprint comes from the install package; or mDNS `_xephyguard._tcp` with the same limit | No trust from unauthenticated replies; no amplification |
-| F112 Compose stack and installer | install.sh + compose, secrets in one `.env` | Docker secrets/files per service; installer becomes idempotent steps (`preflight`, `init`, `up`) with a `--dry-run`; images pinned by digest | Smaller blast radius, safer re-runs |
-| F113 `xephyguard-ccc` CLI | bash with `set -uo pipefail` | Same CLI, `set -euo pipefail`, subcommands in functions, `doctor` returns non-zero on any failure (machine-readable `--json`) | Reliable backups and monitoring hooks |
-| F114 Local dev bootstrap | Scripts copy lab CA to the proxy | Dev uses the same interception CA flow as production (Step 7) | Dev equals prod; no CA key in proxy anywhere |
-
-## Screen work lives in plan/screen.md
-Steps 1-2 above must precede screen S-39 (gateway on loopback by default) and S-1 (nginx sets and strips the agent fingerprint header). Add the gateway `/metrics` port and revoke endpoint to the nginx allow-list only for loopback (screen S-5, S-21).

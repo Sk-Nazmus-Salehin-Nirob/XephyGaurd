@@ -55,12 +55,3 @@ No move-only items in the audit.
 ## Phase 9: Dependency updates
 - [ ] Step 27: Upper bounds (`<next major`) in `requirements.txt`; hashes only if you approve a lock file (fixes I-ANALYSIS-25; touches F9, F48)
 
-## Alternative architecture proposals (not scheduled; need owner approval)
-
-Overall proposal: **make analysis a library plus a job, not a network service.** The server queue (F111) already triggers scoring; a Python worker that consumes `scoring_jobs` rows from MySQL (or a CLI `python -m xg_analysis score <session>`) removes the open HTTP port, the token (I-ANALYSIS-1/5/6/14-17) and the second auth surface. If HTTP is kept, a unix socket in a shared volume beats TCP on a host-network container.
-
-| Feature | Current | Better alternative | Why / cost |
-|---|---|---|---|
-| F9 Scoring service (HTTP) | `ThreadingHTTPServer` on 0.0.0.0 with shared token | Job-queue worker polling the DB (or unix socket), own DB user with read on events and write on scores only | No network surface, least privilege; needs a server job change |
-| F48 Scoring v1 rules + v2 Isolation Forest | Rules with points; v2 min-max per cohort | Keep v1 as the only thing that produces points; v2 shown separately as a "unusual compared to cohort" flag with its top features as reasons, baseline stored per course | Every flag stays explainable; v2 never alone triggers anything |
-| F52 / F53 Research export, rescore | Server only (Step 13 done) | Server owns export; analysis exposes `rescore(session)` only | One implementation |
