@@ -123,6 +123,8 @@ if(WIN32)
     capture/win_multi_capture.cpp
   )
   target_link_libraries(xgcore PUBLIC d3d11 dxgi gdi32)
+  # windows.h defines min/max macros that break std::min/std::max.
+  target_compile_definitions(xgcore PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 else()
   target_sources(xgcore PRIVATE
     capture/x11_capture.cpp

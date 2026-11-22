@@ -18,7 +18,7 @@ upstream xg_gateway { server 127.0.0.1:8082; }
 
 server {
     listen 80;
-    root @PUBLIC@;
+    root "@PUBLIC@";
     location = /ca.crt     { proxy_pass http://xg_laravel; proxy_set_header Host $host; }
     location ^~ /install/  { proxy_pass http://xg_laravel; proxy_set_header Host $host; }
     location ^~ /downloads/{ proxy_pass http://xg_laravel; proxy_set_header Host $host; }
@@ -29,10 +29,10 @@ server {
 
 server {
     listen 443 ssl;
-    ssl_certificate     @CA_DIR@/server.crt;
-    ssl_certificate_key @CA_DIR@/server.key;
+    ssl_certificate     "@CA_DIR@/server.crt";
+    ssl_certificate_key "@CA_DIR@/server.key";
     ssl_protocols TLSv1.2 TLSv1.3;
-    root @PUBLIC@;
+    root "@PUBLIC@";
 
     location ^~ /api/screen/ {
         proxy_pass http://xg_laravel;
@@ -78,10 +78,10 @@ server {
 
 server {
     listen 8443 ssl;
-    ssl_certificate        @CA_DIR@/server.crt;
-    ssl_certificate_key    @CA_DIR@/server.key;
+    ssl_certificate        "@CA_DIR@/server.crt";
+    ssl_certificate_key    "@CA_DIR@/server.key";
     ssl_protocols          TLSv1.3;
-    ssl_client_certificate @CA_DIR@/ca.crt;
+    ssl_client_certificate "@CA_DIR@/ca.crt";
     ssl_verify_client      optional;          # enrollment happens before the agent has a certificate
     ssl_verify_depth       1;
 
