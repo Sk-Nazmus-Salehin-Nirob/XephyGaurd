@@ -1,6 +1,8 @@
-pandas>=2.2
-numpy>=1.26
-scikit-learn>=1.5
-pymysql>=1.1
-pyarrow>=16
-pyyaml>=6.0
+# Upper bound = next major after the version the tests pass on (analysis Step 27, I-ANALYSIS-25).
+# Tested 2026-11-23: pandas 3.1.1, numpy 2.5.5, scikit-learn 1.9.1, PyMySQL 1.2.4, pyarrow 26.0.1, PyYAML 6.0.4.
+pandas>=2.2,<4
+numpy>=1.26,<3
+scikit-learn>=1.5,<2
+pymysql>=1.1,<2
+pyarrow>=16,<27
+pyyaml>=6.0,<7
