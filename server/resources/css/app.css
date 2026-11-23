@@ -499,8 +499,8 @@ input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:15px;hei
 
 /* ---------- Health, settings, users, audit ---------- */
 .checks li{display:grid;grid-template-columns:28px 1fr;gap:4px 12px;padding:13px 20px;border-bottom:1px solid var(--border)}
-.tick-ok,.tick-warn{width:22px;height:22px;border-radius:50%;display:grid;place-items:center}
-.tick-ok{background:var(--ok-soft);color:var(--ok)}.tick-warn{background:var(--watch-soft);color:var(--watch)}
+.tick-ok,.tick-warn,.tick-bad{width:22px;height:22px;border-radius:50%;display:grid;place-items:center}
+.tick-ok{background:var(--ok-soft);color:var(--ok)}.tick-warn{background:var(--watch-soft);color:var(--watch)}.tick-bad{background:var(--alert-soft);color:var(--alert)}
 .meter{height:6px;border-radius:3px;background:var(--surface-3);overflow:hidden}
 .meter i{display:block;height:100%;border-radius:3px;background:var(--accent)}
 .spin{animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}

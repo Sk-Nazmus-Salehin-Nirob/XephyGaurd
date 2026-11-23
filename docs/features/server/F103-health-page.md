@@ -5,6 +5,7 @@
 - **Source:** [docs/FEATURES.md](../../FEATURES.md) (status legend, roles, `S/` = `server/app/`, `A/` = `agent/`)
 
 - **Trigger:** `GET /health` (+ `/health.html`, `/admin-health.html`). Admin only.
-- **Code:** `AdminController::health` (uses `Doctor`, agent stats).
-- **Status:** working (renders in `every_screen_renders_for_admin`); checks themselves unclear ([F4](F004-ccc-doctor-self-check.md)).
-- **Test:** 1. Open `/health`. 2. Each check has a green/red state.
+- **Code:** `AdminController::health` (uses `HealthChecks`: the check rows, active PCs and disk numbers).
+- **Status:** working (`HealthChecksTest`: same check names, details and fixes as `xephyguard:doctor`).
+  Before S-55 the page read keys the checks never sent, so every row was titled "Check" and no fix was shown.
+- **Test:** 1. Open `/health`. 2. Each check shows green (ok), amber (warning) or red (error), and a failing one shows its fix.

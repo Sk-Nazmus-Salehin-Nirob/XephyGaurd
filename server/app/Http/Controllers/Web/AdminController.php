@@ -7,7 +7,6 @@ namespace App\Http\Controllers\Web;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Lab;
-use App\Models\Pc;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Audit;
@@ -26,14 +25,15 @@ class AdminController extends Controller
 {
     public function health(HealthChecks $checks)
     {
-        $pcs = Pc::query()->active()->with('agent')->get();
+        $results = $checks->run();
+        $pcs = $checks->activePcs();   // same rows the PC checks used
 
         return view('admin.health', [
-            'checks' => $checks->run(),
+            'checks' => $results,
             'versions' => $pcs->groupBy(fn ($p) => $p->agent?->version ?? 'unknown')->map->count(),
             'attention' => $pcs->filter(fn ($p) => ! $p->online() || $p->isolated || ($p->usage['helpers'] ?? 1) === 0
                 || ($p->capabilities['keys'] ?? true) === false),
-            'disk' => ['free' => @disk_free_space(storage_path()), 'total' => @disk_total_space(storage_path())],
+            'disk' => $checks->disk(),
         ]);
     }
 

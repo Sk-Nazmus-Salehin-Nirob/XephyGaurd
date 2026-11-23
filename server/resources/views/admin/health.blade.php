@@ -6,8 +6,8 @@
   $okCount = $liveChecks->where('ok', true)->count();
   $totalCount = $liveChecks->count();
   $hasDisk = isset($disk['free'], $disk['total']) && $disk['total'] > 0;
-  $freeGb = $hasDisk ? round($disk['free'] / 1073741824, 1) : 0;
-  $totalGb = $hasDisk ? round($disk['total'] / 1073741824, 1) : 0;
+  $freeGb = $hasDisk ? \App\Services\HealthChecks::gb($disk['free']) : 0;
+  $totalGb = $hasDisk ? \App\Services\HealthChecks::gb($disk['total']) : 0;
   $usedPct = $hasDisk ? min(100, max(1, (int) round((($totalGb - $freeGb) / $totalGb) * 100))) : 0;
 @endphp
 <div class="doc" x-data="healthPage"><div class="optbar"><span class="otitle">Health</span><span class="osub"><b>{{ $okCount }} of {{ $totalCount }}</b> checks passed. CLI: <code class="mono">sudo xephyguard-ccc doctor</code></span><span class="grow"></span><button class="btn btn-solid" @click="rerun()" :disabled="running"><svg class="i i-sm" :class="running && 'spin'"><use href="#i-refresh"/></svg> <span x-text="running ? 'Checking…' : 'Run checks again'"></span></button></div><div class="canvas ">
@@ -16,10 +16,14 @@
     <section class="panel"><ul class="checks">
       @forelse($liveChecks as $c)
         <li>
-          <span class="{{ $c['ok'] ? 'tick-ok' : 'tick-warn' }}"><svg class="i i-sm" aria-hidden="true"><use href="#{{ $c['ok'] ? 'i-check' : 'i-warn' }}"/></svg></span>
+          {{-- same fields as `php artisan xephyguard:doctor` (HealthChecks::run) --}}
+          <span class="{{ $c['ok'] ? 'tick-ok' : ($c['level'] === 'error' ? 'tick-bad' : 'tick-warn') }}" title="{{ $c['ok'] ? 'OK' : ucfirst($c['level']) }}"><svg class="i i-sm" aria-hidden="true"><use href="#{{ $c['ok'] ? 'i-check' : 'i-warn' }}"/></svg></span>
           <div>
-            <b>{{ $c['name'] ?? $c['label'] ?? 'Check' }}</b>
-            <div class="small muted">{{ $c['detail'] ?? $c['message'] ?? '' }}</div>
+            <b>{{ $c['check'] }}</b>
+            <div class="small muted">{{ $c['detail'] }}</div>
+            @if(! $c['ok'] && $c['fix'] !== '')
+              <div class="small">→ {{ $c['fix'] }}</div>
+            @endif
           </div>
         </li>
       @empty

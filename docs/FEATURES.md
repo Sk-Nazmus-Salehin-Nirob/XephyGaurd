@@ -90,14 +90,17 @@ Paths are relative to the repo root. `S/` = `server/app/`, `A/` = `agent/`.
 - **Test:** 1. `php artisan xephyguard:ca:init --server-ip=127.0.0.1`. 2. `curl -s localhost:8000/ca.crt | openssl x509 -noout -subject -fingerprint -sha256`.
 
 ### F4. CCC doctor (self-check)
-- **What:** checks the CCC (DB, CA, Reverb, network state, services) and explains problems in plain
-  language.
+- **What:** checks the CCC (DB, CA, signatures, network state file, proxy and DNS ports, disk,
+  analysis service, job backlog, PCs reporting, agent certificates, PC clocks) and explains problems
+  in plain language. Reverb and the other containers are checked only by `xephyguard-ccc doctor`.
 - **Trigger:** `php artisan xephyguard:doctor [--json]`; `xephyguard-ccc doctor` (F113); shown on the
-  Health page (F103).
-- **Code:** `S/Console/Commands/DoctorCommand.php`, `S/Services/Doctor.php::run`.
-- **In/out/side effects:** read-only checks; prints a list or JSON.
-- **Status:** unclear (no test).
-- **Test:** 1. `php artisan xephyguard:doctor`. 2. Stop Reverb and run it again; it should report it.
+  Health page (F103) with the same rows (S-55).
+- **Code:** `S/Console/Commands/DoctorCommand.php`, `S/Services/HealthChecks.php::run`.
+- **In/out/side effects:** read-only checks; prints a list or JSON (`check`, `ok`, `level`, `detail`,
+  `fix`); exit 1 when any row is `error`. A check that throws becomes an `error` row ("Check could not
+  run") and the rest still run.
+- **Status:** working (`HealthChecksTest`).
+- **Test:** 1. `php artisan xephyguard:doctor`. 2. Stop the analysis service and run it again; it should report it.
 
 ### F5. Network state writer
 - **What:** regenerates the JSON state the DNS, nftables and proxy containers read (groups, PC
@@ -976,9 +979,10 @@ No login needed for any of these.
 
 ### F103. Health page
 - **Trigger:** `GET /health` (+ `/health.html`, `/admin-health.html`). Admin only.
-- **Code:** `AdminController::health` (uses `Doctor`, agent stats).
-- **Status:** working (renders in `every_screen_renders_for_admin`); checks themselves unclear (F4).
-- **Test:** 1. Open `/health`. 2. Each check has a green/red state.
+- **Code:** `AdminController::health` (uses `HealthChecks`: the check rows, active PCs and disk numbers).
+- **Status:** working (`HealthChecksTest`: same check names, details and fixes as `xephyguard:doctor`).
+  Before S-55 the page read keys the checks never sent, so every row was titled "Check" and no fix was shown.
+- **Test:** 1. Open `/health`. 2. Each check shows green (ok), amber (warning) or red (error), and a failing one shows its fix.
 
 ### F104. Settings
 - **What:** lab name, network mode, CCC IP, retention (raw 7–1095 days, reports 30–3650 days),

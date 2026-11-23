@@ -96,7 +96,7 @@ Overall proposal: **policy as a versioned, cached, signed document, built by one
 |---|---|---|---|
 | F1, F2, F6 Setup/bootstrap/key | Open wizard, artisan commands | Wizard locked by one-time token printed by installer; same artisan commands | Closes first-user admin takeover |
 | F3 Internal CA | Lab CA key signs everything, copied to proxy | Offline root + online intermediate; separate interception CA for mitmproxy (DECISIONS #11) | Proxy compromise cannot mint agent certs |
-| F4, F103 Doctor / health page | CLI + page | One `HealthChecks` class used by both (CLI check and page) | No drift |
+| F4, F103 Doctor / health page | CLI + page | One `HealthChecks` class used by both (CLI check and page) (done as S-55) | No drift |
 | F5 Network-state writer | Rebuilt on web actions with per-PC queries | Event-driven writer from the policy service, atomic file, 0640 | Fewer queries, no secret in file (or env) |
 | F7, F58-F61, F110 Signatures | DB rules + publish command, auto-publish each minute | Git-like YAML in `data/` as source, DB as cache; signed bundle with version, expiry; publish is a transaction | Matches the "data/ YAML" invariant |
 | F10-F12 Login/roles/staff | Laravel session + roles | Keep; add lockout/throttle check and 2FA only if you ask | |
