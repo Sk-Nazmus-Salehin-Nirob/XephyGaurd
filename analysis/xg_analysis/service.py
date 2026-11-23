@@ -33,6 +33,10 @@ def authorized(header: str) -> bool:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "xephyguard-analysis/0.1"
+    # Seconds per socket read/write: a client that trickles its headers or body is dropped instead of
+    # holding a thread forever (I-ANALYSIS-5). Scoring time itself is not limited by this.
+    timeout = 10
+    MAX_BODY = 65536
 
     def _send(self, code: int, body: dict) -> None:
         data = json.dumps(body).encode()
@@ -54,9 +58,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "unauthorized"})
         if self.path != "/score":
             return self._send(404, {"error": "not found"})
+        # The token and path are checked before any body byte is read. A negative length would make
+        # rfile.read(-1) read until EOF (I-ANALYSIS-15), so only plain non-negative integers are accepted.
+        length = self.headers.get("Content-Length", "0").strip()
+        if not (length.isascii() and length.isdigit()):
+            return self._send(400, {"error": "invalid Content-Length"})
         try:
-            n = int(self.headers.get("Content-Length", "0"))
-            body = json.loads(self.rfile.read(min(n, 65536)) or b"{}")
+            body = json.loads(self.rfile.read(min(int(length), self.MAX_BODY)) or b"{}")
             sid = int(body["session_id"])
             self._send(200, score_session(Db(), sid))
         except KeyError as e:

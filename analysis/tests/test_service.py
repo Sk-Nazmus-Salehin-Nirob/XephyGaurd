@@ -87,26 +87,43 @@ def test_unset_analysis_token_refuses_everyone(monkeypatch):
 # The real Handler parses a raw HTTP request from a fake socket, so no port or thread is needed and
 # a body larger than the read cap cannot end in a connection reset.
 
+class RecordingReader(io.BytesIO):
+    """rfile: headers come through readline(); read() is only used for the body, so its calls are recorded."""
+
+    def __init__(self, raw: bytes):
+        super().__init__(raw)
+        self.body_reads = []
+
+    def read(self, n=-1):
+        self.body_reads.append(n)
+        return super().read(n)
+
+
 class FakeSocket:
     def __init__(self, raw: bytes):
-        self.raw = raw
+        self.reader = RecordingReader(raw)
         self.out = bytearray()
+        self.timeouts = []
 
     def makefile(self, mode, *args, **kwargs):
-        return io.BytesIO(self.raw)
+        return self.reader
 
     def sendall(self, data):
         self.out += data
 
     def settimeout(self, t):
-        pass
+        self.timeouts.append(t)
+
+
+last_socket: FakeSocket | None = None
 
 
 def call(method: str, path: str, body: bytes = b"", token: str | None = TOKEN, headers: dict | None = None):
+    global last_socket
     hdrs = {"Host": "127.0.0.1:8090", **({"Authorization": f"Bearer {token}"} if token is not None else {}),
             **({"Content-Length": str(len(body))} if body else {}), **(headers or {})}
     raw = f"{method} {path} HTTP/1.1\r\n".encode() + b"".join(f"{k}: {v}\r\n".encode() for k, v in hdrs.items()) + b"\r\n" + body
-    sock = FakeSocket(raw)
+    sock = last_socket = FakeSocket(raw)
     Handler(sock, ("127.0.0.1", 50000), None)
     head, _, payload = bytes(sock.out).partition(b"\r\n\r\n")
     status = int(head.split(b" ", 2)[1])
@@ -173,6 +190,29 @@ def test_body_is_read_up_to_64_kib_only(service_db):
     # ... and JSON that only ends after the cap is cut off, so it does not parse.
     status, _ = call("POST", "/score", b'{"session_id": 10, "pad": "' + b"x" * 70000 + b'"}')
     assert status == 422
+
+
+def test_connection_has_a_socket_timeout(service_db):
+    call("GET", "/health", token=None)
+    assert last_socket.timeouts == [10]                      # slow-loris clients are dropped (I-ANALYSIS-5)
+
+
+def test_body_is_not_read_before_token_and_path_pass(service_db):
+    body = b'{"session_id": 10}'
+    assert call("POST", "/score", body, token="wrong")[0] == 401
+    assert last_socket.reader.body_reads == []
+    assert call("POST", "/elsewhere", body)[0] == 404
+    assert last_socket.reader.body_reads == []
+    assert call("POST", "/score", body)[0] == 200
+    assert last_socket.reader.body_reads == [len(body)]
+
+
+@pytest.mark.parametrize("length", ["-1", "-65536", "abc", "1e3", "0x10", "١٢"])
+def test_invalid_content_length_is_400_without_reading(service_db, length):
+    status, out = call("POST", "/score", headers={"Content-Length": length}, body=b"")
+    assert (status, out) == (400, {"error": "invalid Content-Length"})
+    assert last_socket.reader.body_reads == []              # read(-1) would read until EOF (I-ANALYSIS-15)
+    assert service_db.conn.execute("SELECT count(*) FROM scores").fetchone()[0] == 0
 
 
 def test_health_needs_no_token_and_reports_the_db(service_db, monkeypatch):
