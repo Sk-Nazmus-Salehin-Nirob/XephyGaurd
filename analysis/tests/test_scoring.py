@@ -37,12 +37,36 @@ def test_features(lab, db):
     f = compute(load_session(db, 10)).set_index("user")
     assert f.loc["alice", "keys_per_min"] == pytest.approx(156, rel=0.05)   # 13 keys per 5 s window
     assert f.loc["bob", "largest_paste"] == 2400
-    assert f.loc["bob", "idle_then_burst"] >= 1
+    assert f.loc["bob", "idle_then_burst"] == 1        # the 2400-char paste and its save 1 min later are one insertion
     assert f.loc["alice", "idle_then_burst"] == 0
     assert f.loc["bob", "blocked_attempts"] == 3
     assert f.loc["bob", "ai_flags"] == 1
     assert f.loc["bob", "time_outside_ide"] > 0.4
     assert f.loc["bob", "paste_to_typed"] > 1
+
+
+@pytest.mark.parametrize("growth_after_s, expected", [(None, 1), (30, 1), (60, 1), (90, 2), (-30, 2)])
+def test_paste_and_the_save_it_causes_count_once(lab, db, growth_after_s, expected):
+    lab.session(17, "test")
+    pc = lab.pc(17, "H1")
+    lab.typing(17, pc, "hal", 1, 5)                  # last keys around minute 6, then idle
+    lab.paste(17, pc, "hal", 20, 2000, 60)
+    if growth_after_s is not None:
+        lab.event(17, pc, "hal", 20 + growth_after_s / 60, "file_activity", {"dir": "/w", "saves": 1, "bytes_delta": 2100})
+    lab.db.conn.commit()
+    assert compute(load_session(db, 17)).iloc[0].idle_then_burst == expected
+
+
+def test_folder_growth_without_a_paste_is_a_burst(lab, db):
+    lab.session(18, "test")
+    pc = lab.pc(18, "H2")
+    lab.typing(18, pc, "ida", 1, 5)
+    lab.paste(18, pc, "ida", 20, 100, 3)              # small paste: not a burst, does not absorb the growth
+    lab.event(18, pc, "ida", 20.5, "file_activity", {"dir": "/w", "saves": 1, "bytes_delta": 5000})
+    lab.paste(18, pc, "ida", 30, 800, 30)             # two separate big pastes stay two
+    lab.paste(18, pc, "ida", 30.5, 800, 30)
+    lab.db.conn.commit()
+    assert compute(load_session(db, 18)).iloc[0].idle_then_burst == 3
 
 
 def test_unused_columns_are_neither_loaded_nor_computed(lab, db):
@@ -71,6 +95,8 @@ def test_v1_scores_are_explained_and_ranked(lab, db):
     assert bob[2] == "high"
     signals = [r["signal"] for r in json.loads(bob[3])]
     assert {"ai_flags", "idle_then_burst", "largest_paste", "blocked_attempts"} <= set(signals)
+    burst = next(r for r in json.loads(bob[3]) if r["signal"] == "idle_then_burst")
+    assert (burst["label"], burst["points"]) == ("1 burst(s) of new code right after a 2+ minute idle gap", 8)
     assert sum(r["points"] for r in json.loads(bob[3])) >= bob[1]          # every point is traceable
     assert any("phone" in x for x in json.loads(alice[4]))                  # states what is not observable
     assert [f["user"] for f in out["flagged"]] == ["bob"]

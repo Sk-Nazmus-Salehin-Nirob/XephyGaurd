@@ -16,10 +16,10 @@ import yaml
 
 from .db import Db, jload
 
-IDLE_GAP_S = 120          # "idle" = no keys for 2 minutes ...
-BURST_WINDOW_S = 60       # ... followed within 1 minute by
+IDLE_GAP_S = 120          # "idle" = no keys for 2 minutes before a burst, where a burst is
 BURST_PASTE_CHARS = 300   # a paste of 300+ chars
-BURST_GROWTH_BYTES = 1500  # or 1.5 kB+ growth of the work folder
+BURST_GROWTH_BYTES = 1500  # or 1.5 kB+ growth of the work folder;
+BURST_WINDOW_S = 60       # growth up to 1 minute after a burst paste is that paste being saved (counted once)
 
 FEATURES = ["keys_total", "active_minutes", "keys_per_min", "iki_median", "burstiness", "backspace_ratio",
             "pasted_chars", "paste_count", "largest_paste", "largest_paste_code", "largest_paste_early", "paste_to_typed",
@@ -149,13 +149,18 @@ def _idle_then_burst(ks: pd.DataFrame, pa: pd.DataFrame, files: pd.DataFrame) ->
         key_times = []
     else:
         key_times = sorted(ks[ks["keys"] > 0].window_start.tolist())
-    bursts: list[pd.Timestamp] = []
+    pastes: list[pd.Timestamp] = []
     if not pa.empty:
-        bursts += pa[(~pa.is_copy.astype(bool)) & (pa.chars >= BURST_PASTE_CHARS)].occurred_at.tolist()
+        pastes = pa[(~pa.is_copy.astype(bool)) & (pa.chars >= BURST_PASTE_CHARS)].occurred_at.tolist()
+    bursts = list(pastes)
     if not files.empty:
         for t, d in zip(files.occurred_at, files.data):
-            if int(jload(d).get("bytes_delta", 0)) >= BURST_GROWTH_BYTES:
-                bursts.append(t)
+            if int(jload(d).get("bytes_delta", 0)) < BURST_GROWTH_BYTES:
+                continue
+            # One insertion is a paste and then the save that grows the folder: count it once (I-ANALYSIS-9).
+            if any(0 <= (t - p).total_seconds() <= BURST_WINDOW_S for p in pastes):
+                continue
+            bursts.append(t)
     n = 0
     for b in sorted(bursts):
         prior = [t for t in key_times if t <= b]
