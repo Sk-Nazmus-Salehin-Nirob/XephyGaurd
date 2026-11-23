@@ -8,7 +8,8 @@ Rules for every step: one component, <300 changed lines, one kind of change, tes
 **[APPROVAL]** = changes a documented feature; **[CROSS]** = another component's plan has the matching step. Every score keeps traceable reasons (invariant).
 
 ## Phase 1: Critical/High security and bugs
-- [ ] Step 1: Characterization tests for `service.py` (token missing/wrong, 404, 422, body size, `/health`) so later fixes are safe (fixes I-ANALYSIS-26; touches F9)
+- [x] Step 1: Characterization tests for `service.py` (token missing/wrong, 404, 422, body size, `/health`) so later fixes are safe (fixes I-ANALYSIS-26; touches F9)
+  Done 2026-11-23: 7 handler tests in `tests/test_service.py` drive the real `Handler` through a fake socket (raw HTTP in, raw HTTP out; no port, no thread) against a file SQLite DB set by `XG_DB_URL`. Pinned: 401 for no/wrong/proxy token, checked before the path; 200 + `scores` row for a valid call; 404 for unknown path, unknown session and (today) missing `session_id` (Step 16 → 422); 422 for bad JSON / non-int id / list body; body read only up to 64 KiB; `/health` needs no token, 200 or 503 on a failing ping. Found: when the DB cannot be opened, `Db()` raises before `ping()`, so `/health` drops the connection with no 503 (pinned; for Step 15). No code change. 19 tests pass, ruff clean (scratch venv with pytest 9.2 and ruff 0.17).
 - [ ] Step 2: Bind to `XG_ANALYSIS_BIND` default `127.0.0.1` (fixes I-ANALYSIS-1; touches F9) [CROSS: ccc-deploy compose sets it explicitly, I-CCC-18]
 - [ ] Step 3: Skip v2 scoring (no stored v2 score) for exempt students (fixes I-ANALYSIS-2; touches F48, F56)
 - [ ] Step 4: Duplicate `students.login` no longer raises; ambiguous login is reported as a result with a reason, never a 422 for the whole session (fixes I-ANALYSIS-3; touches F48)
