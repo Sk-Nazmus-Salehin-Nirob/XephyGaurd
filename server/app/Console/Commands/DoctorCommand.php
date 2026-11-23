@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Doctor;
+use App\Services\HealthChecks;
 use Illuminate\Console\Command;
 
 class DoctorCommand extends Command
@@ -11,7 +11,7 @@ class DoctorCommand extends Command
 
     protected $description = 'Check the CCC and explain problems in plain language';
 
-    public function handle(Doctor $d): int
+    public function handle(HealthChecks $d): int
     {
         $res = $d->run();
         if ($this->option('json')) {

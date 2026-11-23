@@ -11,7 +11,7 @@ use App\Models\Pc;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Audit;
-use App\Services\Doctor;
+use App\Services\HealthChecks;
 use App\Services\NetworkPolicyWriter;
 use App\Services\NetworkSeed;
 use App\Services\NoticeText;
@@ -24,12 +24,12 @@ use Illuminate\Validation\Rules\Password;
 /** System health, settings, users and the audit log. */
 class AdminController extends Controller
 {
-    public function health(Doctor $doctor)
+    public function health(HealthChecks $checks)
     {
         $pcs = Pc::query()->active()->with('agent')->get();
 
         return view('admin.health', [
-            'checks' => $doctor->run(),
+            'checks' => $checks->run(),
             'versions' => $pcs->groupBy(fn ($p) => $p->agent?->version ?? 'unknown')->map->count(),
             'attention' => $pcs->filter(fn ($p) => ! $p->online() || $p->isolated || ($p->usage['helpers'] ?? 1) === 0
                 || ($p->capabilities['keys'] ?? true) === false),

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
  * `php artisan xephyguard:doctor`). Host-level checks (IP forwarding, nftables) are in
  * ccc-deploy/bin/xephyguard-ccc doctor, which also calls this.
  */
-class Doctor
+class HealthChecks
 {
     /** @return list<array{check: string, ok: bool, level: string, detail: string, fix: string}> */
     public function run(): array
