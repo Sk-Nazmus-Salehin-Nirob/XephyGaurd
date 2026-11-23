@@ -14,6 +14,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from .features import IDLE_GAP_S
+
 GENERIC_NOT_OBSERVABLE = [
     "use of a phone or second device away from this PC",
     "answers memorised or written down before the session",
@@ -82,7 +84,7 @@ def score_v1(f: dict[str, Any], *, mode: str, base: dict[str, tuple[float, float
         if f["paste_to_typed"] > 0.5 and f["pasted_chars"] >= 500:
             add("paste_to_typed", f"Pasted {f['paste_to_typed']:.1f}× as many characters as typed", 10, f["paste_to_typed"])
         if f["idle_then_burst"]:
-            add("idle_then_burst", f"{f['idle_then_burst']} burst(s) of new code right after a {120 // 60}+ minute idle gap",
+            add("idle_then_burst", f"{f['idle_then_burst']} burst(s) of new code right after a {IDLE_GAP_S / 60:g}+ minute idle gap",
                 min(16, 8 * f["idle_then_burst"]), f["idle_then_burst"])
         b = (base or {})
         used_baseline = False

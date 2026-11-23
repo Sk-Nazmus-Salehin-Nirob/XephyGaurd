@@ -94,6 +94,19 @@ def test_early_boilerplate_paste_discounted():
     assert "boilerplate" in early.reasons[0].label
 
 
+def test_idle_gap_label_follows_IDLE_GAP_S(monkeypatch):
+    from xg_analysis import scoring
+    f = dict(ai_flags=0, tamper_flags=0, net_flags=0, blocked_attempts=0, largest_paste=0, largest_paste_code=False,
+             early_paste_chars=0, paste_to_typed=0, pasted_chars=0, idle_then_burst=1, keys_total=2000,
+             backspace_ratio=0.08, time_outside_ide=0, focus_switches_per_min=0, keys_per_min=150, burstiness=1)
+    label = lambda: next(r.label for r in score_v1(f, mode="test").reasons if r.signal == "idle_then_burst")  # noqa: E731
+    assert "after a 2+ minute idle gap" in label()           # IDLE_GAP_S = 120
+    monkeypatch.setattr(scoring, "IDLE_GAP_S", 300)
+    assert "after a 5+ minute idle gap" in label()
+    monkeypatch.setattr(scoring, "IDLE_GAP_S", 90)
+    assert "after a 1.5+ minute idle gap" in label()
+
+
 def test_personal_baseline_z_scores():
     f = dict(ai_flags=0, tamper_flags=0, net_flags=0, blocked_attempts=0, largest_paste=0, largest_paste_code=False,
              early_paste_chars=0, paste_to_typed=0, pasted_chars=0, idle_then_burst=0, keys_total=3000,
