@@ -176,8 +176,21 @@ def compute(sd: SessionData) -> pd.DataFrame:
     end = _ts(pd.Series([end_raw]))[0] if end_raw else pd.Timestamp.now(tz="UTC")
     rows = []
     for pc, user in _users(sd):
-        sel = lambda df: df[(df.pc_id == pc) & ((df.user == user) if user and "user" in df else True)] if not df.empty else df  # noqa: E731
-        ks, pa, al, ev = sel(sd.key_stats), sel(sd.pastes), sel(sd.alerts), sel(sd.events)
+        def sel(df: pd.DataFrame, with_unattributed: bool = False, pc=pc, user=user) -> pd.DataFrame:
+            """Rows of this PC and user. with_unattributed also keeps the PC's rows without a user."""
+            if df.empty:
+                return df
+            on_pc = df[df.pc_id == pc]
+            if not user or "user" not in df:
+                return on_pc
+            mine = on_pc.user == user
+            if with_unattributed:
+                mine |= on_pc.user.isna() | (on_pc.user == "")
+            return on_pc[mine]
+
+        # Alerts without a user (e.g. tamper.unclean_restart before anyone logged in) are direct evidence on
+        # the PC: they count for every user of it instead of silently disappearing (I-ANALYSIS-10).
+        ks, pa, al, ev = sel(sd.key_stats), sel(sd.pastes), sel(sd.alerts, with_unattributed=True), sel(sd.events)
         ne = sd.net[sd.net.pc_id == pc] if not sd.net.empty else sd.net
         keys_total = float(ks["keys"].sum()) if not ks.empty else 0.0
         active = ks[ks["keys"] > 0] if not ks.empty else ks

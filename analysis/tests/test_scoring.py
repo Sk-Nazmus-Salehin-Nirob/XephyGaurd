@@ -69,6 +69,24 @@ def test_folder_growth_without_a_paste_is_a_burst(lab, db):
     assert compute(load_session(db, 18)).iloc[0].idle_then_burst == 3
 
 
+def test_alerts_without_a_user_count_for_every_user_of_the_pc(lab, db):
+    lab.session(19, "test")
+    pc = lab.pc(19, "J1")
+    other = lab.pc(19, "J2")
+    lab.typing(19, pc, "jo", 1, 20)
+    lab.typing(19, pc, "kim", 25, 20)                       # second login on the same PC
+    lab.typing(19, other, "lee", 1, 40)
+    lab.alert(19, pc, None, 0.5, "tamper.unclean_restart", "tamper")
+    lab.alert(19, pc, "", 30, "proc.ollama", "local_llm")
+    lab.alert(19, pc, "kim", 31, "proc.lmstudio", "local_llm")
+    lab.alert(19, other, None, 2, "tamper.clock", "tamper")
+    lab.db.conn.commit()
+    f = compute(load_session(db, 19)).set_index("user")
+    assert (f.loc["jo", "tamper_flags"], f.loc["jo", "ai_flags"]) == (1, 1)    # used to be (0, 0)
+    assert (f.loc["kim", "tamper_flags"], f.loc["kim", "ai_flags"]) == (1, 2)  # own alert + the PC's
+    assert (f.loc["lee", "tamper_flags"], f.loc["lee", "ai_flags"]) == (1, 0)  # never another PC's
+
+
 def test_unused_columns_are_neither_loaded_nor_computed(lab, db):
     honest_and_suspicious(lab)
     sd = load_session(db, 10)
