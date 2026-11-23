@@ -109,6 +109,8 @@ jobs:
         with: { php-version: '8.3', extensions: 'pdo_sqlite, intl, zip, gd' }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      # --strict: fails on unbound ("*") ranges and on a lock that does not match composer.json.
+      - run: composer validate --strict --no-interaction
       - run: composer install --no-interaction --prefer-dist
       - run: composer audit
       - run: npm ci && npm run build

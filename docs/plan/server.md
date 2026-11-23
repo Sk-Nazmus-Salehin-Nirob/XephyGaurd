@@ -83,7 +83,7 @@ Each step first adds a failing-budget test (query count via `DB::listen`) or an 
 - [x] Step 51: (done as S-41) Research export filters consent in SQL and streams with `lazy()` (fixes I-SERVER-33; touches F52)
 
 ## Phase 9: Dependency updates
-- [ ] Step 52: Caret ranges for `barryvdh/laravel-dompdf`, `firebase/php-jwt`, `symfony/yaml` matching `composer.lock` (fixes I-SERVER-29; touches F51, F44)
+- [x] Step 52: (done as S-56) Caret ranges for `barryvdh/laravel-dompdf`, `firebase/php-jwt`, `symfony/yaml` matching `composer.lock` (fixes I-SERVER-29; touches F51, F44)
 
 ## Cross-component order (server side)
 Server Steps 1-3 and ccc-deploy "screen-gateway behind nginx" land before agent Steps 9-10. Server Step 6 and ccc-deploy I-CCC-6 together. Server Step 13 and analysis Step "unify export" together.
