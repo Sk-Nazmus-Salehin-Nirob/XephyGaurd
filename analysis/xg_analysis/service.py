@@ -5,6 +5,9 @@
 
 XG_ANALYSIS_TOKEN is this service's own secret, shared only with the CCC (I-ANALYSIS-17). The
 proxy's XG_INTERNAL_TOKEN is never accepted here.
+
+Listens on XG_ANALYSIS_BIND (default 127.0.0.1) : XG_ANALYSIS_PORT (default 8090). The CCC runs with
+host networking, so 0.0.0.0 would expose the service to the lab LAN (I-ANALYSIS-1).
 """
 from __future__ import annotations
 
@@ -67,13 +70,19 @@ class Handler(BaseHTTPRequestHandler):
         log.info("%s - %s", self.address_string(), fmt % args)
 
 
+def listen_address() -> tuple[str, int]:
+    """(host, port) to bind: XG_ANALYSIS_BIND (unset or empty = 127.0.0.1) and XG_ANALYSIS_PORT."""
+    host = os.environ.get("XG_ANALYSIS_BIND", "").strip() or "127.0.0.1"
+    return host, int(os.environ.get("XG_ANALYSIS_PORT", "8090"))
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    port = int(os.environ.get("XG_ANALYSIS_PORT", "8090"))
+    host, port = listen_address()
     if not os.environ.get("XG_ANALYSIS_TOKEN", "").strip():
         log.warning("XG_ANALYSIS_TOKEN is not set: every /score request is refused")
-    log.info("analysis service on :%d", port)
-    ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+    log.info("analysis service on %s:%d", host, port)
+    ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

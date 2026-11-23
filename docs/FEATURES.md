@@ -143,8 +143,8 @@ Paths are relative to the repo root. `S/` = `server/app/`, `A/` = `agent/`.
 
 ### F9. Analysis scoring service (HTTP)
 - **What:** separate Python service the CCC calls to score a session.
-- **Trigger:** `python -m xg_analysis serve` (Docker service `analysis`, 127.0.0.1:8090);
-  `GET /health`, `POST /score`.
+- **Trigger:** `python -m xg_analysis serve` (Docker service `analysis`, 127.0.0.1:8090;
+  `XG_ANALYSIS_BIND`/`XG_ANALYSIS_PORT` change it); `GET /health`, `POST /score`.
 - **Code:** `analysis/xg_analysis/service.py`, `pipeline.py`, `scoring.py`, `features.py`, `db.py`;
   CCC side `S/Services/AnalysisClient.php`.
 - **In/out/side effects:** reads events from the DB (`XG_DB_URL`); returns scores and reasons.
@@ -1172,7 +1172,7 @@ Defined in `server/routes/console.php`.
 agent IPC); reads `DISPLAY`, `XDG_SESSION_TYPE`, `DBUS_SESSION_BUS_ADDRESS`, `NOTIFY_SOCKET`, `WATCHDOG_USEC`.
 
 ### Python services
-`XG_DB_URL`, `XG_ANALYSIS_PORT`, `XG_ANALYSIS_TOKEN` (analysis); `XG_DISCOVERY_PORT`, `XG_CCC_IP`, `XG_AGENT_PORT`,
+`XG_DB_URL`, `XG_ANALYSIS_BIND` (default 127.0.0.1), `XG_ANALYSIS_PORT`, `XG_ANALYSIS_TOKEN` (analysis); `XG_DISCOVERY_PORT`, `XG_CCC_IP`, `XG_AGENT_PORT`,
 `XG_CA_DIR`, `XG_LAB_NAME` (discovery); `XG_INTERNAL_TOKEN`, `XG_NETWORK_MODE` (proxy).
 
 ---

@@ -4,10 +4,39 @@ import json
 import pytest
 from conftest import SCHEMA, LabBuilder
 
+from xg_analysis import service
 from xg_analysis.db import Db
-from xg_analysis.service import Handler, authorized
+from xg_analysis.service import Handler, authorized, listen_address
 
 TOKEN = "analysis-token-1234"
+
+
+def test_binds_loopback_by_default(monkeypatch):
+    monkeypatch.delenv("XG_ANALYSIS_BIND", raising=False)
+    monkeypatch.delenv("XG_ANALYSIS_PORT", raising=False)
+    assert listen_address() == ("127.0.0.1", 8090)          # not 0.0.0.0 under host networking (I-ANALYSIS-1)
+    monkeypatch.setenv("XG_ANALYSIS_BIND", "  ")
+    assert listen_address() == ("127.0.0.1", 8090)
+    monkeypatch.setenv("XG_ANALYSIS_BIND", "10.0.0.5")
+    monkeypatch.setenv("XG_ANALYSIS_PORT", "9000")
+    assert listen_address() == ("10.0.0.5", 9000)
+
+
+def test_main_listens_on_the_configured_address(monkeypatch):
+    bound = []
+
+    class FakeServer:
+        def __init__(self, addr, handler):
+            bound.append((addr, handler))
+
+        def serve_forever(self):
+            pass
+
+    monkeypatch.setattr(service, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.delenv("XG_ANALYSIS_BIND", raising=False)
+    monkeypatch.delenv("XG_ANALYSIS_PORT", raising=False)
+    service.main()
+    assert bound == [(("127.0.0.1", 8090), Handler)]
 
 
 def test_score_endpoint_accepts_only_the_analysis_token(monkeypatch):
