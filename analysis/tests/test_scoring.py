@@ -434,3 +434,44 @@ def test_cli_has_no_research_export():
     # The one research export is the server's ResearchExport (audited, hash-chained audit log; DECISIONS #30).
     with pytest.raises(SystemExit):
         main(["export", "--out", "/tmp/never-written"])
+
+
+def _practice_history(lab, n=3, users=("pia", "quin")):
+    for i, u in enumerate(users):
+        lab.student(700 + i, u)
+    for k in range(n):
+        sid = 60 + k
+        lab.session(sid, "practice", start_min=-3000 + k * 200, length=30)
+        for i, u in enumerate(users):
+            pc = lab.pc(sid, f"H{k}-{i}")
+            lab.typing(sid, pc, u, -3000 + k * 200, 20, kpm=140 + 10 * k + i, bs=0.05 + 0.01 * k)
+    lab.db.conn.commit()
+
+
+def test_baseline_reuses_stored_features_and_loads_students_once(lab, db, monkeypatch):
+    # I-ANALYSIS-11: every score used to reload and recompute up to 20 past sessions, each re-reading students.
+    from conftest import ts
+    from xg_analysis import features as F
+    _practice_history(lab)
+    calls = {"load": 0, "students": 0}
+    real_load, real_df = F.load_session, db.df
+
+    def counting_load(*a, **k):
+        calls["load"] += 1
+        return real_load(*a, **k)
+
+    def counting_df(sql, *a, **k):
+        calls["students"] += "FROM students" in sql
+        return real_df(sql, *a, **k)
+
+    monkeypatch.setattr(F, "load_session", counting_load)
+    monkeypatch.setattr(db, "df", counting_df)
+    cold = F.baseline(db, ["pia", "quin"], ts(0), 1)
+    assert calls == {"load": 3, "students": 1}                 # unscored history: recomputed, roster read once
+    for sid in (60, 61, 62):
+        score_session(db, sid, v2=False)
+    calls.update(load=0, students=0)
+    warm = F.baseline(db, ["pia", "quin"], ts(0), 1)
+    assert calls == {"load": 0, "students": 0}                 # scored history: stored scores.features only
+    pd.testing.assert_frame_equal(cold, warm, check_exact=False)
+    assert int(warm.loc["pia", ("keys_per_min", "count")]) == 3

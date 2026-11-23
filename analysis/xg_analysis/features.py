@@ -81,7 +81,13 @@ def _ts(s: pd.Series) -> pd.Series:
     return pd.to_datetime(s, utc=True, format="mixed")
 
 
-def load_session(db: Db, session_id: int) -> SessionData:
+def load_students(db: Db) -> pd.DataFrame:
+    # Only what matching and exemptions need: never the real name, number or pseudonym (I-ANALYSIS-20).
+    return db.df("SELECT id AS student_id, login, exempt, exempt_reason FROM students")
+
+
+def load_session(db: Db, session_id: int, students: pd.DataFrame | None = None) -> SessionData:
+    """One session's raw rows. Pass `students` to reuse a roster already loaded (I-ANALYSIS-11)."""
     s = db.one("SELECT * FROM lab_sessions WHERE id = ?", (session_id,))
     if s is None:
         raise SessionNotFound(f"session {session_id} not found")
@@ -96,8 +102,7 @@ def load_session(db: Db, session_id: int) -> SessionData:
     ne = q("SELECT pc_id, host, action, category, occurred_at FROM net_events WHERE lab_session_id = ?")
     ev = q("SELECT pc_id, `user`, type, occurred_at, data FROM events WHERE lab_session_id = ? "
            "AND type IN ('window_focus','file_activity','net_adapter','device','helper_status')")
-    # Only what matching and exemptions need: never the real name, number or pseudonym (I-ANALYSIS-20).
-    st = db.df("SELECT id AS student_id, login, exempt, exempt_reason FROM students")
+    st = load_students(db) if students is None else students
     for df, col in ((ks, "window_start"), (pa, "occurred_at"), (al, "occurred_at"), (ne, "occurred_at"), (ev, "occurred_at")):
         if not df.empty:
             df[col] = _ts(df[col])
@@ -256,20 +261,55 @@ def compute(sd: SessionData) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def baseline(db: Db, logins: list[str], before: str, lab_id: int) -> pd.DataFrame:
-    """Per-student mean/std of key features across earlier Practice sessions (the student's own baseline)."""
+BASELINE_COLS = ["keys_per_min", "backspace_ratio", "paste_to_typed", "iki_median", "burstiness"]
+
+
+def _stored_features(db: Db, session_ids: list[int]) -> dict[int, pd.DataFrame]:
+    """Per-session feature rows already stored with the v1 scores (`scores.features`), by session id.
+
+    A session is used only if every stored row has all BASELINE_COLS; otherwise it is recomputed."""
+    if not session_ids:
+        return {}
+    marks = ",".join("?" * len(session_ids))
+    rows = db.df(f"SELECT lab_session_id, `user`, features FROM scores WHERE method = 'v1' "
+                 f"AND lab_session_id IN ({marks})", tuple(session_ids))
+    out: dict[int, pd.DataFrame] = {}
+    for sid, grp in rows.groupby("lab_session_id") if not rows.empty else []:
+        recs = []
+        for user, feats in zip(grp.user, grp.features):
+            f = jload(feats)
+            if not all(c in f for c in BASELINE_COLS):
+                break
+            recs.append({"user": user or "", **{c: np.nan if f[c] is None else float(f[c]) for c in BASELINE_COLS}})
+        else:
+            out[int(sid)] = pd.DataFrame(recs)
+    return out
+
+
+def baseline(db: Db, logins: list[str], before: str, lab_id: int,
+             students: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Per-student mean/std of key features across earlier Practice sessions (the student's own baseline).
+
+    Uses the features stored when each past session was scored; only unscored sessions are loaded and
+    recomputed, sharing one roster load (I-ANALYSIS-11)."""
     if not logins:
         return pd.DataFrame()
     sessions = db.df("SELECT id FROM lab_sessions WHERE lab_id = ? AND mode = 'practice' AND status = 'ended' "
                      "AND starts_at < ? ORDER BY starts_at DESC LIMIT 20", (lab_id, before))
+    ids = [int(s) for s in sessions.id.tolist()]
+    stored = _stored_features(db, ids)
     frames = []
-    for sid in sessions.id.tolist():
-        f = compute(load_session(db, int(sid)))
+    for sid in ids:
+        if sid in stored:
+            f = stored[sid]
+        else:
+            if students is None:
+                students = load_students(db)
+            f = compute(load_session(db, sid, students))
         if not f.empty:
             frames.append(f[f.user.isin(logins)])
     if not frames:
         return pd.DataFrame()
     allf = pd.concat(frames)
-    cols = ["keys_per_min", "backspace_ratio", "paste_to_typed", "iki_median", "burstiness"]
-    agg = allf.groupby("user")[cols].agg(["mean", "std", "count"])
+    agg = allf.groupby("user")[BASELINE_COLS].agg(["mean", "std", "count"])
     return agg

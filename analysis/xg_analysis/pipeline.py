@@ -46,7 +46,8 @@ def score_session(db: Db, session_id: int, v2: bool | None = None) -> dict[str, 
     feats = compute(sd)
     if feats.empty:
         return {"session_id": session_id, "scored": 0, "flagged": [], "ambiguous": []}
-    base = baseline(db, [u for u in feats.user.unique() if u], str(sd.session["starts_at"]), int(sd.session["lab_id"]))
+    base = baseline(db, [u for u in feats.user.unique() if u], str(sd.session["starts_at"]), int(sd.session["lab_id"]),
+                    students=sd.students)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     rows = []
     linked = []   # the matched student per feature row (None = no or several roster matches)
