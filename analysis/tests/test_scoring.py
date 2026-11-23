@@ -244,10 +244,10 @@ def test_stored_features_are_exactly_FEATURES(lab, db):
     score_session(db, 10, v2=False)
     for (stored,) in db.conn.execute("SELECT features FROM scores"):
         assert set(json.loads(stored)) == set(FEATURES)
+    bob = json.loads(db.conn.execute("SELECT features FROM scores WHERE user = 'bob'").fetchone()[0])
+    assert bob["net_flags"] == 0 and bob["ai_flags"] == 1       # net_flags is stored too (I-ANALYSIS-18)
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="net_flags is computed and scored but missing from FEATURES (I-ANALYSIS-18); Step 20 adds it")
 def test_FEATURES_covers_every_computed_and_scored_feature(lab, db):
     honest_and_suspicious(lab)
     feats = compute(load_session(db, 10))

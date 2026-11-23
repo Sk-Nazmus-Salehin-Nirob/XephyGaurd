@@ -24,7 +24,7 @@ BURST_GROWTH_BYTES = 1500  # or 1.5 kB+ growth of the work folder
 FEATURES = ["keys_total", "active_minutes", "keys_per_min", "iki_median", "burstiness", "backspace_ratio",
             "pasted_chars", "paste_count", "largest_paste", "largest_paste_code", "largest_paste_early", "paste_to_typed",
             "idle_then_burst", "focus_switches_per_min", "time_outside_ide", "blocked_attempts",
-            "adapter_device_changes", "ai_flags", "tamper_flags", "early_paste_chars"]
+            "adapter_device_changes", "ai_flags", "tamper_flags", "net_flags", "early_paste_chars"]
 
 
 @dataclass(frozen=True)

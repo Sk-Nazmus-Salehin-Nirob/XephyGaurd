@@ -59,7 +59,8 @@ No move-only items in the audit.
 ## Phase 7: Medium/Low bugs
 - [x] Step 19: Late large paste is not halved/labelled "early": compare the late paste, not the early total (fixes I-ANALYSIS-8; touches F48)
   Done 2026-11-23: new feature `largest_paste_early` (the largest paste itself happened in the first 5 min), added to `FEATURES` so it is stored with the score. `score_v1` halves and says "early … boilerplate" only when it is true, instead of `early_paste_chars >= largest_paste`. `early_paste_chars` is still computed and stored, just no longer scored. The research export writes `features` as one JSON blob, so the extra key needs no server change. New `test_late_large_paste_is_not_discounted_by_small_early_pastes` (2×500 early + 1000 at minute 40: 15 points, plain label; was 7 + "boilerplate"; fails on the old rule). The unit test dicts carry the new key. 58 passed + 1 xfailed, ruff clean.
-- [ ] Step 20: Add `net_flags` to `FEATURES` so stored features and export match scored values (fixes I-ANALYSIS-18; touches F48, F52)
+- [x] Step 20: Add `net_flags` to `FEATURES` so stored features and export match scored values (fixes I-ANALYSIS-18; touches F48, F52)
+  Done 2026-11-23: `net_flags` added to `FEATURES`, so `scores.features` and the research export's `features_json` now carry it. The strict xfail marker from Step 7 is removed and that test passes; `test_stored_features_are_exactly_FEATURES` also checks bob's stored `net_flags`. Scores unchanged (`net_flags` was already scored). 59 passed, ruff clean.
 - [ ] Step 21: Count a code insertion once in `idle_then_burst` (paste or folder growth, not both); update the "bob" fixture expectation with the reason text (fixes I-ANALYSIS-9; touches F48)
 - [ ] Step 22: Include alerts with `user` NULL for the PC when a user filter is applied (fixes I-ANALYSIS-10; touches F48)
 - [ ] Step 23: `blocked_attempts` counted per user when several logins share a PC (fixes I-ANALYSIS-12; touches F48)
