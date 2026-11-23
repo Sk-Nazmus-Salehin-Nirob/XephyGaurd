@@ -8,7 +8,7 @@ v2 (optional, XG_SCORING_V2=1): Isolation Forest over the session cohort, shown 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -43,7 +43,6 @@ class ScoreResult:
     confidence: str
     reasons: list[Reason]
     not_observable: list[str]
-    features: dict[str, Any] = field(default_factory=dict)
 
 
 def _z(value: float, mean: float, std: float) -> float | None:

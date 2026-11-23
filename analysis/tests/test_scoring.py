@@ -45,6 +45,14 @@ def test_features(lab, db):
     assert f.loc["bob", "paste_to_typed"] > 1
 
 
+def test_unused_columns_are_neither_loaded_nor_computed(lab, db):
+    honest_and_suspicious(lab)
+    sd = load_session(db, 10)
+    assert "title" not in sd.alerts.columns
+    assert not {"source_app", "target_app"} & set(sd.pastes.columns)
+    assert not {"alert_titles", "categories"} & set(compute(sd).columns)
+
+
 def test_v1_scores_are_explained_and_ranked(lab, db):
     honest_and_suspicious(lab)
     out = score_session(db, 10, v2=False)
@@ -191,8 +199,8 @@ class _ReadRecorder(dict):
 
 
 def _computed_feature_columns(feats):
-    """Scalar per-student columns of compute() (identity and list-valued columns left out)."""
-    return {c for c in feats.columns if c not in ("pc_id", "user") and not isinstance(feats[c].iloc[0], list)}
+    """Per-student feature columns of compute() (the identity columns left out)."""
+    return set(feats.columns) - {"pc_id", "user"}
 
 
 def test_stored_features_are_exactly_FEATURES(lab, db):

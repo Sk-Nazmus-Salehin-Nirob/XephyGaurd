@@ -84,9 +84,9 @@ def load_session(db: Db, session_id: int) -> SessionData:
                 "JOIN pcs p ON p.id = sp.pc_id WHERE sp.lab_session_id = ?", (session_id,))
     ks = q("SELECT pc_id, `user`, window_start, window_s, `keys`, backspaces, iki_median, iki_mean, bursts, paste_chords "
            "FROM key_stats WHERE lab_session_id = ?")
-    pa = q("SELECT pc_id, `user`, is_copy, chars, `lines`, looks_like_code, source_app, target_app, occurred_at "
+    pa = q("SELECT pc_id, `user`, is_copy, chars, `lines`, looks_like_code, occurred_at "
            "FROM paste_events WHERE lab_session_id = ?")
-    al = q("SELECT pc_id, `user`, rule_id, severity, category, title, occurred_at FROM alerts WHERE lab_session_id = ?")
+    al = q("SELECT pc_id, `user`, rule_id, severity, category, occurred_at FROM alerts WHERE lab_session_id = ?")
     ne = q("SELECT pc_id, host, action, category, occurred_at FROM net_events WHERE lab_session_id = ?")
     ev = q("SELECT pc_id, `user`, type, occurred_at, data FROM events WHERE lab_session_id = ? "
            "AND type IN ('window_focus','file_activity','net_adapter','device','helper_status')")
@@ -177,7 +177,6 @@ def compute(sd: SessionData) -> pd.DataFrame:
         early = pastes[pastes.occurred_at <= start + pd.Timedelta(minutes=5)] if not pastes.empty else pastes
         fsw, outside = _focus_stats(ev, end) if not ev.empty else (0.0, 0.0)
         files = ev[ev.type == "file_activity"] if not ev.empty else ev
-        cats = set(al.category.dropna()) if not al.empty else set()
         rows.append({
             "pc_id": pc, "user": user,
             "keys_total": keys_total,
@@ -200,8 +199,6 @@ def compute(sd: SessionData) -> pd.DataFrame:
             "tamper_flags": int((al.category == "tamper").sum()) if not al.empty else 0,
             "net_flags": int(al.rule_id.str.startswith("net.").sum()) if not al.empty else 0,
             "early_paste_chars": float(early.chars.sum()) if not early.empty else 0.0,
-            "alert_titles": sorted(set(al.title)) if not al.empty else [],
-            "categories": sorted(cats),
         })
     return pd.DataFrame(rows)
 
