@@ -5,7 +5,7 @@ import pytest
 from xg_analysis.__main__ import main
 from xg_analysis.features import compute, load_session
 from xg_analysis.pipeline import score_session
-from xg_analysis.scoring import score_v1
+from xg_analysis.scoring import score_v1, score_v2
 
 
 def honest_and_suspicious(lab, sid=10):
@@ -115,6 +115,27 @@ def test_v2_isolation_forest_alongside_v1(lab, db):
     assert len(v2) == 9
     assert max(v2, key=v2.get) == "odd"
     assert db.conn.execute("SELECT count(*) FROM scores WHERE method = 'v1'").fetchone()[0] == 9
+
+
+def test_v2_leaves_exempt_students_out(lab, db):
+    lab.session(13, "test")
+    for i in range(7):
+        pc = lab.pc(13, f"D{i}")
+        lab.student(300 + i, f"w{i}")
+        lab.typing(13, pc, f"w{i}", 1, 40, kpm=150 + i * 3, bs=0.07)
+    ex = lab.pc(13, "D9")
+    lab.student(400, "dave", exempt="speech-to-text tool")
+    lab.typing(13, ex, "dave", 1, 3, kpm=400, bs=0.0)   # extreme behaviour that must not count anywhere
+    lab.paste(13, ex, "dave", 30, 4000, 120)
+    lab.db.conn.commit()
+    score_session(db, 13, v2=True)
+    v2 = dict(db.conn.execute("SELECT user, score FROM scores WHERE method = 'v2'").fetchall())
+    assert "dave" not in v2 and len(v2) == 7                 # no stored v2 score for the exempt student
+    assert db.conn.execute("SELECT count(*) FROM scores WHERE method = 'v1' AND user = 'dave'").fetchone()[0] == 1
+    # ... and the cohort is ranked as if dave were not in the session
+    f = compute(load_session(db, 13))
+    alone = {u: r.score for u, r in zip(f[f.user != "dave"].user, score_v2(f[f.user != "dave"]))}
+    assert v2 == alone
 
 
 def test_cli_has_no_research_export():

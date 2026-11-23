@@ -6,6 +6,6 @@
 
 - **What:** marks a student as exempt (e.g. accommodations) so behaviour signals are ignored.
 - **Trigger:** `POST /roster/{student}/exempt`.
-- **Code:** `RosterController::exempt`; scoring honours it.
-- **Status:** working (`exempt_student_behavior_signals_ignored`).
+- **Code:** `RosterController::exempt`; scoring honours it (v1 drops behaviour reasons; no v2 score).
+- **Status:** working (`exempt_student_behavior_signals_ignored`, `v2_leaves_exempt_students_out`).
 - **Test:** 1. Exempt a student. 2. Rescore: their behaviour reasons disappear.

@@ -32,6 +32,7 @@ def score_session(db: Db, session_id: int, v2: bool | None = None) -> dict[str, 
     base = baseline(db, [u for u in feats.user.unique() if u], str(sd.session["starts_at"]), int(sd.session["lab_id"]))
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     rows = []
+    cohort = []   # v2 rows: exempt students' behaviour is ignored, so they are not in the cohort (I-ANALYSIS-2)
     for _, f in feats.iterrows():
         login = f.user.split("\\")[-1] if f.user else ""
         st = students.loc[login] if login and not students.empty and login in students.index else None
@@ -42,8 +43,9 @@ def score_session(db: Db, session_id: int, v2: bool | None = None) -> dict[str, 
         exempt = (st.exempt_reason or "accommodation") if st is not None and bool(st.exempt) else None
         res = score_v1(f.to_dict(), mode=sd.session["mode"], base=b, caps=sd.caps.get(int(f.pc_id), {}), exempt=exempt)
         rows.append(("v1", f, st, res))
+        cohort.append(exempt is None)
     if v2:
-        for (_, f), res in zip(feats.iterrows(), score_v2(feats)):
+        for (_, f), res in zip(feats[cohort].iterrows(), score_v2(feats[cohort])):
             login = f.user.split("\\")[-1] if f.user else ""
             st = students.loc[login] if login and not students.empty and login in students.index else None
             rows.append(("v2", f, st, res))
