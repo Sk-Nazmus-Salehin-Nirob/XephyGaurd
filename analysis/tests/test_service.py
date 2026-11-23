@@ -5,7 +5,7 @@ import pytest
 from conftest import SCHEMA, LabBuilder
 
 from xg_analysis import service
-from xg_analysis.db import Db
+from xg_analysis.db import Db, db_url
 from xg_analysis.service import Handler, authorized, listen_address
 
 TOKEN = "analysis-token-1234"
@@ -35,8 +35,36 @@ def test_main_listens_on_the_configured_address(monkeypatch):
     monkeypatch.setattr(service, "ThreadingHTTPServer", FakeServer)
     monkeypatch.delenv("XG_ANALYSIS_BIND", raising=False)
     monkeypatch.delenv("XG_ANALYSIS_PORT", raising=False)
+    monkeypatch.setenv("XG_DB_URL", "sqlite:///:memory:")
     service.main()
     assert bound == [(("127.0.0.1", 8090), Handler)]
+
+
+def test_db_url_has_no_silent_sqlite_fallback(monkeypatch):
+    monkeypatch.delenv("XG_DB_URL", raising=False)
+    monkeypatch.delenv("XG_ALLOW_SQLITE", raising=False)
+    with pytest.raises(RuntimeError, match="XG_DB_URL is not set"):
+        db_url()
+    with pytest.raises(RuntimeError, match="XG_DB_URL is not set"):
+        Db()
+    monkeypatch.setenv("XG_DB_URL", "   ")
+    with pytest.raises(RuntimeError):
+        db_url()
+    monkeypatch.setenv("XG_ALLOW_SQLITE", "1")                    # explicit opt-in for local development
+    assert db_url() == "sqlite:///xephyguard.sqlite"
+    monkeypatch.setenv("XG_DB_URL", "mysql://u:p@127.0.0.1:3306/xephyguard")
+    assert db_url() == "mysql://u:p@127.0.0.1:3306/xephyguard"
+    assert Db("sqlite:///:memory:").ping()                         # an explicit URL never needs the env
+
+
+def test_main_refuses_to_start_without_a_db_url(monkeypatch):
+    started = []
+    monkeypatch.setattr(service, "ThreadingHTTPServer", lambda *a: started.append(a))
+    monkeypatch.delenv("XG_DB_URL", raising=False)
+    monkeypatch.delenv("XG_ALLOW_SQLITE", raising=False)
+    with pytest.raises(SystemExit, match="XG_DB_URL is not set"):
+        service.main()
+    assert started == []
 
 
 def test_score_endpoint_accepts_only_the_analysis_token(monkeypatch):

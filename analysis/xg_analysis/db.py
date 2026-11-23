@@ -10,10 +10,24 @@ from urllib.parse import unquote, urlparse
 
 import pandas as pd
 
+SQLITE_FALLBACK = "sqlite:///xephyguard.sqlite"
+
+
+def db_url() -> str:
+    """XG_DB_URL. Unset or blank is an error, unless XG_ALLOW_SQLITE=1 picks ./xephyguard.sqlite for local
+    development: a silent fallback made /health report ok while every /score failed (I-ANALYSIS-23)."""
+    url = os.environ.get("XG_DB_URL", "").strip()
+    if url:
+        return url
+    if os.environ.get("XG_ALLOW_SQLITE", "").strip() == "1":
+        return SQLITE_FALLBACK
+    raise RuntimeError("XG_DB_URL is not set (mysql://user:password@host:3306/db); "
+                       "XG_ALLOW_SQLITE=1 uses ./xephyguard.sqlite for local development")
+
 
 class Db:
     def __init__(self, url: str | None = None):
-        self.url = url or os.environ.get("XG_DB_URL", "sqlite:///xephyguard.sqlite")
+        self.url = url or db_url()
         u = urlparse(self.url)
         if u.scheme == "sqlite":
             self.kind = "sqlite"

@@ -17,7 +17,7 @@ import logging
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .db import Db
+from .db import Db, db_url
 from .pipeline import score_session
 
 log = logging.getLogger("xg-analysis")
@@ -79,6 +79,10 @@ def listen_address() -> tuple[str, int]:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     host, port = listen_address()
+    try:
+        db_url()
+    except RuntimeError as e:
+        raise SystemExit(f"xg-analysis: {e}") from None
     if not os.environ.get("XG_ANALYSIS_TOKEN", "").strip():
         log.warning("XG_ANALYSIS_TOKEN is not set: every /score request is refused")
     log.info("analysis service on %s:%d", host, port)

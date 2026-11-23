@@ -147,9 +147,10 @@ Paths are relative to the repo root. `S/` = `server/app/`, `A/` = `agent/`.
   `XG_ANALYSIS_BIND`/`XG_ANALYSIS_PORT` change it); `GET /health`, `POST /score`.
 - **Code:** `analysis/xg_analysis/service.py`, `pipeline.py`, `scoring.py`, `features.py`, `db.py`;
   CCC side `S/Services/AnalysisClient.php`.
-- **In/out/side effects:** reads events from the DB (`XG_DB_URL`); returns scores and reasons.
+- **In/out/side effects:** reads events from the DB (`XG_DB_URL`, required: the service stops at
+  startup without it; `XG_ALLOW_SQLITE=1` uses `./xephyguard.sqlite` for local development); returns scores and reasons.
 - **Status:** working (analysis tests; `ending_a_session_survives_an_unreachable_analysis_service`).
-- **Test:** 1. `cd analysis && python -m xg_analysis serve`. 2. `curl localhost:8090/health`.
+- **Test:** 1. `cd analysis && XG_DB_URL=... python -m xg_analysis serve`. 2. `curl localhost:8090/health`.
 
 ---
 
@@ -1175,7 +1176,7 @@ Defined in `server/routes/console.php`.
 agent IPC); reads `DISPLAY`, `XDG_SESSION_TYPE`, `DBUS_SESSION_BUS_ADDRESS`, `NOTIFY_SOCKET`, `WATCHDOG_USEC`.
 
 ### Python services
-`XG_DB_URL`, `XG_ANALYSIS_BIND` (default 127.0.0.1), `XG_ANALYSIS_PORT`, `XG_ANALYSIS_TOKEN` (analysis); `XG_DISCOVERY_PORT`, `XG_CCC_IP`, `XG_AGENT_PORT`,
+`XG_DB_URL` (required), `XG_ALLOW_SQLITE` (dev only), `XG_ANALYSIS_BIND` (default 127.0.0.1), `XG_ANALYSIS_PORT`, `XG_ANALYSIS_TOKEN` (analysis); `XG_DISCOVERY_PORT`, `XG_CCC_IP`, `XG_AGENT_PORT`,
 `XG_CA_DIR`, `XG_LAB_NAME` (discovery); `XG_INTERNAL_TOKEN`, `XG_NETWORK_MODE` (proxy).
 
 ---

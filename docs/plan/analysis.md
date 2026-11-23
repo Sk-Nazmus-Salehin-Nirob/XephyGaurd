@@ -28,7 +28,8 @@ Rules for every step: one component, <300 changed lines, one kind of change, tes
 ## Phase 3: Config and secrets
 - [x] Step 8: Separate `XG_ANALYSIS_TOKEN` for the scoring endpoint, not `XG_INTERNAL_TOKEN` (fixes I-ANALYSIS-17; touches F9) [CROSS: server `AnalysisClient`, ccc-deploy env]
   Done 2026-11-23 with server S-54 (same commit): `service.authorized()` accepts only `XG_ANALYSIS_TOKEN`; unset = every `/score` refused (warning at startup). New `tests/test_service.py` (2 tests); pytest/pandas not installed here, so run with the DB and pipeline modules stubbed.
-- [ ] Step 9: No silent SQLite fallback: missing `XG_DB_URL` is a startup error unless `XG_ALLOW_SQLITE=1` (tests set it) (fixes I-ANALYSIS-23; touches F9)
+- [x] Step 9: No silent SQLite fallback: missing `XG_DB_URL` is a startup error unless `XG_ALLOW_SQLITE=1` (tests set it) (fixes I-ANALYSIS-23; touches F9)
+  Done 2026-11-23: new `db.db_url()`: `XG_DB_URL` (blank counts as unset), else `sqlite:///xephyguard.sqlite` only with `XG_ALLOW_SQLITE=1`, else `RuntimeError`. `Db()` uses it; `service.main()` checks it before binding and exits with the message (checked by hand: `python -m xg_analysis serve` without the env stops at once). An explicit URL, `sqlite://` included, never needs the opt-in, so the tests (which pass their own URL) did not need `XG_ALLOW_SQLITE`. Only the `main()` test now sets `XG_DB_URL`. Compose, RUNNING_THE_SERVER.md and guide_setup.md already set `XG_DB_URL`; F9, FEATURES.md and DEVELOPMENT.md updated. 2 new tests. 27 passed + 1 xfailed, ruff clean.
 - [ ] Step 10: IDE/terminal app allow-list and AI category set loaded from `data/` YAML (fixes I-ANALYSIS-21; touches F48) [CROSS: data/]
 
 ## Phase 4: Structure (moves only)
