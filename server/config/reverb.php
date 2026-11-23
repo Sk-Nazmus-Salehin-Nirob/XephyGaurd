@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\ReverbOrigins;
+
 return [
 
     /*
@@ -82,7 +84,8 @@ return [
                     'scheme' => env('REVERB_SCHEME', 'https'),
                     'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
                 ],
-                'allowed_origins' => ['*'],
+                // Dashboard host (APP_URL) + REVERB_ALLOWED_ORIGINS + the agent marker set by nginx :8443.
+                'allowed_origins' => ReverbOrigins::resolve(env('APP_URL', 'http://localhost'), env('REVERB_ALLOWED_ORIGINS')),
                 'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
                 'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
                 'max_connections' => env('REVERB_APP_MAX_CONNECTIONS'),

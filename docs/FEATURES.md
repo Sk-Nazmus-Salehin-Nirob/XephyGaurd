@@ -178,8 +178,11 @@ Paths are relative to the repo root. `S/` = `server/app/`, `A/` = `agent/`.
   PC channel.
 - **Trigger:** Reverb private channel `lab.{labId}`; `pc.{pcId}` always denied for users.
 - **Code:** `server/routes/channels.php`.
-- **Status:** working (`broadcast_auth_only_for_own_channel` covers the agent side).
+- **Status:** working (`broadcast_auth_only_for_own_channel` covers the agent side). Since S-51 Reverb
+  accepts a browser WebSocket only from the `APP_URL` host or a host in `REVERB_ALLOWED_ORIGINS`
+  (`App\Support\ReverbOrigins`, `ReverbOriginTest`).
 - **Test:** 1. Open the dashboard with dev tools. 2. The WebSocket subscribes to `private-lab.1`.
+  3. Open it by a name that is not in `APP_URL`/`REVERB_ALLOWED_ORIGINS`: the socket closes with "Origin not allowed".
 
 ---
 
@@ -255,7 +258,9 @@ Paths are relative to the repo root. `S/` = `server/app/`, `A/` = `agent/`.
 - **What:** an agent may subscribe only to its own `private-pc.<id>` command channel.
 - **Trigger:** `POST /api/agent/v1/broadcasting/auth`.
 - **Code:** `S/Http/Controllers/Agent/AgentController.php::broadcastAuth`.
-- **Status:** working (`broadcast_auth_only_for_own_channel`).
+- **Status:** working (`broadcast_auth_only_for_own_channel`). Since S-51 nginx sets
+  `Origin: https://xg-agent.invalid` on the mTLS-only `:8443 /app/` path (agents send no `Origin`), and
+  Reverb allows that marker; an agent reaching Reverb without nginx is refused.
 - **Test:** covered by the test; by hand, request another PC's channel and expect 403.
 
 ### F22. Seat layout editor
