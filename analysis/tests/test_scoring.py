@@ -87,6 +87,26 @@ def test_alerts_without_a_user_count_for_every_user_of_the_pc(lab, db):
     assert (f.loc["lee", "tamper_flags"], f.loc["lee", "ai_flags"]) == (1, 0)  # never another PC's
 
 
+def test_blocked_attempts_go_to_the_user_active_on_the_pc(lab, db):
+    lab.session(20, "test")
+    pc = lab.pc(20, "K1")
+    solo = lab.pc(20, "K2")
+    lab.typing(20, pc, "ann", 1, 19)                        # ann until minute 20 ...
+    lab.typing(20, pc, "ben", 30, 20)                       # ... ben from minute 30
+    lab.typing(20, solo, "cy", 10, 10)
+    for m in (0.2, 10, 12, 25):                             # before anyone (-> first user), ann, ann, gap after ann
+        lab.blocked(20, pc, m)
+    for m in (31, 40):
+        lab.blocked(20, pc, m)
+    for m in (1, 50):                                       # a single user gets all of the PC's, as before
+        lab.blocked(20, solo, m)
+    lab.db.conn.commit()
+    f = compute(load_session(db, 20)).set_index("user")
+    assert f.loc["ann", "blocked_attempts"] == 4             # each used to get all 6
+    assert f.loc["ben", "blocked_attempts"] == 2
+    assert f.loc["cy", "blocked_attempts"] == 2
+
+
 def test_unused_columns_are_neither_loaded_nor_computed(lab, db):
     honest_and_suspicious(lab)
     sd = load_session(db, 10)

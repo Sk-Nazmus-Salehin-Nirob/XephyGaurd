@@ -4,6 +4,7 @@ All inputs are numeric aggregates produced on the PCs (no content). One row per 
 """
 from __future__ import annotations
 
+import bisect
 import functools
 import os
 import pathlib
@@ -126,6 +127,30 @@ def _users(sd: SessionData) -> list[tuple[int, str]]:
     return sorted(pairs)
 
 
+def _net_users(sd: SessionData) -> pd.Series:
+    """Login active on the PC at each net_events row (which carry no user): the user of the PC's latest
+    attributed row (keys, paste, alert, event) at or before it, else the first user seen after it. With one
+    user on a PC every row maps to that user, as before (I-ANALYSIS-12)."""
+    out = pd.Series([None] * len(sd.net), index=sd.net.index, dtype=object)
+    if sd.net.empty:
+        return out
+    timeline: dict[int, list[tuple[pd.Timestamp, str]]] = {}
+    for df, col in ((sd.key_stats, "window_start"), (sd.pastes, "occurred_at"), (sd.alerts, "occurred_at"),
+                    (sd.events, "occurred_at")):
+        if df.empty or "user" not in df:
+            continue
+        for pc, u, t in df[["pc_id", "user", col]].itertuples(index=False):
+            if isinstance(u, str) and u:
+                timeline.setdefault(int(pc), []).append((t, u))
+    times = {pc: [t for t, _ in sorted(rows)] for pc, rows in timeline.items()}
+    users = {pc: [u for _, u in sorted(rows)] for pc, rows in timeline.items()}
+    for i, pc, t in zip(sd.net.index, sd.net.pc_id, sd.net.occurred_at):
+        if int(pc) in times:
+            k = bisect.bisect_right(times[int(pc)], t)
+            out[i] = users[int(pc)][k - 1] if k else users[int(pc)][0]
+    return out
+
+
 def _focus_stats(ev: pd.DataFrame, end: pd.Timestamp) -> tuple[float, float]:
     f = ev[ev.type == "window_focus"].sort_values("occurred_at")
     if f.empty:
@@ -175,6 +200,7 @@ def compute(sd: SessionData) -> pd.DataFrame:
     end_raw = sd.session.get("ended_at") or sd.session.get("ends_at")
     end = _ts(pd.Series([end_raw]))[0] if end_raw else pd.Timestamp.now(tz="UTC")
     rows = []
+    net_user = _net_users(sd)
     for pc, user in _users(sd):
         def sel(df: pd.DataFrame, with_unattributed: bool = False, pc=pc, user=user) -> pd.DataFrame:
             """Rows of this PC and user. with_unattributed also keeps the PC's rows without a user."""
@@ -191,7 +217,7 @@ def compute(sd: SessionData) -> pd.DataFrame:
         # Alerts without a user (e.g. tamper.unclean_restart before anyone logged in) are direct evidence on
         # the PC: they count for every user of it instead of silently disappearing (I-ANALYSIS-10).
         ks, pa, al, ev = sel(sd.key_stats), sel(sd.pastes), sel(sd.alerts, with_unattributed=True), sel(sd.events)
-        ne = sd.net[sd.net.pc_id == pc] if not sd.net.empty else sd.net
+        ne = sd.net[(sd.net.pc_id == pc) & ((net_user == user) if user else True)] if not sd.net.empty else sd.net
         keys_total = float(ks["keys"].sum()) if not ks.empty else 0.0
         active = ks[ks["keys"] > 0] if not ks.empty else ks
         active_minutes = float((active.window_s.sum() / 60.0)) if not active.empty else 0.0
