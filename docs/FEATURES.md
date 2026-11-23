@@ -658,7 +658,7 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 - **Trigger:** setting `network_mode` (F104), `XG_NETWORK_MODE`; installer question.
 - **Code:** `NetworkPolicyWriter`, `proxy/xg_netpolicy/generate.py`, `ccc-deploy/docker/proxy-entrypoint.sh`.
 - **Status:** partly working (tests pass; gateway mode never run on a real two-NIC host).
-- **Test:** 1. Set proxy_only. 2. `curl localhost:8000/proxy.pac` returns a PAC pointing at the CCC.
+- **Test:** 1. Set proxy_only. 2. `curl --cacert ca.crt https://<ccc>/proxy.pac` returns a PAC pointing at the CCC.
 
 ### F65. DNS sinkhole with per-PC views (Unbound)
 - **What:** PCs in a blocking session get NXDOMAIN/sinkhole for blocklisted domains; others resolve
@@ -708,11 +708,14 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 
 ### F71. Proxy auto-config (PAC)
 - **What:** PAC file pointing PCs at the CCC proxy, used in proxy_only mode.
-- **Trigger:** `GET /proxy.pac` (public); pushed to PCs as `proxy_pac_url`.
-- **Code:** `PublicController::proxyPac`; agent/helper writes it to the OS (F91).
+- **Trigger:** `GET https://<ccc>/proxy.pac` (public, HTTPS only); pushed to PCs as `proxy_pac_url` (`https://`).
+- **Code:** `PublicController::proxyPac`; agent/helper writes it to the OS (F91); the agent ignores a non-HTTPS
+  or foreign-host URL (`trusted_pac_url`).
 - **Status:** working (`proxy_pac_reflects_network_mode_and_policy_carries_pac_url`,
-  `agent pushes proxy_pac_url to helper in proxy_only mode`). ⚠SEC plain HTTP, falls back to DIRECT.
-- **Test:** 1. `curl localhost:8000/proxy.pac`.
+  `proxy_pac_has_no_direct_fallback_for_pcs_in_a_test_session`, `proxy_pac_is_refused_over_plain_http_and_linked_as_https`,
+  `agent pushes proxy_pac_url to helper in proxy_only mode`). Since S-52 plain HTTP gets 404 (nginx :80 redirects to
+  :443); a PC in a Test session or isolated gets no `DIRECT` fallback; other PCs keep `; DIRECT`.
+- **Test:** 1. `curl --cacert ca.crt https://<ccc>/proxy.pac`. 2. `curl http://<ccc>/proxy.pac` → 301 to HTTPS.
 
 ---
 

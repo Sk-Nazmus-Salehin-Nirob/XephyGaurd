@@ -9,4 +9,4 @@
 - **Trigger:** setting `network_mode` ([F104](../server/F104-settings.md)), `XG_NETWORK_MODE`; installer question.
 - **Code:** `NetworkPolicyWriter`, `proxy/xg_netpolicy/generate.py`, `ccc-deploy/docker/proxy-entrypoint.sh`.
 - **Status:** partly working (tests pass; gateway mode never run on a real two-NIC host).
-- **Test:** 1. Set proxy_only. 2. `curl localhost:8000/proxy.pac` returns a PAC pointing at the CCC.
+- **Test:** 1. Set proxy_only. 2. `curl --cacert ca.crt https://<ccc>/proxy.pac` returns a PAC pointing at the CCC.

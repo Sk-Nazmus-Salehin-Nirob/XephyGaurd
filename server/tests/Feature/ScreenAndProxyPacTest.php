@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Models\LabSession;
@@ -52,10 +54,10 @@ class ScreenAndProxyPacTest extends TestCase
 
         Setting::put('network_mode', 'gateway');
         Setting::put('ccc_ip', '192.168.10.2');
-        $this->get('/proxy.pac')->assertOk()->assertSee('return "DIRECT";', false);
+        $this->get('https://localhost/proxy.pac')->assertOk()->assertSee('return "DIRECT";', false);
 
         Setting::put('network_mode', 'proxy_only');
-        $this->get('/proxy.pac')
+        $this->get('https://localhost/proxy.pac')
             ->assertOk()
             ->assertHeader('Content-Type', 'application/x-ns-proxy-autoconfig; charset=utf-8')
             ->assertSee('PROXY 192.168.10.2:8080; DIRECT', false);
@@ -71,13 +73,41 @@ class ScreenAndProxyPacTest extends TestCase
         [$pc] = $this->enrolledPc('192.168.10.21');
         Setting::put('network_mode', 'proxy_only');
         Setting::put('ccc_ip', '192.168.10.2');
-        $fromPc = fn () => $this->withServerVariables(['REMOTE_ADDR' => '192.168.10.21'])->get('/proxy.pac');
+        $fromPc = fn () => $this->withServerVariables(['REMOTE_ADDR' => '192.168.10.21'])->get('https://localhost/proxy.pac');
 
         $fromPc()->assertOk()->assertSee('PROXY 192.168.10.2:8080; DIRECT', false);   // always-on: fallback kept
         app(SessionManager::class)->start($lab, $this->profile('Test: AI blocked'), 'EXAM');
         $fromPc()->assertOk()->assertSee('return "PROXY 192.168.10.2:8080";', false);  // test: fail closed
-        $this->withServerVariables(['REMOTE_ADDR' => '192.168.10.99'])->get('/proxy.pac')
+        $this->withServerVariables(['REMOTE_ADDR' => '192.168.10.99'])->get('https://localhost/proxy.pac')
             ->assertSee('PROXY 192.168.10.2:8080; DIRECT', false);                        // unknown host: unchanged
+    }
+
+    /** S-52: over plain HTTP a LAN host could answer instead of the CCC, so the PAC is never served there. */
+    public function test_proxy_pac_is_refused_over_plain_http_and_linked_as_https(): void
+    {
+        $lab = $this->bootLab();
+        $this->enrolledPc('192.168.10.21');
+        Setting::put('network_mode', 'proxy_only');
+        Setting::put('ccc_ip', '192.168.10.2');
+        app(SessionManager::class)->start($lab, $this->profile('Test: AI blocked'), 'EXAM');
+
+        foreach (['proxy_only', 'gateway'] as $mode) {
+            Setting::put('network_mode', $mode);
+            $this->withServerVariables(['REMOTE_ADDR' => '192.168.10.21'])->get('http://192.168.10.2/proxy.pac')
+                ->assertNotFound()
+                ->assertDontSee('FindProxyForURL', false)
+                ->assertHeader('Content-Type', 'text/plain; charset=utf-8');
+        }
+
+        // Behind nginx (dev-native) the scheme comes from a trusted X-Forwarded-Proto.
+        $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
+            ->get('http://192.168.10.2/proxy.pac', ['X-Forwarded-Proto' => 'https'])
+            ->assertOk()->assertSee('FindProxyForURL', false);
+
+        // The public downloads page (served on :80 too) links the HTTPS PAC.
+        $this->get('http://192.168.10.2/downloads')->assertOk()
+            ->assertSee('href="https://192.168.10.2/proxy.pac"', false)
+            ->assertDontSee('href="http://192.168.10.2/proxy.pac"', false);
     }
 
     public function test_session_network_lock_reaches_the_policy_in_proxy_only_mode(): void

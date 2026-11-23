@@ -124,9 +124,15 @@ class PublicController extends Controller
         return (string) ($fallback ?: Setting::get('ccc_ip', $reqHost) ?: $reqHost);
     }
 
-    /** Dynamic Proxy Auto-Config (PAC) script for proxy_only lab PCs. */
+    /**
+     * Dynamic Proxy Auto-Config (PAC) script for proxy_only lab PCs.
+     * HTTPS only (lab CA): over plain HTTP any LAN host could answer instead of the CCC (S-52).
+     */
     public function proxyPac(Request $request): Response
     {
+        if (! $request->isSecure()) {
+            return response("PAC is served over HTTPS only.\n", 404, ['Content-Type' => 'text/plain; charset=utf-8']);
+        }
         $mode = (string) Setting::get('network_mode', config('xephyguard.network_mode', 'gateway'));
         $host = (string) (Setting::get('ccc_ip') ?: $request->getHost());
         $port = (int) config('xephyguard.proxy_port', 8080);
