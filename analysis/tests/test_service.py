@@ -117,7 +117,7 @@ def test_score_without_or_with_wrong_token_is_401(service_db, monkeypatch):
 def test_score_with_token_scores_the_session(service_db):
     status, out = call("POST", "/score", b'{"session_id": 10}')
     assert status == 200
-    assert out == {"session_id": 10, "scored": 1, "flagged": []}
+    assert out == {"session_id": 10, "scored": 1, "flagged": [], "ambiguous": []}
     assert service_db.conn.execute("SELECT count(*) FROM scores WHERE lab_session_id = 10").fetchone()[0] == 1
 
 

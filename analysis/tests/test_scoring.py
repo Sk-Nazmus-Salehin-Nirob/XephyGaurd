@@ -138,6 +138,42 @@ def test_v2_leaves_exempt_students_out(lab, db):
     assert v2 == alone
 
 
+def _shared_login_session(lab, second_exempt=None):
+    lab.session(14, "test")
+    pc = lab.pc(14, "E1")
+    other = lab.pc(14, "E2")
+    lab.student(500, "alice")
+    lab.student(501, "alice", exempt=second_exempt)       # students.login is indexed, not unique
+    lab.student(502, "erin")
+    lab.typing(14, pc, "alice", 1, 5, kpm=60, bs=0.0)
+    lab.paste(14, pc, "alice", 30, 3000, 100)
+    lab.typing(14, other, "erin", 1, 30)
+    lab.db.conn.commit()
+
+
+def test_duplicate_login_is_scored_unlinked_with_a_reason(lab, db):
+    _shared_login_session(lab)
+    out = score_session(db, 14, v2=False)                  # used to raise ValueError (422 for the whole session)
+    assert out["scored"] == 2
+    assert out["ambiguous"] == [{"pc_id": 1, "user": "alice", "students": 2}]
+    rows = {r[0]: r for r in db.conn.execute("SELECT user, student_id, score, reasons, not_observable FROM scores")}
+    assert rows["erin"][1] == 502                           # the other student is unaffected
+    alice = rows["alice"]
+    assert alice[1] is None                                 # not linked to either student
+    assert any("matches 2 roster students" in x for x in json.loads(alice[4]))
+    assert "largest_paste" in {r["signal"] for r in json.loads(alice[3])}
+
+
+def test_duplicate_login_with_an_exempt_match_ignores_behaviour(lab, db):
+    _shared_login_session(lab, second_exempt="speech-to-text tool")
+    score_session(db, 14, v2=False)
+    score, nobs = db.conn.execute("SELECT score, not_observable FROM scores WHERE user = 'alice'").fetchone()
+    assert score == 0
+    nobs = json.loads(nobs)
+    assert any("exempt" in x for x in nobs)
+    assert not any("speech-to-text" in x for x in nobs)    # which student's reason is not shown
+
+
 def test_cli_has_no_research_export():
     # The one research export is the server's ResearchExport (audited, hash-chained audit log; DECISIONS #30).
     with pytest.raises(SystemExit):
