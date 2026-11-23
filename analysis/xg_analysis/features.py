@@ -22,7 +22,7 @@ BURST_PASTE_CHARS = 300   # a paste of 300+ chars
 BURST_GROWTH_BYTES = 1500  # or 1.5 kB+ growth of the work folder
 
 FEATURES = ["keys_total", "active_minutes", "keys_per_min", "iki_median", "burstiness", "backspace_ratio",
-            "pasted_chars", "paste_count", "largest_paste", "largest_paste_code", "paste_to_typed",
+            "pasted_chars", "paste_count", "largest_paste", "largest_paste_code", "largest_paste_early", "paste_to_typed",
             "idle_then_burst", "focus_switches_per_min", "time_outside_ide", "blocked_attempts",
             "adapter_device_changes", "ai_flags", "tamper_flags", "early_paste_chars"]
 
@@ -180,7 +180,8 @@ def compute(sd: SessionData) -> pd.DataFrame:
         pastes = pa[~pa.is_copy.astype(bool)] if not pa.empty else pa
         pasted = float(pastes.chars.sum()) if not pastes.empty else 0.0
         largest = pastes.loc[pastes.chars.idxmax()] if not pastes.empty else None
-        early = pastes[pastes.occurred_at <= start + pd.Timedelta(minutes=5)] if not pastes.empty else pastes
+        early_end = start + pd.Timedelta(minutes=5)
+        early = pastes[pastes.occurred_at <= early_end] if not pastes.empty else pastes
         fsw, outside = _focus_stats(ev, end) if not ev.empty else (0.0, 0.0)
         files = ev[ev.type == "file_activity"] if not ev.empty else ev
         rows.append({
@@ -195,6 +196,8 @@ def compute(sd: SessionData) -> pd.DataFrame:
             "paste_count": int(len(pastes)),
             "largest_paste": float(largest.chars) if largest is not None else 0.0,
             "largest_paste_code": bool(largest.looks_like_code) if largest is not None else False,
+            # The largest paste itself was in the first minutes (not just "early pastes add up to it", I-ANALYSIS-8).
+            "largest_paste_early": bool(largest.occurred_at <= early_end) if largest is not None else False,
             "paste_to_typed": pasted / max(keys_total, 1.0),
             "idle_then_burst": _idle_then_burst(ks, pa, files),
             "focus_switches_per_min": fsw,

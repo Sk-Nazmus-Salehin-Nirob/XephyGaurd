@@ -94,12 +94,27 @@ def test_exempt_student_behavior_signals_ignored(lab, db):
 
 def test_early_boilerplate_paste_discounted():
     base = dict(ai_flags=0, tamper_flags=0, net_flags=0, blocked_attempts=0, largest_paste=1200, largest_paste_code=True,
-                early_paste_chars=1200, paste_to_typed=0.2, pasted_chars=1200, idle_then_burst=0, keys_total=2000,
-                backspace_ratio=0.08, time_outside_ide=0.1, focus_switches_per_min=1, keys_per_min=150, burstiness=1)
+                largest_paste_early=True, early_paste_chars=1200, paste_to_typed=0.2, pasted_chars=1200, idle_then_burst=0,
+                keys_total=2000, backspace_ratio=0.08, time_outside_ide=0.1, focus_switches_per_min=1, keys_per_min=150,
+                burstiness=1)
     early = score_v1(base, mode="test")
-    late = score_v1({**base, "early_paste_chars": 0}, mode="test")
+    late = score_v1({**base, "largest_paste_early": False, "early_paste_chars": 0}, mode="test")
     assert early.score < late.score
     assert "boilerplate" in early.reasons[0].label
+
+
+def test_late_large_paste_is_not_discounted_by_small_early_pastes(lab, db):
+    lab.session(16, "test")
+    pc = lab.pc(16, "G1")
+    lab.typing(16, pc, "gus", 1, 50)
+    lab.paste(16, pc, "gus", 1, 500, 20)      # two early pastes that add up to the late one ...
+    lab.paste(16, pc, "gus", 2, 500, 20)
+    lab.paste(16, pc, "gus", 40, 1000, 40)    # ... the largest paste, 35 minutes later
+    lab.db.conn.commit()
+    f = compute(load_session(db, 16)).iloc[0]
+    assert f.early_paste_chars == 1000 and f.largest_paste == 1000 and not f.largest_paste_early
+    r = next(r for r in score_v1(f.to_dict(), mode="test").reasons if r.signal == "largest_paste")
+    assert r.points == 15 and "early" not in r.label      # used to be halved to 7 and called boilerplate (I-ANALYSIS-8)
 
 
 def test_idle_gap_label_follows_IDLE_GAP_S(monkeypatch):

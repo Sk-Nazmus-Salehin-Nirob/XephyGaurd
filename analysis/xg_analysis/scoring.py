@@ -76,7 +76,7 @@ def score_v1(f: dict[str, Any], *, mode: str, base: dict[str, tuple[float, float
         effective_paste = f["largest_paste"]
         if f["largest_paste"] >= 800:
             pts = 10 + (5 if f["largest_paste_code"] else 0)
-            if f["early_paste_chars"] >= f["largest_paste"]:
+            if f["largest_paste_early"]:
                 pts //= 2   # first minutes: often assignment boilerplate
                 add("largest_paste", f"Large paste ({int(effective_paste)} chars) early in the session — may be assignment boilerplate", pts, effective_paste)
             else:
