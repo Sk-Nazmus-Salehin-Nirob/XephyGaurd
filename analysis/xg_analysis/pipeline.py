@@ -22,11 +22,18 @@ def _clean(v: Any) -> Any:
     return v
 
 
+def _login(user: str) -> str:
+    """Roster login for an OS user (a Windows DOMAIN\\user matches the short name)."""
+    return user.split("\\")[-1] if user else ""
+
+
 def _match_student(students: pd.DataFrame, user: str) -> tuple[pd.Series | None, pd.DataFrame]:
     """Roster rows for this OS login: (the student if exactly one matches, else None; all matches).
 
-    students.login is not unique, so a shared or reused login can match several students (I-ANALYSIS-3)."""
-    login = user.split("\\")[-1] if user else ""
+    students.login is not unique, so a shared or reused login can match several students (I-ANALYSIS-3).
+    session_pcs.student_id is not used: the CCC fills it from the same login (lowest id wins), so it adds
+    no information and would bring back an arbitrary pick (analysis Step 24)."""
+    login = _login(user)
     if not login or students.empty:
         return None, students.iloc[0:0]
     matches = students[students.login == login]
@@ -45,6 +52,10 @@ def score_session(db: Db, session_id: int, v2: bool | None = None) -> dict[str, 
     linked = []   # the matched student per feature row (None = no or several roster matches)
     cohort = []   # v2 rows: exempt students' behaviour is ignored, so they are not in the cohort (I-ANALYSIS-2)
     ambiguous = []
+    pcs_of_login: dict[str, set[int]] = {}
+    for user, pc in zip(feats.user, feats.pc_id):
+        if _login(user):
+            pcs_of_login.setdefault(_login(user), set()).add(int(pc))
     for _, f in feats.iterrows():
         st, matches = _match_student(sd.students, f.user)
         b = {}
@@ -58,10 +69,22 @@ def score_session(db: Db, session_id: int, v2: bool | None = None) -> dict[str, 
             # student), without saying which student or why.
             exempt = "a roster student with this login is exempt" if matches.exempt.astype(bool).any() else None
         res = score_v1(f.to_dict(), mode=sd.session["mode"], base=b, caps=sd.caps.get(int(f.pc_id), {}), exempt=exempt)
+        # Shared or generic logins are flagged for the reviewer, never resolved by guessing (Step 24).
+        flags = []
+        n_pcs = len(pcs_of_login.get(_login(f.user), ()))
         if len(matches) > 1:
-            res.not_observable.insert(0, f"student identity: OS login {f.user!r} matches {len(matches)} roster "
-                                         "students; score not linked to a student")
-            ambiguous.append({"pc_id": int(f.pc_id), "user": f.user, "students": len(matches)})
+            flags.append(("several_students", f"student identity: OS login {f.user!r} matches {len(matches)} roster "
+                                              "students; score not linked to a student"))
+        elif _login(f.user) and len(matches) == 0:
+            flags.append(("no_student", f"student identity: OS login {f.user!r} matches no roster student (e.g. a "
+                                        "generic lab account); score not linked to a student"))
+        if n_pcs > 1:
+            flags.append(("shared_login", f"student identity: OS login {f.user!r} was used on {n_pcs} PCs in this "
+                                          "session; check which PC is the student's"))
+        res.not_observable[:0] = [text for _, text in flags]
+        for reason, _ in flags:
+            ambiguous.append({"pc_id": int(f.pc_id), "user": f.user, "reason": reason,
+                              "students": len(matches), "pcs": n_pcs})
         rows.append(("v1", f, st, res))
         linked.append(st)
         cohort.append(exempt is None)

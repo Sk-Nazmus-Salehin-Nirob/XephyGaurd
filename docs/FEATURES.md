@@ -528,8 +528,9 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 ### F48. Session scoring (v1 rules + v2 Isolation Forest)
 - **What:** after a session, each student gets an explainable score with ranked reasons (v1) and an
   anomaly score (v2) as flags for human review. Exempt students get no v2 score and are left out of
-  the v2 cohort. An OS login that matches several roster students is still scored, not linked to a
-  student, with a not-observable line saying so (behaviour ignored if any match is exempt).
+  the v2 cohort. Students are matched by OS login. A login that matches several roster students or
+  none is still scored, not linked to a student; a login used on several PCs is linked but flagged. Each
+  case adds a not-observable line (behaviour ignored if any match is exempt).
 - **Trigger:** session stop → job `ScoreSession`; `POST /reports/{session}/rescore`; CLI
   `python -m xg_analysis score`.
 - **Code:** `S/Jobs/ScoreSession.php`, `S/Services/AnalysisClient.php`, `analysis/xg_analysis/scoring.py`, `features.py`;

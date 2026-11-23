@@ -86,7 +86,7 @@ def load_session(db: Db, session_id: int) -> SessionData:
     if s is None:
         raise SessionNotFound(f"session {session_id} not found")
     q = lambda sql: db.df(sql, (session_id,))  # noqa: E731
-    pcs = db.df("SELECT p.id AS pc_id, p.name, p.capabilities, sp.student_id FROM session_pcs sp "
+    pcs = db.df("SELECT p.id AS pc_id, p.name, p.capabilities FROM session_pcs sp "
                 "JOIN pcs p ON p.id = sp.pc_id WHERE sp.lab_session_id = ?", (session_id,))
     ks = q("SELECT pc_id, `user`, window_start, window_s, `keys`, backspaces, iki_median, iki_mean, bursts, paste_chords "
            "FROM key_stats WHERE lab_session_id = ?")

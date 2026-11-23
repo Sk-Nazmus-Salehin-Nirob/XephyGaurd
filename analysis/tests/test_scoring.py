@@ -263,7 +263,7 @@ def test_duplicate_login_is_scored_unlinked_with_a_reason(lab, db):
     _shared_login_session(lab)
     out = score_session(db, 14, v2=False)                  # used to raise ValueError (422 for the whole session)
     assert out["scored"] == 2
-    assert out["ambiguous"] == [{"pc_id": 1, "user": "alice", "students": 2}]
+    assert out["ambiguous"] == [{"pc_id": 1, "user": "alice", "reason": "several_students", "students": 2, "pcs": 1}]
     rows = {r[0]: r for r in db.conn.execute("SELECT user, student_id, score, reasons, not_observable FROM scores")}
     assert rows["erin"][1] == 502                           # the other student is unaffected
     alice = rows["alice"]
@@ -378,6 +378,27 @@ def test_missing_scoring_yaml_stops_the_service(tmp_path, monkeypatch):
     finally:
         scoring_lists.cache_clear()
     assert started == []
+
+
+def test_shared_and_generic_logins_are_flagged_not_guessed(lab, db):
+    lab.session(21, "test")
+    p1, p2, p3, p4 = (lab.pc(21, n) for n in ("L1", "L2", "L3", "L4"))
+    lab.student(600, "mia")
+    lab.student(601, "noah")
+    db.conn.execute("UPDATE session_pcs SET student_id = 601 WHERE pc_id = ?", (p3,))   # CCC-filled column: ignored
+    lab.typing(21, p1, "mia", 1, 10)
+    lab.typing(21, p2, "LAB\\mia", 20, 10)                  # the same login on a second PC
+    lab.typing(21, p3, "student", 1, 30)                     # generic lab account, no roster row
+    lab.typing(21, p4, "noah", 1, 30)
+    lab.db.conn.commit()
+    out = score_session(db, 21, v2=False)
+    assert sorted((a["pc_id"], a["reason"]) for a in out["ambiguous"]) == [
+        (p1, "shared_login"), (p2, "shared_login"), (p3, "no_student")]
+    rows = {r[0]: (r[1], json.loads(r[2])) for r in db.conn.execute("SELECT pc_id, student_id, not_observable FROM scores")}
+    assert rows[p1][0] == rows[p2][0] == 600                 # still the one matching student, but flagged
+    assert any("used on 2 PCs" in x for x in rows[p1][1]) and any("used on 2 PCs" in x for x in rows[p2][1])
+    assert rows[p3][0] is None and any("matches no roster student" in x for x in rows[p3][1])
+    assert rows[p4] == (601, rows[p4][1]) and not any(x.startswith("student identity") for x in rows[p4][1])
 
 
 def test_cli_has_no_research_export():
