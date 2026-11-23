@@ -17,6 +17,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
@@ -124,9 +125,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, score_session(Db(), sid))
         except SessionNotFound as e:
             self._send(404, {"error": str(e)})
-        except Exception as e:  # noqa: BLE001
-            log.exception("scoring failed")
-            self._send(500, {"error": str(e)})
+        except Exception:  # noqa: BLE001
+            # Driver errors can name the DB user and host: the details stay in the log, the caller gets an
+            # id to find them (I-ANALYSIS-16).
+            error_id = uuid.uuid4().hex[:12]
+            log.exception("scoring session %d failed (error_id=%s)", sid, error_id)
+            self._send(500, {"error": "internal error", "error_id": error_id})
 
     def log_message(self, fmt: str, *args) -> None:
         log.info("%s - %s", self.address_string(), fmt % args)

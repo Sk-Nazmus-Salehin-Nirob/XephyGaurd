@@ -187,6 +187,22 @@ def test_errors_while_scoring_are_500(service_db, monkeypatch, error):
     assert call("POST", "/score", b'{"session_id": 10}')[0] == 500
 
 
+def test_500_body_is_generic_and_the_details_are_logged_under_an_error_id(service_db, monkeypatch, caplog):
+    secret = "(1045, \"Access denied for user 'xephyguard'@'10.0.0.5' (using password: YES)\")"
+
+    def broken(db, sid):
+        raise RuntimeError(secret)
+    monkeypatch.setattr(service, "score_session", broken)
+    with caplog.at_level("ERROR", logger="xg-analysis"):
+        status, out = call("POST", "/score", b'{"session_id": 10}')
+    assert status == 500
+    assert set(out) == {"error", "error_id"} and out["error"] == "internal error"
+    assert len(out["error_id"]) == 12 and "xephyguard" not in json.dumps(out)
+    rec = next(r for r in caplog.records if out["error_id"] in r.getMessage())
+    assert "session 10" in rec.getMessage() and secret in str(rec.exc_info[1])
+    assert call("POST", "/score", b'{"session_id": 10}')[1]["error_id"] != out["error_id"]
+
+
 @pytest.mark.parametrize("body", [b"{not json", b'{"session_id": "abc"}', b'{"session_id": null}', b"[10]"])
 def test_malformed_body_is_422(service_db, body):
     status, out = call("POST", "/score", body)
