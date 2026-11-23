@@ -3,7 +3,7 @@ import json
 import pytest
 
 from xg_analysis.__main__ import main
-from xg_analysis.features import FEATURES, compute, load_session
+from xg_analysis.features import FEATURES, compute, data_dir, load_session, scoring_lists
 from xg_analysis.pipeline import score_session
 from xg_analysis.scoring import V2_FEATURES, score_v1, score_v2
 
@@ -212,6 +212,64 @@ def test_FEATURES_covers_every_computed_and_scored_feature(lab, db):
     assert set(V2_FEATURES) <= set(FEATURES)
     assert row.read <= set(FEATURES), f"scored but not stored: {sorted(row.read - set(FEATURES))}"
     assert _computed_feature_columns(feats) == set(FEATURES)
+
+
+@pytest.fixture
+def lists_from(tmp_path, monkeypatch):
+    """Point XG_DATA_DIR at a temporary data/ with the given scoring.yaml text (cache cleared around the test)."""
+    def use(text: str):
+        (tmp_path / "analysis").mkdir(exist_ok=True)
+        (tmp_path / "analysis" / "scoring.yaml").write_text(text, encoding="utf-8")
+        monkeypatch.setenv("XG_DATA_DIR", str(tmp_path))
+        scoring_lists.cache_clear()
+    scoring_lists.cache_clear()
+    yield use
+    scoring_lists.cache_clear()
+
+
+def test_scoring_lists_come_from_data_yaml():
+    scoring_lists.cache_clear()
+    lists = scoring_lists()
+    assert (data_dir() / "analysis" / "scoring.yaml").is_file()
+    assert {"code", "pycharm64", "windowsterminal", "javaw"} <= lists.ide_apps and "firefox" not in lists.ide_apps
+    assert {"local_llm", "ai_editor", "extension"} <= lists.ai_categories and "tamper" not in lists.ai_categories
+
+
+def test_ide_and_ai_lists_are_read_from_XG_DATA_DIR(lab, db, lists_from):
+    lab.session(15, "test")
+    pc = lab.pc(15, "F1")
+    lab.typing(15, pc, "fay", 1, 20)
+    lab.event(15, pc, "fay", 0.5, "window_focus", {"app": "MyIDE"})
+    lab.alert(15, pc, "fay", 5, "proc.custom", "homegrown_ai")
+    lab.alert(15, pc, "fay", 6, "proc.ollama", "local_llm")
+    lab.db.conn.commit()
+    lists_from("version: 1\nide_apps: [myide]\nai_categories: [homegrown_ai]\n")
+    f = compute(load_session(db, 15)).iloc[0]
+    assert f.time_outside_ide == 0.0          # MyIDE is an IDE in this file (case-insensitive)
+    assert f.ai_flags == 1                    # only homegrown_ai counts; local_llm is not in this file
+
+
+@pytest.mark.parametrize("text", ["version: 1\nai_categories: [local_llm]\n", "ide_apps: []\nai_categories: [x]\n",
+                                  "ide_apps: [code, 3]\nai_categories: [x]\n", "just a string\n", "ide_apps: [code\n"])
+def test_broken_scoring_yaml_is_an_error(lists_from, text):
+    lists_from(text)
+    with pytest.raises(RuntimeError, match="scoring.yaml"):
+        scoring_lists()
+
+
+def test_missing_scoring_yaml_stops_the_service(tmp_path, monkeypatch):
+    from xg_analysis import service
+    started = []
+    monkeypatch.setattr(service, "ThreadingHTTPServer", lambda *a: started.append(a))
+    monkeypatch.setenv("XG_DB_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("XG_DATA_DIR", str(tmp_path))
+    scoring_lists.cache_clear()
+    try:
+        with pytest.raises(SystemExit, match="scoring.yaml"):
+            service.main()
+    finally:
+        scoring_lists.cache_clear()
+    assert started == []
 
 
 def test_cli_has_no_research_export():

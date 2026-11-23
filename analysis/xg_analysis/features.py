@@ -4,19 +4,18 @@ All inputs are numeric aggregates produced on the PCs (no content). One row per 
 """
 from __future__ import annotations
 
+import functools
+import os
+import pathlib
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from .db import Db, jload
 
-IDE_APPS = {"code", "code-oss", "codium", "vscodium", "idea", "idea64", "pycharm", "pycharm64", "clion", "clion64",
-            "webstorm", "eclipse", "netbeans", "devenv", "vim", "nvim", "gvim", "emacs", "gedit", "kate", "geany",
-            "notepad++", "sublime_text", "rstudio", "spyder", "jupyter-lab", "thonny", "bluej", "codeblocks",
-            "gnome-terminal-server", "konsole", "xterm", "windowsterminal", "cmd", "powershell", "pwsh", "java", "javaw"}
-AI_CATEGORIES = {"local_llm", "ai_editor", "ai_desktop", "cli_agent", "extension", "local_model"}
 IDLE_GAP_S = 120          # "idle" = no keys for 2 minutes ...
 BURST_WINDOW_S = 60       # ... followed within 1 minute by
 BURST_PASTE_CHARS = 300   # a paste of 300+ chars
@@ -26,6 +25,37 @@ FEATURES = ["keys_total", "active_minutes", "keys_per_min", "iki_median", "burst
             "pasted_chars", "paste_count", "largest_paste", "largest_paste_code", "paste_to_typed",
             "idle_then_burst", "focus_switches_per_min", "time_outside_ide", "blocked_attempts",
             "adapter_device_changes", "ai_flags", "tamper_flags", "early_paste_chars"]
+
+
+@dataclass(frozen=True)
+class ScoringLists:
+    ide_apps: frozenset[str]        # focused apps that count as inside the IDE/terminal
+    ai_categories: frozenset[str]   # alert categories counted in ai_flags
+
+
+def data_dir() -> pathlib.Path:
+    """XG_DATA_DIR, else the repository's data/ (also /opt/xephyguard/data in the analysis image)."""
+    env = os.environ.get("XG_DATA_DIR", "").strip()
+    return pathlib.Path(env) if env else pathlib.Path(__file__).resolve().parents[2] / "data"
+
+
+@functools.cache
+def scoring_lists() -> ScoringLists:
+    """The lists in data/analysis/scoring.yaml (I-ANALYSIS-21). Missing or empty lists raise RuntimeError: an
+    empty IDE list would silently count all focus time as outside the IDE."""
+    path = data_dir() / "analysis" / "scoring.yaml"
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as e:
+        raise RuntimeError(f"cannot read {path}: {e}") from e
+
+    def names(key: str) -> frozenset[str]:
+        v = doc.get(key) if isinstance(doc, dict) else None
+        if not isinstance(v, list) or not v or not all(isinstance(x, str) and x.strip() for x in v):
+            raise RuntimeError(f"{path}: '{key}' must be a non-empty list of names")
+        return frozenset(x.strip().lower() for x in v)
+
+    return ScoringLists(names("ide_apps"), names("ai_categories"))
 
 
 @dataclass
@@ -96,11 +126,12 @@ def _focus_stats(ev: pd.DataFrame, end: pd.Timestamp) -> tuple[float, float]:
         return 0.0, 0.0
     apps = [str(jload(d).get("app", "")).lower() for d in f.data]
     times = list(f.occurred_at) + [end]
+    ide_apps = scoring_lists().ide_apps
     total = outside = 0.0
     for i, app in enumerate(apps):
         dur = max(0.0, (times[i + 1] - times[i]).total_seconds())
         total += dur
-        if app not in IDE_APPS:
+        if app not in ide_apps:
             outside += dur
     minutes = max(1.0, (times[-1] - times[0]).total_seconds() / 60)
     return len(apps) / minutes, (outside / total if total else 0.0)
@@ -165,7 +196,7 @@ def compute(sd: SessionData) -> pd.DataFrame:
             "time_outside_ide": outside,
             "blocked_attempts": int((ne.action == "blocked").sum()) if not ne.empty else 0,
             "adapter_device_changes": int(((ev.type == "net_adapter") | (ev.type == "device")).sum()) if not ev.empty else 0,
-            "ai_flags": int(al.category.isin(AI_CATEGORIES).sum()) if not al.empty else 0,
+            "ai_flags": int(al.category.isin(scoring_lists().ai_categories).sum()) if not al.empty else 0,
             "tamper_flags": int((al.category == "tamper").sum()) if not al.empty else 0,
             "net_flags": int(al.rule_id.str.startswith("net.").sum()) if not al.empty else 0,
             "early_paste_chars": float(early.chars.sum()) if not early.empty else 0.0,

@@ -532,7 +532,8 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
   student, with a not-observable line saying so (behaviour ignored if any match is exempt).
 - **Trigger:** session stop → job `ScoreSession`; `POST /reports/{session}/rescore`; CLI
   `python -m xg_analysis score`.
-- **Code:** `S/Jobs/ScoreSession.php`, `S/Services/AnalysisClient.php`, `analysis/xg_analysis/scoring.py`, `features.py`.
+- **Code:** `S/Jobs/ScoreSession.php`, `S/Services/AnalysisClient.php`, `analysis/xg_analysis/scoring.py`, `features.py`;
+  IDE/terminal apps and AI alert categories in `data/analysis/scoring.yaml`.
 - **In/out/side effects:** HTTP call to the analysis service; writes `scores`, `reports`.
 - **Status:** working (`v1_scores_are_explained_and_ranked`, `v2_isolation_forest_alongside_v1`,
   `personal_baseline_z_scores`, `exempt_student_behavior_signals_ignored`, `v2_leaves_exempt_students_out`,
@@ -1176,7 +1177,7 @@ Defined in `server/routes/console.php`.
 agent IPC); reads `DISPLAY`, `XDG_SESSION_TYPE`, `DBUS_SESSION_BUS_ADDRESS`, `NOTIFY_SOCKET`, `WATCHDOG_USEC`.
 
 ### Python services
-`XG_DB_URL` (required), `XG_ALLOW_SQLITE` (dev only), `XG_ANALYSIS_BIND` (default 127.0.0.1), `XG_ANALYSIS_PORT`, `XG_ANALYSIS_TOKEN` (analysis); `XG_DISCOVERY_PORT`, `XG_CCC_IP`, `XG_AGENT_PORT`,
+`XG_DB_URL` (required), `XG_ALLOW_SQLITE` (dev only), `XG_DATA_DIR` (default repo `data/`), `XG_ANALYSIS_BIND` (default 127.0.0.1), `XG_ANALYSIS_PORT`, `XG_ANALYSIS_TOKEN` (analysis); `XG_DISCOVERY_PORT`, `XG_CCC_IP`, `XG_AGENT_PORT`,
 `XG_CA_DIR`, `XG_LAB_NAME` (discovery); `XG_INTERNAL_TOKEN`, `XG_NETWORK_MODE` (proxy).
 
 ---

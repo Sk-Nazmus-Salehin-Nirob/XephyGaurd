@@ -1,0 +1,59 @@
+# Lists the analysis service uses to compute features (analysis/xg_analysis/features.py). Not hard-coded in
+# code (I-ANALYSIS-21). Read once at startup from $XG_DATA_DIR/analysis/scoring.yaml (default: this repo's
+# data/); a missing file, a missing key or an empty list stops the service.
+version: 1
+
+# Focused apps that count as inside the IDE/terminal for `time_outside_ide`. Lower-case app names as the
+# agent reports them in window_focus events (process name without .exe).
+ide_apps:
+  # editors and IDEs
+  - code
+  - code-oss
+  - codium
+  - vscodium
+  - idea
+  - idea64
+  - pycharm
+  - pycharm64
+  - clion
+  - clion64
+  - webstorm
+  - eclipse
+  - netbeans
+  - devenv
+  - vim
+  - nvim
+  - gvim
+  - emacs
+  - gedit
+  - kate
+  - geany
+  - notepad++
+  - sublime_text
+  - rstudio
+  - spyder
+  - jupyter-lab
+  - thonny
+  - bluej
+  - codeblocks
+  # terminals and shells
+  - gnome-terminal-server
+  - konsole
+  - xterm
+  - windowsterminal
+  - cmd
+  - powershell
+  - pwsh
+  # Java runtimes (NetBeans, BlueJ and course tools run as java/javaw)
+  - java
+  - javaw
+
+# Alert categories counted as AI-tool detections (`ai_flags`). The categories come from the agent rules in
+# data/signatures/ (processes.yaml, extensions.yaml).
+ai_categories:
+  - local_llm
+  - ai_editor
+  - ai_desktop
+  - cli_agent
+  - extension
+  - local_model

@@ -18,6 +18,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .db import Db, db_url
+from .features import scoring_lists
 from .pipeline import score_session
 
 log = logging.getLogger("xg-analysis")
@@ -81,6 +82,7 @@ def main() -> None:
     host, port = listen_address()
     try:
         db_url()
+        scoring_lists()          # data/analysis/scoring.yaml: fail now, not on the first /score
     except RuntimeError as e:
         raise SystemExit(f"xg-analysis: {e}") from None
     if not os.environ.get("XG_ANALYSIS_TOKEN", "").strip():
