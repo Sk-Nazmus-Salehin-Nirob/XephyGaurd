@@ -169,11 +169,22 @@ def test_score_with_token_scores_the_session(service_db):
 def test_unknown_paths_and_sessions_are_404(service_db):
     assert call("POST", "/other", b'{"session_id": 10}') == (404, {"error": "not found"})
     assert call("GET", "/score") == (404, {"error": "not found"})
-    status, out = call("POST", "/score", b'{"session_id": 99}')
-    assert status == 404 and "session 99 not found" in out["error"]
-    # Current behaviour: a missing session_id is the same KeyError, so also 404 (Step 16 makes it 422).
-    assert call("POST", "/score", b'{}')[0] == 404
-    assert call("POST", "/score", b"")[0] == 404
+    assert call("POST", "/score", b'{"session_id": 99}') == (404, {"error": "session 99 not found"})
+
+
+@pytest.mark.parametrize("body", [b"{}", b"", b'{"session": 10}'])
+def test_missing_session_id_is_422_not_404(service_db, body):
+    assert call("POST", "/score", body) == (422, {"error": "session_id is required"})
+
+
+@pytest.mark.parametrize("error", [KeyError("lines"), ValueError("The truth value of a Series is ambiguous"), TypeError("x")])
+def test_errors_while_scoring_are_500(service_db, monkeypatch, error):
+    def broken(db, sid):
+        raise error
+    monkeypatch.setattr(service, "score_session", broken)
+    # A KeyError (e.g. a missing column) used to look like an unknown session (404), and a ValueError like
+    # a bad request (422); the CCC treats both as permanent and never retries.
+    assert call("POST", "/score", b'{"session_id": 10}')[0] == 500
 
 
 @pytest.mark.parametrize("body", [b"{not json", b'{"session_id": "abc"}', b'{"session_id": null}', b"[10]"])

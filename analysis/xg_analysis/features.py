@@ -58,6 +58,11 @@ def scoring_lists() -> ScoringLists:
     return ScoringLists(names("ide_apps"), names("ai_categories"))
 
 
+class SessionNotFound(LookupError):
+    """No lab_sessions row with that id. Not a KeyError, so a missing column or dict key (a bug) is never
+    mistaken for an unknown session (I-ANALYSIS-14)."""
+
+
 @dataclass
 class SessionData:
     session: dict[str, Any]
@@ -78,7 +83,7 @@ def _ts(s: pd.Series) -> pd.Series:
 def load_session(db: Db, session_id: int) -> SessionData:
     s = db.one("SELECT * FROM lab_sessions WHERE id = ?", (session_id,))
     if s is None:
-        raise KeyError(f"session {session_id} not found")
+        raise SessionNotFound(f"session {session_id} not found")
     q = lambda sql: db.df(sql, (session_id,))  # noqa: E731
     pcs = db.df("SELECT p.id AS pc_id, p.name, p.capabilities, sp.student_id FROM session_pcs sp "
                 "JOIN pcs p ON p.id = sp.pc_id WHERE sp.lab_session_id = ?", (session_id,))

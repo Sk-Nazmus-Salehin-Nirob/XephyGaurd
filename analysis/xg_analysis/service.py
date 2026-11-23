@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
 from .db import Db, db_url
-from .features import scoring_lists
+from .features import SessionNotFound, scoring_lists
 from .pipeline import score_session
 
 log = logging.getLogger("xg-analysis")
@@ -111,14 +111,19 @@ class Handler(BaseHTTPRequestHandler):
         length = self.headers.get("Content-Length", "0").strip()
         if not (length.isascii() and length.isdigit()):
             return self._send(400, {"error": "invalid Content-Length"})
+        # 422 only for a bad request; once scoring starts, any error (KeyError, ValueError, ...) is a bug or
+        # an outage and answers 500, except an unknown session (404) (I-ANALYSIS-14).
         try:
             body = json.loads(self.rfile.read(min(int(length), self.MAX_BODY)) or b"{}")
+            if not isinstance(body, dict) or "session_id" not in body:
+                return self._send(422, {"error": "session_id is required"})
             sid = int(body["session_id"])
-            self._send(200, score_session(Db(), sid))
-        except KeyError as e:
-            self._send(404, {"error": str(e)})
         except (ValueError, TypeError) as e:
-            self._send(422, {"error": str(e)})
+            return self._send(422, {"error": str(e)})
+        try:
+            self._send(200, score_session(Db(), sid))
+        except SessionNotFound as e:
+            self._send(404, {"error": str(e)})
         except Exception as e:  # noqa: BLE001
             log.exception("scoring failed")
             self._send(500, {"error": str(e)})
