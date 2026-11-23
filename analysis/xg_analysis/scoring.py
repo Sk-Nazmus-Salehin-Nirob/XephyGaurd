@@ -133,6 +133,17 @@ V2_FEATURES = ["keys_per_min", "backspace_ratio", "burstiness", "paste_to_typed"
                "focus_switches_per_min", "time_outside_ide", "blocked_attempts"]
 
 
+V2_REASON_THRESHOLD = 30   # at or above this v2 score the top deviating features are always kept as reasons
+
+
+def v2_scale(anomaly: float) -> int:
+    """Absolute 0..100 scale for the Isolation Forest anomaly score s = -score_samples (0 < s <= 1).
+
+    s ~ 0.5 or below is ordinary, s -> 1 is clearly isolated (Liu et al. 2008), so 0.5..1 maps to 0..100.
+    No per-session min-max: a session where nobody is unusual gives nobody a high score (I-ANALYSIS-7)."""
+    return int(round(100 * min(1.0, max(0.0, (anomaly - 0.5) / 0.5))))
+
+
 def score_v2(features: pd.DataFrame, seed: int = 7) -> list[ScoreResult]:
     """Cohort anomaly score with Isolation Forest. Needs at least 6 students; otherwise returns []."""
     if len(features) < 6:
@@ -143,13 +154,13 @@ def score_v2(features: pd.DataFrame, seed: int = 7) -> list[ScoreResult]:
     mu, sd = X.mean(), X.std().replace(0, 1.0)
     Z = (X - mu) / sd
     model = IsolationForest(n_estimators=200, random_state=seed, contamination="auto").fit(Z)
-    raw = -model.score_samples(Z)                     # higher = more anomalous
-    lo, hi = float(np.min(raw)), float(np.max(raw))
+    raw = -model.score_samples(Z)                     # higher = more anomalous, absolute (not session-relative)
     out = []
     for i, (_, row) in enumerate(Z.iterrows()):
-        s = int(round(100 * (raw[i] - lo) / (hi - lo))) if hi > lo else 0
+        s = v2_scale(float(raw[i]))
         top = row.abs().sort_values(ascending=False).head(3)
+        # A score at or above the threshold always keeps its top features, so it is never stored unexplained.
         reasons = [Reason(k, f"{k.replace('_', ' ')} is {row[k]:+.1f} SD from the session cohort", 0, float(row[k]))
-                   for k in top.index if abs(row[k]) >= 1.0]
+                   for k in top.index if abs(row[k]) >= 1.0 or (s >= V2_REASON_THRESHOLD and row[k] != 0)]
         out.append(ScoreResult(s, "low", reasons, ["v2 is an exploratory anomaly ranking; read the v1 reasons"]))
     return out

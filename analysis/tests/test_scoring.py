@@ -1,5 +1,6 @@
 import json
 
+import pandas as pd
 import pytest
 
 from xg_analysis.__main__ import main
@@ -223,6 +224,34 @@ def test_v2_isolation_forest_alongside_v1(lab, db):
     assert len(v2) == 9
     assert max(v2, key=v2.get) == "odd"
     assert db.conn.execute("SELECT count(*) FROM scores WHERE method = 'v1'").fetchone()[0] == 9
+    assert v2["odd"] >= 30
+
+
+def _cohort(n, **over):
+    rows = []
+    for i in range(n):
+        r = {k: 0.0 for k in V2_FEATURES}
+        r.update(keys_per_min=150 + (i % 3), backspace_ratio=0.07, burstiness=1.0)
+        rows.append(r)
+    rows[-1].update(over)
+    return pd.DataFrame(rows)
+
+
+def test_v2_quiet_session_gives_nobody_a_high_score():
+    # Per-session min-max used to give the least ordinary student 100 even when nobody stands out (I-ANALYSIS-7).
+    scores = [r.score for r in score_v2(_cohort(10))]
+    assert max(scores) < 30
+
+
+def test_v2_high_score_always_keeps_reasons():
+    res = score_v2(_cohort(10, largest_paste=4000.0, paste_to_typed=3.0, keys_per_min=400))
+    assert res[-1].score >= 30 and res[-1].reasons
+    assert all(r.reasons for r in res if r.score >= 30)
+
+
+def test_v2_scale_is_absolute():
+    from xg_analysis.scoring import v2_scale
+    assert v2_scale(0.4) == 0 and v2_scale(0.5) == 0 and v2_scale(0.75) == 50 and v2_scale(1.0) == 100
 
 
 def test_v2_leaves_exempt_students_out(lab, db):

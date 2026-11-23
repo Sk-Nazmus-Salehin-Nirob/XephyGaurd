@@ -5,7 +5,8 @@
 - **Source:** [docs/FEATURES.md](../../FEATURES.md) (status legend, roles, `S/` = `server/app/`, `A/` = `agent/`)
 
 - **What:** after a session, each student gets an explainable score with ranked reasons (v1) and an
-  anomaly score (v2) as flags for human review. Exempt students get no v2 score and are left out of
+  anomaly score (v2, absolute 0-100 scale from Isolation Forest `score_samples`, not rescaled per session;
+  a v2 score of 30 or more always keeps its top deviating features as reasons) as flags for human review. Exempt students get no v2 score and are left out of
   the v2 cohort. Students are matched by OS login. A login that matches several roster students or
   none is still scored, not linked to a student; a login used on several PCs is linked but flagged. Each
   case adds a not-observable line (behaviour ignored if any match is exempt).
@@ -16,5 +17,5 @@
 - **In/out/side effects:** HTTP call to the analysis service; writes `scores`, `reports`.
 - **Status:** working (`v1_scores_are_explained_and_ranked`, `v2_isolation_forest_alongside_v1`,
   `personal_baseline_z_scores`, `exempt_student_behavior_signals_ignored`, `v2_leaves_exempt_students_out`,
-  `duplicate_login_is_scored_unlinked_with_a_reason`).
+  `duplicate_login_is_scored_unlinked_with_a_reason`, `v2_quiet_session_gives_nobody_a_high_score`).
 - **Test:** 1. Run a short Test session with some AI use. 2. Stop it. 3. `/reports` shows scores with reasons.
