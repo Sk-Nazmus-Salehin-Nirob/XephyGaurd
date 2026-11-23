@@ -3,9 +3,9 @@ import json
 import pytest
 
 from xg_analysis.__main__ import main
-from xg_analysis.features import compute, load_session
+from xg_analysis.features import FEATURES, compute, load_session
 from xg_analysis.pipeline import score_session
-from xg_analysis.scoring import score_v1, score_v2
+from xg_analysis.scoring import V2_FEATURES, score_v1, score_v2
 
 
 def honest_and_suspicious(lab, sid=10):
@@ -172,6 +172,46 @@ def test_duplicate_login_with_an_exempt_match_ignores_behaviour(lab, db):
     nobs = json.loads(nobs)
     assert any("exempt" in x for x in nobs)
     assert not any("speech-to-text" in x for x in nobs)    # which student's reason is not shown
+
+
+class _ReadRecorder(dict):
+    """A feature row that records which keys the scoring reads."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.read = set()
+
+    def __getitem__(self, k):
+        self.read.add(k)
+        return super().__getitem__(k)
+
+    def get(self, k, default=None):
+        self.read.add(k)
+        return super().get(k, default)
+
+
+def _computed_feature_columns(feats):
+    """Scalar per-student columns of compute() (identity and list-valued columns left out)."""
+    return {c for c in feats.columns if c not in ("pc_id", "user") and not isinstance(feats[c].iloc[0], list)}
+
+
+def test_stored_features_are_exactly_FEATURES(lab, db):
+    honest_and_suspicious(lab)
+    score_session(db, 10, v2=False)
+    for (stored,) in db.conn.execute("SELECT features FROM scores"):
+        assert set(json.loads(stored)) == set(FEATURES)
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError,
+                   reason="net_flags is computed and scored but missing from FEATURES (I-ANALYSIS-18); Step 20 adds it")
+def test_FEATURES_covers_every_computed_and_scored_feature(lab, db):
+    honest_and_suspicious(lab)
+    feats = compute(load_session(db, 10))
+    row = _ReadRecorder({k: 1000.0 for k in _computed_feature_columns(feats)}, largest_paste_code=True)
+    score_v1(row, mode="test", base={k: (1.0, 1.0, 5) for k in ("keys_per_min", "backspace_ratio", "burstiness")})
+    assert set(V2_FEATURES) <= set(FEATURES)
+    assert row.read <= set(FEATURES), f"scored but not stored: {sorted(row.read - set(FEATURES))}"
+    assert _computed_feature_columns(feats) == set(FEATURES)
 
 
 def test_cli_has_no_research_export():

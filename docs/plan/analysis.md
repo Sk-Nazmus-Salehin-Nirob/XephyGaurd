@@ -22,7 +22,8 @@ Rules for every step: one component, <300 changed lines, one kind of change, tes
 ## Phase 2: Tooling
 - [x] Step 6: Ruff baseline clean for `analysis/` (no behavior change) (fixes none; touches F9, F48)
   Done 2026-11-23, no code change: the plan/CI gate `ruff check analysis --select E,F,W --ignore E501,E731` was already clean before Steps 1-4 (ruff 0.17.6) and still is. Not adopted: plain `ruff check analysis` on 0.17 uses wider defaults and reports 24 style findings (7 RUF100 unused `noqa`, 3 B023 on the `sel` lambda in `features.compute`, which runs inside its own loop iteration so the hit is a false positive, UP017 `timezone.utc`, I001 import order, C408, RUF059/RUF046, UP034/UP035, C417). CI installs an unpinned ruff but passes the explicit selection, so new default rules cannot break it.
-- [ ] Step 7: Schema test that `FEATURES` equals the features computed and stored (will fail until Step 20) (fixes none; touches F48)
+- [x] Step 7: Schema test that `FEATURES` equals the features computed and stored (will fail until Step 20) (fixes none; touches F48)
+  Done 2026-11-23: `test_stored_features_are_exactly_FEATURES` (passes: every `scores.features` row has exactly the `FEATURES` keys) and `test_FEATURES_covers_every_computed_and_scored_feature` (scalar `compute()` columns == `FEATURES`; every key `score_v1` reads, recorded through a dict subclass, and `V2_FEATURES` ⊆ `FEATURES`). The second is `xfail(strict=True, raises=AssertionError)`, so the suite stays green and fails only on `net_flags`. Checked: adding `net_flags` to `FEATURES` turns it into a strict XPASS failure, so Step 20 must remove the marker. List-valued `alert_titles`/`categories` are left out (removed in Step 11). 25 passed + 1 xfailed, ruff clean.
 
 ## Phase 3: Config and secrets
 - [x] Step 8: Separate `XG_ANALYSIS_TOKEN` for the scoring endpoint, not `XG_INTERNAL_TOKEN` (fixes I-ANALYSIS-17; touches F9) [CROSS: server `AnalysisClient`, ccc-deploy env]
