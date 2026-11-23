@@ -60,6 +60,9 @@ XephyGuard only raises **flags for human review**. Every score lists the signals
 what the system could not observe. No sanction is applied automatically. Instructors are asked to
 discuss flags with the student before acting. Students with accommodations can be marked exempt; their
 behavioral signals are then ignored and the exemption is logged.
+The scoring service reads from the roster only what it needs to link a score to a student: the
+internal id, the OS login and the exemption flag and reason. It never reads names, student numbers
+or research pseudonyms.
 
 ## Retention and access
 * Raw events, commands (including message text sent to students) and evidence images: deleted after the configured period (default 140 days ≈ one semester).

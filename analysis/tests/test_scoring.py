@@ -53,6 +53,14 @@ def test_unused_columns_are_neither_loaded_nor_computed(lab, db):
     assert not {"alert_titles", "categories"} & set(compute(sd).columns)
 
 
+def test_roster_load_has_no_name_number_or_pseudonym(lab, db):
+    honest_and_suspicious(lab)
+    st = load_session(db, 10).students
+    assert set(st.columns) == {"student_id", "login", "exempt", "exempt_reason"}    # data minimisation (ETHICS.md)
+    cells = {str(v) for v in st.to_numpy().ravel()}
+    assert not cells & {"Student 1", "Student 2", "S0001", "S0002", "P-0001", "P-0002"}
+
+
 def test_v1_scores_are_explained_and_ranked(lab, db):
     honest_and_suspicious(lab)
     out = score_session(db, 10, v2=False)

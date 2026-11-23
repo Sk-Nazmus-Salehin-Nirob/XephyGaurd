@@ -95,7 +95,8 @@ def load_session(db: Db, session_id: int) -> SessionData:
     ne = q("SELECT pc_id, host, action, category, occurred_at FROM net_events WHERE lab_session_id = ?")
     ev = q("SELECT pc_id, `user`, type, occurred_at, data FROM events WHERE lab_session_id = ? "
            "AND type IN ('window_focus','file_activity','net_adapter','device','helper_status')")
-    st = db.df("SELECT id AS student_id, login, name, pseudonym, exempt, exempt_reason FROM students")
+    # Only what matching and exemptions need: never the real name, number or pseudonym (I-ANALYSIS-20).
+    st = db.df("SELECT id AS student_id, login, exempt, exempt_reason FROM students")
     for df, col in ((ks, "window_start"), (pa, "occurred_at"), (al, "occurred_at"), (ne, "occurred_at"), (ev, "occurred_at")):
         if not df.empty:
             df[col] = _ts(df[col])
