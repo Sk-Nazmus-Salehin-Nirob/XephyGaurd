@@ -1,7 +1,10 @@
 """HTTP service used by the CCC (ScoreSession job).
 
-    POST /score   {"session_id": 12}   (Authorization: Bearer $XG_INTERNAL_TOKEN)
+    POST /score   {"session_id": 12}   (Authorization: Bearer $XG_ANALYSIS_TOKEN)
     GET  /health
+
+XG_ANALYSIS_TOKEN is this service's own secret, shared only with the CCC (I-ANALYSIS-17). The
+proxy's XG_INTERNAL_TOKEN is never accepted here.
 """
 from __future__ import annotations
 
@@ -15,6 +18,13 @@ from .db import Db
 from .pipeline import score_session
 
 log = logging.getLogger("xg-analysis")
+
+
+def authorized(header: str) -> bool:
+    """True when the Authorization header carries XG_ANALYSIS_TOKEN (unset token = nobody)."""
+    token = os.environ.get("XG_ANALYSIS_TOKEN", "").strip()
+    given = header.removeprefix("Bearer ").strip()
+    return bool(token) and hmac.compare_digest(token.encode(), given.encode())
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -36,9 +46,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        token = os.environ.get("XG_INTERNAL_TOKEN", "")
-        given = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        if not token or not hmac.compare_digest(token, given):
+        if not authorized(self.headers.get("Authorization", "")):
             return self._send(401, {"error": "unauthorized"})
         if self.path != "/score":
             return self._send(404, {"error": "not found"})
@@ -62,6 +70,8 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     port = int(os.environ.get("XG_ANALYSIS_PORT", "8090"))
+    if not os.environ.get("XG_ANALYSIS_TOKEN", "").strip():
+        log.warning("XG_ANALYSIS_TOKEN is not set: every /score request is refused")
     log.info("analysis service on :%d", port)
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
 

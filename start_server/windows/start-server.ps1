@@ -57,6 +57,11 @@ if (-not $envMap["XG_INTERNAL_TOKEN"]) {
     $envRaw = Set-DotEnvKey -Content $envRaw -Key "XG_INTERNAL_TOKEN" -Value (New-RandomHex 24)
     $envChanged = $true
 }
+# Laravel -> analysis /score only (separate from the internal token, I-ANALYSIS-17).
+if (-not $envMap["XG_ANALYSIS_TOKEN"]) {
+    $envRaw = Set-DotEnvKey -Content $envRaw -Key "XG_ANALYSIS_TOKEN" -Value (New-RandomHex 24)
+    $envChanged = $true
+}
 # Laravel calls the gateway's loopback revoke on this port.
 $gwInternalUrl = "http://127.0.0.1:$GatewayPort"
 if ($envMap["SCREEN_GATEWAY_INTERNAL_URL"] -ne $gwInternalUrl) {

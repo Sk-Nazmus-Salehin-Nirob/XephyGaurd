@@ -182,6 +182,7 @@ XG_NET_STATE=/var/lib/xephyguard/net/state.json
 XG_INTERNAL_TOKEN=$(xg_rand_hex 24)
 XG_INTERNAL_URL=http://127.0.0.1:8000
 XG_ANALYSIS_URL=http://127.0.0.1:8090
+XG_ANALYSIS_TOKEN=$(xg_rand_hex 24)
 XG_REQUIRE_MTLS=true
 SCREEN_GATEWAY_ADDR=:8082
 SCREEN_GATEWAY_PORT=8082
@@ -214,6 +215,7 @@ else
     xg_set_env "$ENV_FILE" TZ "$TZ_NAME"
   fi
   [[ -z "$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_SECRET "")" ]] && xg_set_env "$ENV_FILE" SCREEN_GATEWAY_SECRET "$(xg_rand_hex 32)"
+  [[ -z "$(xg_read_env "$ENV_FILE" XG_ANALYSIS_TOKEN "")" ]] && xg_set_env "$ENV_FILE" XG_ANALYSIS_TOKEN "$(xg_rand_hex 24)"
 fi
 
 if (( REBUILD == 1 )) || ! docker image inspect xephyguard/ccc-app:local >/dev/null 2>&1 || ! docker image inspect xephyguard/ccc-screen-gateway:local >/dev/null 2>&1; then

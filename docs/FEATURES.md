@@ -997,7 +997,7 @@ No login needed for any of these.
 
 ### F106. Internal eval results endpoint
 - **What:** red-team harness results for the evaluation page.
-- **Trigger:** `GET /api/internal/eval/results` (internal token).
+- **Trigger:** `GET /api/internal/eval/results` (internal token; the analysis token is refused, S-54).
 - **Code:** `S/Http/Controllers/Internal/EvalController.php`.
 - **Status:** unclear (no test).
 - **Test:** 1. `curl -H "Authorization: Bearer $XG_INTERNAL_TOKEN" localhost:8000/api/internal/eval/results`.
@@ -1035,7 +1035,11 @@ Defined in `server/routes/console.php`.
 - **Test:** 1. Toggle a rule. 2. Within a minute `/signatures` shows a new active version.
 
 ### F111. Session scoring job (queue)
-- `S/Jobs/ScoreSession.php`, see F48. Status: working.
+- `S/Jobs/ScoreSession.php`, see F48. Status: working (`ScoreSessionRetryTest`).
+- Calls the analysis service with its own `XG_ANALYSIS_TOKEN` (never the internal token). Transient errors
+  (unreachable, timeout, 5xx, 429, no JSON) are retried after 30 s, 2 min and 10 min (4 tries, 75 s per
+  call, job timeout 85 s < queue `retry_after` 90 s); a refused call (401/404/422, token unset, short or equal
+  to `XG_INTERNAL_TOKEN`) fails at once and the session report shows `failed` with the reason (S-54).
 
 ---
 
@@ -1146,6 +1150,7 @@ Defined in `server/routes/console.php`.
 | `XG_DISCOVERY_PORT` | 47474 | UDP discovery |
 | `XG_ANALYSIS_URL` | http://analysis:8090 | scoring service |
 | `XG_INTERNAL_TOKEN` | — | proxy → CCC internal API |
+| `XG_ANALYSIS_TOKEN` | — | CCC → analysis `/score` only; ≥ 16 chars, must differ from `XG_INTERNAL_TOKEN` |
 | `XG_INTERNAL_URL` | http://app | where the proxy posts net events |
 | `XG_DEPLOY`, `XG_VERSION`, `XG_SCORING_V` | — | deploy mode, image tag, scoring version |
 | `SCREEN_GATEWAY_URL`, `SCREEN_GATEWAY_PORT` (8082), `SCREEN_GATEWAY_PATH` (/screen-gw) | | where browsers and agents reach the gateway |
@@ -1163,7 +1168,7 @@ Defined in `server/routes/console.php`.
 agent IPC); reads `DISPLAY`, `XDG_SESSION_TYPE`, `DBUS_SESSION_BUS_ADDRESS`, `NOTIFY_SOCKET`, `WATCHDOG_USEC`.
 
 ### Python services
-`XG_DB_URL`, `XG_ANALYSIS_PORT` (analysis); `XG_DISCOVERY_PORT`, `XG_CCC_IP`, `XG_AGENT_PORT`,
+`XG_DB_URL`, `XG_ANALYSIS_PORT`, `XG_ANALYSIS_TOKEN` (analysis); `XG_DISCOVERY_PORT`, `XG_CCC_IP`, `XG_AGENT_PORT`,
 `XG_CA_DIR`, `XG_LAB_NAME` (discovery); `XG_INTERNAL_TOKEN`, `XG_NETWORK_MODE` (proxy).
 
 ---

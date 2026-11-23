@@ -100,6 +100,7 @@ XG_NETWORK_MODE=proxy_only
 XG_ANALYSIS_URL=http://127.0.0.1:8090
 XG_INTERNAL_URL=http://127.0.0.1:8000
 XG_INTERNAL_TOKEN=change-me-to-a-long-random-string
+XG_ANALYSIS_TOKEN=another-long-random-string-for-scoring
 ```
 Change `REVERB_APP_KEY` and `REVERB_APP_SECRET` too (any random strings). Then:
 ```bash
@@ -134,7 +135,7 @@ cd ../analysis
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 export XG_DB_URL="sqlite:///$(realpath ../server/database/database.sqlite)"
-export XG_INTERNAL_TOKEN=change-me-to-a-long-random-string   # same as in server/.env
+export XG_ANALYSIS_TOKEN=another-long-random-string-for-scoring   # same as in server/.env (not the internal token)
 python -m xg_analysis serve
 ```
 For MySQL use `XG_DB_URL=mysql://user:password@127.0.0.1:3306/xephyguard`.
@@ -320,7 +321,7 @@ cd C:\xephyguard\analysis
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 $env:XG_DB_URL = "sqlite:///C:/xephyguard/server/database/database.sqlite"
-$env:XG_INTERNAL_TOKEN = "change-me-to-a-long-random-string"   # same as in .env
+$env:XG_ANALYSIS_TOKEN = "another-long-random-string-for-scoring"   # same as in .env (not the internal token)
 python -m xg_analysis serve
 ```
 
@@ -364,7 +365,7 @@ Details: [`SETUP_LINUX_PC.md`](SETUP_LINUX_PC.md), [`SETUP_WINDOWS_PC.md`](SETUP
 | Agent: `cannot download the CA certificate` | port 80 blocked (firewall) or nginx not running |
 | Agent: `403 client certificate missing` | the agent is talking to Laravel directly; it must use nginx on 8443. mTLS is always required (there is no opt-out); check that nginx forwards `X-SSL-Client-*` |
 | PC stays "Pending" | click **Approve** on the **Add a PC** page; check the enrollment key has not been rotated |
-| Report has no score | analysis service not running, or `XG_INTERNAL_TOKEN` differs between `.env` and the analysis service |
+| Report has no score | analysis service not running (retried for ~13 min), or the report says `failed`: `XG_ANALYSIS_TOKEN` unset, shorter than 16 characters, equal to `XG_INTERNAL_TOKEN`, or different between `.env` and the analysis service |
 | PC shows "Machine silent" | the scheduler (`schedule:work`) is running but the agent stopped sending heartbeats: check the PC and its network |
 | WSL2: lab PCs cannot connect | mirrored networking not on (`wsl --shutdown` after editing `.wslconfig`), Hyper-V firewall rule missing, or the Windows PC's IP changed |
 | `php artisan ...` fails with `could not find driver` | enable `pdo_sqlite` (or `pdo_mysql`) in `php.ini` |

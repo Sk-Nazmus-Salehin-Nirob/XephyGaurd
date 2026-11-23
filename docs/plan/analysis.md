@@ -20,7 +20,8 @@ Rules for every step: one component, <300 changed lines, one kind of change, tes
 - [ ] Step 7: Schema test that `FEATURES` equals the features computed and stored (will fail until Step 20) (fixes none; touches F48)
 
 ## Phase 3: Config and secrets
-- [ ] Step 8: Separate `XG_ANALYSIS_TOKEN` for the scoring endpoint, not `XG_INTERNAL_TOKEN` (fixes I-ANALYSIS-17; touches F9) [CROSS: server `AnalysisClient`, ccc-deploy env]
+- [x] Step 8: Separate `XG_ANALYSIS_TOKEN` for the scoring endpoint, not `XG_INTERNAL_TOKEN` (fixes I-ANALYSIS-17; touches F9) [CROSS: server `AnalysisClient`, ccc-deploy env]
+  Done 2026-11-23 with server S-54 (same commit): `service.authorized()` accepts only `XG_ANALYSIS_TOKEN`; unset = every `/score` refused (warning at startup). New `tests/test_service.py` (2 tests); pytest/pandas not installed here, so run with the DB and pipeline modules stubbed.
 - [ ] Step 9: No silent SQLite fallback: missing `XG_DB_URL` is a startup error unless `XG_ALLOW_SQLITE=1` (tests set it) (fixes I-ANALYSIS-23; touches F9)
 - [ ] Step 10: IDE/terminal app allow-list and AI category set loaded from `data/` YAML (fixes I-ANALYSIS-21; touches F48) [CROSS: data/]
 

@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-declare(strict_types=1);
-
 // XephyGuard CCC configuration. Most values are set by ccc-deploy/install.sh in .env and many can
 // be changed later from Settings (stored in the `settings` table, which overrides these defaults).
 return [
@@ -28,6 +26,7 @@ return [
     'internal_url' => env('XG_INTERNAL_URL', 'http://app'),
     'setup_token' => env('XG_SETUP_TOKEN'),                  // first-run wizard from the LAN (install.sh prints it)
     'analysis_url' => env('XG_ANALYSIS_URL', 'http://analysis:8090'),
+    'analysis_token' => env('XG_ANALYSIS_TOKEN'),            // CCC -> analysis /score only; must differ from internal_token
 
     // Agent behaviour
     'heartbeat_timeout_s' => (int) env('XG_HEARTBEAT_TIMEOUT', 45),   // 3 missed heartbeats (15 s default)

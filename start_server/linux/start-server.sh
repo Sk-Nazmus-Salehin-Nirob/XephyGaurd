@@ -60,6 +60,10 @@ ensure_gateway_secrets() {
   if [[ -z "$(xg_read_env "$env_file" XG_INTERNAL_TOKEN "")" ]]; then
     xg_set_env "$env_file" XG_INTERNAL_TOKEN "$(xg_rand_hex 24)"
   fi
+  # Laravel -> analysis /score only (separate from the internal token, I-ANALYSIS-17).
+  if [[ -z "$(xg_read_env "$env_file" XG_ANALYSIS_TOKEN "")" ]]; then
+    xg_set_env "$env_file" XG_ANALYSIS_TOKEN "$(xg_rand_hex 24)"
+  fi
 }
 
 if (( RESTART == 1 )); then

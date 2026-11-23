@@ -136,6 +136,7 @@ XG_NET_STATE=$STATE/net/state.json
 XG_INTERNAL_TOKEN=$(rand 24)
 XG_INTERNAL_URL=http://127.0.0.1:8000
 XG_ANALYSIS_URL=http://127.0.0.1:8090
+XG_ANALYSIS_TOKEN=$(rand 24)
 XG_REQUIRE_MTLS=true
 XG_SETUP_TOKEN=$(rand 24)
 SCREEN_GATEWAY_ADDR=127.0.0.1:8082
@@ -150,6 +151,7 @@ ENVF
 else
   say "Keeping existing secrets in $ENV"
   grep -q '^XG_SETUP_TOKEN=' "$ENV" || echo "XG_SETUP_TOKEN=$(rand 24)" >> "$ENV"   # older .env: add the wizard token
+  grep -q '^XG_ANALYSIS_TOKEN=.' "$ENV" || echo "XG_ANALYSIS_TOKEN=$(rand 24)" >> "$ENV"   # older .env: scoring token
 fi
 set -a; . "$ENV"; set +a
 

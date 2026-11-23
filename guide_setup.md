@@ -218,7 +218,8 @@ cd /opt/xephyguard/server
 cp .env.example .env && composer install && npm ci && npm run build && php artisan key:generate
 touch database/database.sqlite
 # edit .env: APP_URL, BROADCAST_CONNECTION=reverb, REVERB_* on port 8081, XG_CCC_IP, XG_LAB_SUBNET,
-#            XG_NETWORK_MODE=proxy_only, XG_ANALYSIS_URL=http://127.0.0.1:8090, XG_INTERNAL_TOKEN=<random>
+#            XG_NETWORK_MODE=proxy_only, XG_ANALYSIS_URL=http://127.0.0.1:8090, XG_INTERNAL_TOKEN=<random>,
+#            XG_ANALYSIS_TOKEN=<another random>
 php artisan migrate
 php artisan xephyguard:ca:init --server-ip=192.168.10.2 --server-dns=localhost
 php artisan xephyguard:bootstrap
@@ -343,6 +344,7 @@ kernel). There are two options:
    XG_ANALYSIS_URL=http://127.0.0.1:8090
    XG_INTERNAL_URL=http://127.0.0.1:8000
    XG_INTERNAL_TOKEN=<long random string>
+   XG_ANALYSIS_TOKEN=<another long random string>
    XG_REQUIRE_MTLS=true
    ```
    Then:
@@ -369,7 +371,7 @@ kernel). There are two options:
    cd C:\xephyguard\server; php artisan queue:work
    cd C:\xephyguard\server; php artisan schedule:work
    cd C:\xephyguard\analysis; python -m venv .venv; .\.venv\Scripts\Activate.ps1; pip install -r requirements.txt
-   $env:XG_DB_URL="sqlite:///C:/xephyguard/server/database/database.sqlite"; $env:XG_INTERNAL_TOKEN="<same as .env>"; python -m xg_analysis serve
+   $env:XG_DB_URL="sqlite:///C:/xephyguard/server/database/database.sqlite"; $env:XG_ANALYSIS_TOKEN="<XG_ANALYSIS_TOKEN from .env>"; python -m xg_analysis serve
    ```
 6. **Open the firewall** for the lab subnet only:
    ```powershell

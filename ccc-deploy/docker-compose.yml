@@ -90,7 +90,7 @@ services:
     restart: unless-stopped
     environment:
       XG_DB_URL: mysql://xephyguard:${DB_PASSWORD}@127.0.0.1:3306/xephyguard
-      XG_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}
+      XG_ANALYSIS_TOKEN: ${XG_ANALYSIS_TOKEN}   # its own secret; never the proxy's XG_INTERNAL_TOKEN
       XG_SCORING_V2: ${XG_SCORING_V2:-0}
     depends_on:
       mysql: { condition: service_healthy }
