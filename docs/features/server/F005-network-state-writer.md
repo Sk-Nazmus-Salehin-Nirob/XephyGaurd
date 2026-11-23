@@ -12,6 +12,8 @@
 - **In/out/side effects:** writes `XG_NET_STATE` (default `storage/app/net/state.json`) atomically
   (unique temp file + rename), mode 0640 because it holds `events_token`; the sidecars read it as root.
   All PCs are resolved with a fixed query count (`PolicyService::effectiveMany`, S-24).
+  `inspect_hosts` and `google.hide_selectors` come from `data/network/proxy.yaml` unless an admin saved a
+  different list on `/settings` (`NetworkSeed`, S-53).
 - **Status:** working (`blocklist_edit_hot_reloads_network_state`,
   `always_on_udm14_populates_udm14_clients_and_saving_profile_writes_net_state`, `NetworkPolicyWriterTest`).
 - **Test:** 1. `php artisan xephyguard:net:write`. 2. `jq . storage/app/net/state.json | head`.

@@ -6,7 +6,6 @@ namespace App\Services;
 
 use App\Models\Lab;
 use App\Models\Profile;
-use App\Models\Setting;
 
 /** Idempotent first-install data: lab row, built-in profiles, seed blocklists and rules. */
 class Bootstrap
@@ -72,10 +71,8 @@ class Bootstrap
         } else {
             $out[] = 'signatures: not published (no CA yet; run xephyguard:ca:init)';
         }
-        if (Setting::get('google_hide_selectors') === null || Setting::get('google_hide_selectors') === []) {
-            // Fallback only (udm=14 is the primary mechanism). Verify against current markup: eval/live_checks.
-            Setting::put('google_hide_selectors', ['div[jsname="txosbe"]', 'div[data-attrid="AIOverview"]', '#m-x-content', 'g-ai-overview']);
-        }
+        // Inspect hosts and Google hide selectors come from data/network/proxy.yaml; stored copies equal to it are dropped.
+        $out[] = 'proxy lists following data/network: '.NetworkSeed::importSeed().' stored copies dropped';
 
         return $out;
     }

@@ -1,0 +1,30 @@
+# Lists the CCC hands to the proxy in state.json (server NetworkPolicyWriter). Not hard-coded in server code.
+# The Settings page shows them and may override them. Saving a list unchanged or empty keeps following this
+# file, so updates here reach every CCC whose admin did not change the list (xephyguard:bootstrap also drops
+# stored copies that equal this file).
+version: 1
+
+# Hosts the proxy decrypts with the lab CA, to force udm=14, hide AI summaries and apply path rules.
+# Every other host is filtered by SNI only (no decryption, DECISIONS #10).
+inspect_hosts:
+  - google.com
+  - www.google.com
+  - google.co.uk
+  - google.ca
+  - google.com.au
+  - google.co.in
+  - google.de
+  - google.fr
+  - bing.com
+  - www.bing.com
+  - huggingface.co
+  - duckduckgo.com
+  - search.brave.com
+
+# CSS fallback that hides AI summary boxes on inspected search pages (udm=14 is the primary mechanism).
+# Check against the current markup: eval/live_checks/google_ai_overview.py
+google_hide_selectors:
+  - 'div[jsname="txosbe"]'
+  - 'div[data-attrid="AIOverview"]'
+  - '#m-x-content'
+  - g-ai-overview

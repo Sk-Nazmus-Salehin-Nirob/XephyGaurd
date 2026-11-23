@@ -106,6 +106,8 @@ Paths are relative to the repo root. `S/` = `server/app/`, `A/` = `agent/`.
   blocklists, retiring a PC, setup.
 - **Code:** `S/Console/Commands/NetWrite.php`, `S/Services/NetworkPolicyWriter.php` (`build`, `write`).
 - **In/out/side effects:** writes `XG_NET_STATE` (default `storage/app/net/state.json`).
+  `inspect_hosts` and `google.hide_selectors` come from `data/network/proxy.yaml` unless an admin saved a
+  different list on `/settings` (`NetworkSeed`, S-53).
 - **Status:** working (`blocklist_edit_hot_reloads_network_state`,
   `always_on_udm14_populates_udm14_clients_and_saving_profile_writes_net_state`).
 - **Test:** 1. `php artisan xephyguard:net:write`. 2. `jq . storage/app/net/state.json | head`.
@@ -682,7 +684,8 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 - **Test:** 1. In a Test session, `curl https://chatgpt.com` via the proxy fails at TLS.
 
 ### F68. Path rules and selective inspection
-- **What:** for chosen hosts (`inspect_hosts`) the proxy decrypts and blocks specific paths.
+- **What:** for chosen hosts (`inspect_hosts`, seeded from `data/network/proxy.yaml`, editable on `/settings`)
+  the proxy decrypts and blocks specific paths.
 - **Code:** addon `request`, `proxy_logic.py`.
 - **Status:** working (`path_rule_blocked`, `plain_http_blocked_domain`).
 - **Test:** 1. Add a host/path rule. 2. That path is blocked, the rest of the site works.
@@ -691,7 +694,8 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 - **What:** forces Google Search to web results (`udm=14`), strips AI elements with CSS, sets
   browser policies on PCs.
 - **Code:** addon `request`/`response` (CSS injection, CSP nonce relaxation),
-  `proxy_logic.py`; agent browser policy writer (F91); setting `google_hide_selectors`.
+  `proxy_logic.py`; agent browser policy writer (F91); setting `google_hide_selectors` (default list in
+  `data/network/proxy.yaml`, S-53; the proxy's own host/path signatures are proxy plan Step 14).
 - **Status:** working (`google_search_rewrite_sets_udm14_…`, `response_css_injection`,
   `csp_nonce_and_style_relaxation`). `eval/live_checks/google_ai_overview.py` checks it against the live site.
 - **Test:** 1. In a session, search Google on a PC. 2. The URL gets `udm=14` and no AI Overview shows.
@@ -1191,7 +1195,8 @@ agent IPC); reads `DISPLAY`, `XDG_SESSION_TYPE`, `DBUS_SESSION_BUS_ADDRESS`, `NO
 ### CCC settings (`settings` table, edited on `/settings`)
 `lab_name`, `network_mode`, `ccc_ip`, `retention_days_raw`, `retention_days_reports`, `notice_text`,
 `paste_alert_chars`, `timezone`, `title_capture_always_on`, `title_capture_practice`,
-`title_capture_test`, `log_urls`, `log_queries`, `inspect_hosts`, `google_hide_selectors`, search
+`title_capture_test`, `log_urls`, `log_queries`, `inspect_hosts`, `google_hide_selectors` (both stored only
+when they differ from `data/network/proxy.yaml`), search
 template URL; plus internal keys `shared_clipboard`, `shared_clipboard_at`, `shared_clipboard_history`,
 pseudonymisation flag.
 

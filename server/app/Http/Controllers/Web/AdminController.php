@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Audit;
 use App\Services\Doctor;
 use App\Services\NetworkPolicyWriter;
+use App\Services\NetworkSeed;
 use App\Services\NoticeText;
 use App\Services\PrivacySettings;
 use App\Services\ScreenGatewayRevoker;
@@ -55,8 +56,9 @@ class AdminController extends Controller
             $values["title_capture_$m"] = PrivacySettings::titleCaptureSetting($m);
         }
         $values['log_urls'] = PrivacySettings::logUrls();
-        $values['inspect_hosts'] = implode("\n", Setting::get('inspect_hosts', NetworkPolicyWriter::DEFAULT_INSPECT_HOSTS));
-        $values['google_hide_selectors'] = implode("\n", Setting::get('google_hide_selectors', []));
+        foreach (NetworkSeed::KEYS as $k) {
+            $values[$k] = implode("\n", NetworkSeed::get($k));   // seed from data/network/proxy.yaml unless overridden
+        }
 
         return view('admin.settings', ['v' => $values]);
     }
@@ -88,8 +90,9 @@ class AdminController extends Controller
         $logEnabled = (bool) ($d['log_urls'] ?? false);
         Setting::put('privacy.log_urls', ['enabled' => $logEnabled, 'query' => $logEnabled && (bool) ($d['log_queries'] ?? false)]);
         $lines = fn ($s) => array_values(array_filter(array_map('trim', preg_split('/\R/', (string) $s))));
-        Setting::put('inspect_hosts', $lines($d['inspect_hosts'] ?? '') ?: NetworkPolicyWriter::DEFAULT_INSPECT_HOSTS);
-        Setting::put('google_hide_selectors', $lines($d['google_hide_selectors'] ?? ''));
+        foreach (NetworkSeed::KEYS as $k) {
+            NetworkSeed::save($k, $lines($d[$k] ?? ''));   // empty or unchanged = keep following the seed
+        }
         Lab::current()->update(['name' => $d['lab_name'], 'ccc_ip' => $d['ccc_ip'], 'subnet' => $d['lab_subnet']]);
         Audit::log('settings.save', null, collect($d)->except('notice_text')->all());
         $net->write();

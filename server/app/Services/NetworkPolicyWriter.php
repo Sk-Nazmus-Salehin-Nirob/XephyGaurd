@@ -15,10 +15,6 @@ use RuntimeException;
  */
 class NetworkPolicyWriter
 {
-    public const DEFAULT_INSPECT_HOSTS = ['google.com', 'www.google.com', 'google.co.uk', 'google.ca', 'google.com.au',
-        'google.co.in', 'google.de', 'google.fr', 'bing.com', 'www.bing.com', 'huggingface.co', 'duckduckgo.com',
-        'search.brave.com'];
-
     public function __construct(private readonly PolicyService $policies) {}
 
     public function build(): array
@@ -92,9 +88,9 @@ class NetworkPolicyWriter
             'google' => [
                 'force_udm14' => $forceUdm14,
                 'udm14_clients' => $udm14Clients,
-                'hide_selectors' => Setting::get('google_hide_selectors', []),
+                'hide_selectors' => NetworkSeed::get('google_hide_selectors'),   // data/network/proxy.yaml (S-53)
             ],
-            'inspect_hosts' => Setting::get('inspect_hosts', self::DEFAULT_INSPECT_HOSTS),
+            'inspect_hosts' => NetworkSeed::get('inspect_hosts'),
             'log_urls' => $logUrls,
             'events_url' => rtrim(config('xephyguard.internal_url'), '/').'/api/internal/net-events',
             'events_token' => config('xephyguard.internal_token'),

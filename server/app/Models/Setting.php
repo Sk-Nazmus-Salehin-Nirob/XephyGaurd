@@ -39,6 +39,13 @@ class Setting extends Model
         Cache::forget('xg.settings');
     }
 
+    /** Removes a stored value, so `get` falls back to its default again. */
+    public static function forget(string $key): void
+    {
+        static::query()->find($key)?->delete();   // model delete: fires the policy invalidation
+        Cache::forget('xg.settings');
+    }
+
     public static function set(string $key, mixed $value): void
     {
         static::put($key, $value);

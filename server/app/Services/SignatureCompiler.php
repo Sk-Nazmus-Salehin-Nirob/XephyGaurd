@@ -104,9 +104,14 @@ class SignatureCompiler
             ->get(['category', 'value']) as $entry) {
             $bundle['domains'][$entry->category][] = strtolower($entry->value);
         }
-        $bundle['ports']['probe'] = Setting::get('signatures.port.probe', ['enabled' => true,
-            'paths' => ['/v1/models', '/api/tags'], 'severity' => 'high', 'min_rss_mb' => 300]);
-        $bundle['artifacts']['scan'] = Setting::get('signatures.artifact.scan', ['roots' => ['~'], 'max_depth' => 6]);
+        // Port probe and artifact scan: imported from data/signatures by importSeed; before the first import the
+        // YAML is read directly (no hard-coded copy, S-53). The agent treats both blocks as optional.
+        foreach (['ports' => ['port', 'probe'], 'artifacts' => ['artifact', 'scan']] as $file => [$kind, $extra]) {
+            $block = Setting::get("signatures.$kind.$extra") ?? self::seedBlock($file, $extra);
+            if (is_array($block) && $block !== []) {
+                $bundle[$file][$extra] = $block;
+            }
+        }
         $web = Setting::get('signatures.web', []);
         if (is_array($web) && $web !== []) {
             $bundle['web'] = $web;
@@ -195,6 +200,15 @@ class SignatureCompiler
             ResolvedPolicy::invalidateAll();
         });
         $version->refresh();
+    }
+
+    /** A top-level block (`probe`, `scan`) of data/signatures/<file>.yaml, or null if absent. */
+    private static function seedBlock(string $file, string $key): ?array
+    {
+        $path = config('xephyguard.data_dir')."/signatures/$file.yaml";
+        $block = is_file($path) ? ((Yaml::parseFile($path) ?? [])[$key] ?? null) : null;
+
+        return is_array($block) ? $block : null;
     }
 
     /** Serialises publish/activate: row locks on every version (and the gap after them on MySQL). */
