@@ -215,17 +215,92 @@ def test_invalid_content_length_is_400_without_reading(service_db, length):
     assert service_db.conn.execute("SELECT count(*) FROM scores").fetchone()[0] == 0
 
 
+@pytest.fixture(autouse=True)
+def fresh_health(monkeypatch):
+    """Each test gets its own /health cache and connection."""
+    monkeypatch.setattr(service, "HEALTH", service.HealthCheck())
+
+
 def test_health_needs_no_token_and_reports_the_db(service_db, monkeypatch):
     assert call("GET", "/health", token=None) == (200, {"ok": True})
     assert call("GET", "/health", token="wrong") == (200, {"ok": True})
-    # A connection whose query fails is reported as 503.
+    # A connection whose query fails is reported as 503 (once the cached answer has expired).
+    monkeypatch.setattr(service, "HEALTH", service.HealthCheck())
     monkeypatch.setattr(Db, "ping", lambda self: False)
     assert call("GET", "/health", token=None) == (503, {"ok": False})
 
 
-def test_health_when_the_db_cannot_be_opened_sends_no_response(tmp_path, monkeypatch):
-    # Current behaviour: Db() raises before ping(), so the handler raises and the server drops the
-    # connection without any status (no 503). Step 15 reworks /health.
+def test_health_when_the_db_cannot_be_opened_is_503(tmp_path, monkeypatch):
+    # Used to raise out of the handler, so the server dropped the connection without any status.
     monkeypatch.setenv("XG_DB_URL", f"sqlite:///{(tmp_path / 'missing' / 'xg.sqlite').as_posix()}")
-    with pytest.raises(Exception, match="unable to open database file"):
-        call("GET", "/health", token=None)
+    assert call("GET", "/health", token=None) == (503, {"ok": False})
+
+
+class FakeDb:
+    def __init__(self, ok=True):
+        self.ok, self.pings, self.closed = ok, 0, False
+        self.conn = self
+
+    def ping(self):
+        self.pings += 1
+        return self.ok
+
+    def close(self):
+        self.closed = True
+
+
+class Clock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+
+def test_health_reuses_one_connection_and_checks_at_most_every_5_s():
+    opened, clock = [], Clock()
+    h = service.HealthCheck(connect=lambda: opened.append(FakeDb()) or opened[-1], clock=clock)
+    assert all(h.ok() for _ in range(50))
+    assert len(opened) == 1 and opened[0].pings == 1          # 50 calls, one query
+    clock.t += 4.9
+    assert h.ok() and opened[0].pings == 1
+    clock.t += 0.2
+    assert h.ok() and opened[0].pings == 2 and len(opened) == 1   # same connection, new check
+
+
+def test_health_reconnects_once_when_the_connection_died():
+    clock = Clock()
+    dbs = iter([FakeDb(ok=True), FakeDb(ok=True)])
+    opened = []
+    h = service.HealthCheck(connect=lambda: opened.append(next(dbs)) or opened[-1], clock=clock)
+    assert h.ok()
+    opened[0].ok = False                                      # e.g. MySQL wait_timeout closed it
+    clock.t += 10
+    assert h.ok()                                             # fresh connection, no false 503
+    assert opened[0].closed and len(opened) == 2
+
+
+def test_health_with_the_db_down_is_false_and_rate_limited():
+    clock, attempts = Clock(), []
+
+    def connect():
+        attempts.append(1)
+        raise OSError("connection refused")
+
+    h = service.HealthCheck(connect=connect, clock=clock)
+    assert not any(h.ok() for _ in range(20))
+    assert len(attempts) == 1
+    clock.t += 5
+    assert not h.ok() and len(attempts) == 2
+
+
+def test_concurrent_health_calls_share_one_check():
+    import threading
+    opened = []
+    h = service.HealthCheck(connect=lambda: opened.append(FakeDb()) or opened[-1])
+    threads = [threading.Thread(target=h.ok) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(opened) == 1 and opened[0].pings == 1

@@ -15,7 +15,10 @@ import hmac
 import json
 import logging
 import os
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Callable
 
 from .db import Db, db_url
 from .features import scoring_lists
@@ -29,6 +32,51 @@ def authorized(header: str) -> bool:
     token = os.environ.get("XG_ANALYSIS_TOKEN", "").strip()
     given = header.removeprefix("Bearer ").strip()
     return bool(token) and hmac.compare_digest(token.encode(), given.encode())
+
+
+class HealthCheck:
+    """GET /health without a token: one reused DB connection and at most one check per CACHE_S, so
+    repeated calls cannot use up MySQL connections (I-ANALYSIS-6)."""
+
+    CACHE_S = 5.0
+
+    def __init__(self, connect: Callable[[], Db] = Db, clock: Callable[[], float] = time.monotonic):
+        self._connect = connect
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._db: Db | None = None
+        self._ok = False
+        self._checked_at: float | None = None
+
+    def ok(self) -> bool:
+        with self._lock:
+            if self._checked_at is None or self._clock() - self._checked_at >= self.CACHE_S:
+                self._ok = self._check()
+                self._checked_at = self._clock()
+            return self._ok
+
+    def _check(self) -> bool:
+        for _ in range(2):   # a connection the server dropped (e.g. wait_timeout) gets one fresh retry
+            if self._db is None:
+                try:
+                    self._db = self._connect()
+                except Exception as e:  # noqa: BLE001
+                    log.warning("health: cannot open the database: %s", e)
+                    return False
+            if self._db.ping():
+                return True
+            self._close()
+        return False
+
+    def _close(self) -> None:
+        try:
+            self._db.conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self._db = None
+
+
+HEALTH = HealthCheck()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -48,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/health":
-            ok = Db().ping()
+            ok = HEALTH.ok()
             self._send(200 if ok else 503, {"ok": ok})
         else:
             self._send(404, {"error": "not found"})
