@@ -20,7 +20,8 @@ Rules for every step: one component, <300 changed lines, one kind of change, tes
   Done 2026-11-18: `test_research_export_never_has_student_number_name_or_login` (CSV and Parquet: no `student_number`/`name`/`login`/`student_id`/`user` column, no such value in any cell). Server part was S-41. Passes on current code. 18 tests pass; ruff not installed locally, not run.
 
 ## Phase 2: Tooling
-- [ ] Step 6: Ruff baseline clean for `analysis/` (no behavior change) (fixes none; touches F9, F48)
+- [x] Step 6: Ruff baseline clean for `analysis/` (no behavior change) (fixes none; touches F9, F48)
+  Done 2026-11-23, no code change: the plan/CI gate `ruff check analysis --select E,F,W --ignore E501,E731` was already clean before Steps 1-4 (ruff 0.17.6) and still is. Not adopted: plain `ruff check analysis` on 0.17 uses wider defaults and reports 24 style findings (7 RUF100 unused `noqa`, 3 B023 on the `sel` lambda in `features.compute`, which runs inside its own loop iteration so the hit is a false positive, UP017 `timezone.utc`, I001 import order, C408, RUF059/RUF046, UP034/UP035, C417). CI installs an unpinned ruff but passes the explicit selection, so new default rules cannot break it.
 - [ ] Step 7: Schema test that `FEATURES` equals the features computed and stored (will fail until Step 20) (fixes none; touches F48)
 
 ## Phase 3: Config and secrets
