@@ -179,3 +179,28 @@ def test_signatures_from_policy_replace_builtin(tmp_path, state_dict):
     assert sig.wants_css("www.other.example") and not sig.wants_css("www.bing.com")
     assert google_search_rewrite("search.example", "/search", [("q", "x")], sig) == [("q", "x"), ("udm", "14")]
     assert google_search_rewrite("www.google.com", "/search", [("q", "x")], sig) is None
+
+
+# -- Step 15 (I-PROXY-26): hide selectors can't break out of the rule or the <style> element --
+
+@pytest.mark.parametrize("sel", [
+    "a}body{display:none", "a;color:red", "@import url(x)", "a{", "</style><script>", "a/*x*/",
+    "a\7d b", 'div[x="unclosed]', "div[x", "a:not(b", "a)", "", "   ", None, 5, "a" * 257,
+])
+def test_hide_css_rejects_breakouts(sel):
+    from xg_netpolicy.proxy_logic import valid_selector
+
+    assert not valid_selector(sel)
+    assert hide_css([sel]) == ""
+
+
+def test_hide_css_keeps_seed_and_common_selectors():
+    yaml = pytest.importorskip("yaml")
+    from xg_netpolicy.proxy_logic import valid_selector
+
+    seed = yaml.safe_load((pathlib.Path(__file__).resolve().parents[2] / "data" / "network" / "proxy.yaml").read_text())
+    common = ["div > span.x", "a[href^='https://'] + b", "li:not(.ad)", "x ~ y", "[data-a|=\"en\"]", "g-ai-overview"]
+    for s in seed["google_hide_selectors"] + common:
+        assert valid_selector(s), s
+    out = hide_css(["#ok", "a}b{", " .x "])
+    assert out == '<style id="xephyguard">#ok,.x{display:none!important}</style>'

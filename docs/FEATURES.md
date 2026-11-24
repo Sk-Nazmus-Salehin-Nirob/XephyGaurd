@@ -702,6 +702,7 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 ### F69. Google AI Overview suppression
 - **What:** forces Google Search to web results (`udm=14`), strips AI elements with CSS, sets
   browser policies on PCs.
+  A hide selector is used only if it passes `proxy_logic.valid_selector` (names, `#id`, `.class`, `[attr op "value"]`, combinators, `:pseudo(...)`; no `{ } ; @ <`, backslash or comment, balanced quotes/brackets, at most 256 characters); any other is left out, so a setting can't inject CSS or close the `<style>` (I-PROXY-26).
 - **Code:** addon `request`/`response` (CSS injection, CSP nonce relaxation),
   `proxy_logic.py`; agent browser policy writer (F91); setting `google_hide_selectors` (default list in
   `data/network/proxy.yaml`, S-53; the proxy's AI-endpoint signatures, Google search-host regex, `/async/folwr` and `bing.com`, are `google_search_hosts`/`google_ai_paths`/`search_css_hosts` in the same file, read by the proxy from the policy's `google` object, with built-in copies kept equal by a test until the server sends them; proxy Step 14).

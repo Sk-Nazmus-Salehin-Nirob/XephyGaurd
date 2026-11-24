@@ -6,6 +6,7 @@
 
 - **What:** forces Google Search to web results (`udm=14`), strips AI elements with CSS, sets
   browser policies on PCs.
+  A hide selector is used only if it passes `proxy_logic.valid_selector` (names, `#id`, `.class`, `[attr op "value"]`, combinators, `:pseudo(...)`; no `{ } ; @ <`, backslash or comment, balanced quotes/brackets, at most 256 characters); any other is left out, so a setting can't inject CSS or close the `<style>` (I-PROXY-26).
   Only the Google hosts listed exactly in `inspect_hosts` are covered (the seed lists `google.<cc>` and `www.google.<cc>` for com, co.uk, ca, com.au, co.in, de, fr); another country domain must be added on `/settings`. Google sign-in, Gmail and Docs are never decrypted.
 - **Code:** addon `request`/`response` (CSS injection, CSP nonce relaxation),
   `proxy_logic.py`; agent browser policy writer ([F91](../agent/F091-browser-policies-and-dns-settings-on-the-pc.md)); setting `google_hide_selectors` (default list in

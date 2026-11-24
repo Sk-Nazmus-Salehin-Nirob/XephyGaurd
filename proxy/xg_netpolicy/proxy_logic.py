@@ -278,8 +278,37 @@ def extract_nonce(html: str) -> str:
     return m.group(1) if m else ""
 
 
+# Characters a hide selector may use: names, #id, .class, [attr op "value"], combinators, :pseudo(...).
+# Nothing that can end the rule or the <style> element or start an at-rule or comment: no { } ; @ <
+# or backslash, and no /* or */ (a / alone may appear in a quoted value such as [href^='https://']).
+SELECTOR_RE = re.compile(r"""[A-Za-z0-9_\-#.:\[\]=*>+~,()|^$"'/ ]+""")
+SELECTOR_MAX = 256
+
+
+def valid_selector(s: object) -> bool:
+    """True when `s` is safe to put in front of `{display:none!important}` (I-PROXY-26): allowed
+    characters only, no comment, balanced quotes, brackets and parentheses, at most SELECTOR_MAX characters."""
+    if not isinstance(s, str) or not s.strip() or len(s) > SELECTOR_MAX or not SELECTOR_RE.fullmatch(s):
+        return False
+    if "/*" in s or "*/" in s:
+        return False
+    if s.count('"') % 2 or s.count("'") % 2:
+        return False
+    depth = {"[": 0, "(": 0}
+    for ch in s:
+        if ch in "[(":
+            depth[ch] += 1
+        elif ch in "])":
+            k = "[" if ch == "]" else "("
+            depth[k] -= 1
+            if depth[k] < 0:
+                return False
+    return not any(depth.values())
+
+
 def hide_css(selectors: list[str], nonce: str = "") -> str:
-    sel = ",".join(s for s in selectors if s and "<" not in s and "{" not in s)
+    """Selectors that fail valid_selector are left out; nothing is injected when none is left."""
+    sel = ",".join(s.strip() for s in selectors if valid_selector(s))
     if not sel:
         return ""
     safe_nonce = re.sub(r"[^A-Za-z0-9+/=_-]", "", nonce or "")
