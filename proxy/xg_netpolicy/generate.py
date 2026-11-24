@@ -23,10 +23,15 @@ import pathlib
 import subprocess
 import sys
 import time
+from collections.abc import Iterable
+from typing import Any, Union
 
 from .state import GROUPS, State
 
 log = logging.getLogger("xg-netpolicy")
+
+# an nft set element as a collapsed network
+Net = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
 
 
 def unbound_conf(s: State) -> str:
@@ -137,17 +142,18 @@ def restricted_ips(s: State) -> set[str]:
     return set(s.groups.get("test", [])) | set(s.groups.get("isolated", []))
 
 
-def desired_sets(s: State) -> dict[str, list]:
+def desired_sets(s: State) -> dict[str, list[Net]]:
     """The elements sets.nft puts into each set, as collapsed networks (comparable with live_sets)."""
-    want = {f"{g}_clients": list(s.groups.get(g, [])) for g in GROUPS}
+    want: dict[str, list[Any]] = {f"{g}_clients": list(s.groups.get(g, [])) for g in GROUPS}
     nets = [ipaddress.ip_network(x, strict=False) for x in s.doh_ips]
     want["resolver_ips"] = [n for n in nets if n.version == 4]
     want["resolver_ips6"] = [n for n in nets if n.version == 6]
     return {k: _collapse(v) for k, v in want.items()}
 
 
-def _collapse(items) -> list:
-    nets = []
+def _collapse(items: Iterable[Any]) -> list[Net]:
+    """str/network elements, or nft JSON {"range": [lo, hi]} / {"prefix": {...}}, as collapsed networks."""
+    nets: list[Net] = []
     for x in items:
         if isinstance(x, dict) and "range" in x:
             lo, hi = (ipaddress.ip_address(a) for a in x["range"])
@@ -156,13 +162,13 @@ def _collapse(items) -> list:
             nets.append(ipaddress.ip_network(f'{x["prefix"]["addr"]}/{x["prefix"]["len"]}', strict=False))
         else:
             nets.append(ipaddress.ip_network(x, strict=False))
-    out = []
+    out: list[Net] = []
     for v in (4, 6):
         out += ipaddress.collapse_addresses(n for n in nets if n.version == v)
     return out
 
 
-def live_sets() -> dict[str, list] | None:
+def live_sets() -> dict[str, list[Net]] | None:
     """Elements of the sets in the running `table inet xephyguard`, or None when it can't be read
     (no nft, no table). Ranges/prefixes that nft merged are collapsed like desired_sets."""
     try:
@@ -170,7 +176,7 @@ def live_sets() -> dict[str, list] | None:
         if r.returncode:
             return None
         doc = json.loads(r.stdout)
-        sets = {}
+        sets: dict[str, list[Net]] = {}
         for obj in doc.get("nftables", []):
             st = obj.get("set") if isinstance(obj, dict) else None
             if st:
@@ -192,7 +198,7 @@ def sets_out_of_sync(s: State) -> bool:
     return any(live.get(k, []) != v for k, v in want.items())
 
 
-def flush_conntrack(ips) -> None:
+def flush_conntrack(ips: set[str] | frozenset[str]) -> None:
     """Delete tracked flows of PCs that just became test/isolated (I-PROXY-4), so a tunnel or a
     redirected flow opened before the change is not carried on by its conntrack/NAT entry."""
     for ip in sorted(ips):

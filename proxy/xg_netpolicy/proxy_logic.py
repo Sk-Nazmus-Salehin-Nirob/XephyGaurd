@@ -70,7 +70,7 @@ class TlsDecision:
 class PolicyCache:
     """Hot-reloads proxy.json (checked at most every `interval` seconds)."""
 
-    def __init__(self, path: str | pathlib.Path, interval: float = 2.0):
+    def __init__(self, path: str | pathlib.Path, interval: float = 2.0) -> None:
         self.path = pathlib.Path(path)
         self.interval = interval
         self._mtime = 0.0
@@ -271,7 +271,7 @@ def block_page(host: str, reason: str) -> str:
 class EventShipper:
     """Batches network events and POSTs them to the CCC; falls back to a JSONL file."""
 
-    def __init__(self, cache: PolicyCache, fallback: str = "/var/log/xephyguard/proxy-events.jsonl"):
+    def __init__(self, cache: PolicyCache, fallback: str = "/var/log/xephyguard/proxy-events.jsonl") -> None:
         self.cache = cache
         self.fallback = fallback
         self.q: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=50000)
