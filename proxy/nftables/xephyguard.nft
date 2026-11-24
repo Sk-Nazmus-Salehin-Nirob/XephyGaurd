@@ -31,9 +31,25 @@ table inet xephyguard {
 
     chain input {
         type filter hook input priority filter; policy accept;
+        # WAN side (I-PROXY-3): the proxy listeners, Unbound, the dashboard and every other host port
+        # are for the lab only. Nothing from the WAN reaches them; see wan_input.
+        iifname "@WAN_IF@" jump wan_input
         # Isolated PCs may only talk to the agent endpoint (so commands and alerts keep flowing).
         iifname "@LAN_IF@" ip saddr @isolated_clients tcp dport != @AGENT_PORT@ drop
         iifname "@LAN_IF@" ip saddr @isolated_clients udp dport != 53 drop
+    }
+
+    # Traffic arriving on the WAN card: replies to the CCC's own connections, ICMP (PMTU, ping),
+    # DHCP replies if the WAN address is leased, and SSH for administration. Everything else
+    # (proxy 8080/8085, DNS 53, 80/443/8443, MySQL, Reverb, ...) is dropped.
+    chain wan_input {
+        ct state established,related accept
+        ct state invalid counter drop
+        meta l4proto { icmp, ipv6-icmp } accept
+        udp sport 67 udp dport 68 accept comment "DHCPv4 client"
+        udp sport 547 udp dport 546 accept comment "DHCPv6 client"
+        tcp dport 22 accept comment "SSH administration"
+        counter drop comment "WAN: proxy, DNS and other host ports"
     }
 
     chain forward {

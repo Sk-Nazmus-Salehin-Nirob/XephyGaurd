@@ -199,3 +199,30 @@ def test_unbound_control_is_unix_socket_only(rel):
     ifaces = [ln.split(":", 1)[1].strip() for ln in rc.splitlines() if ln.strip().startswith("control-interface:")]
     assert ifaces == ["/run/xephyguard-unbound/unbound.ctl"]
     assert "control-port" not in rc
+
+
+def _nft_chain(text, name):
+    body = text.split(f"chain {name} {{", 1)[1].split("\n    }", 1)[0]
+    return [ln.strip() for ln in body.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+
+
+def test_wan_input_accepts_only_established_and_required_ports():
+    import pathlib
+
+    nft = (pathlib.Path(__file__).resolve().parents[2] / "proxy/nftables/xephyguard.nft").read_text()
+    inp = _nft_chain(nft, "input")
+    # the WAN jump comes first, so no later input rule can accept WAN traffic
+    assert inp[1] == 'iifname "@WAN_IF@" jump wan_input'
+    wan = _nft_chain(nft, "wan_input")
+    assert wan[0] == "ct state established,related accept"
+    assert wan[-1].startswith("counter drop")
+    accepts = [ln for ln in wan if " accept" in ln]
+    assert accepts == [
+        "ct state established,related accept",
+        "meta l4proto { icmp, ipv6-icmp } accept",
+        'udp sport 67 udp dport 68 accept comment "DHCPv4 client"',
+        'udp sport 547 udp dport 546 accept comment "DHCPv6 client"',
+        'tcp dport 22 accept comment "SSH administration"',
+    ]
+    for port in ("53", "80", "443", "8080", "8085", "@PROXY_PORT@", "@AGENT_PORT@"):
+        assert not any(f"dport {port} " in ln or f"dport {{ {port}" in ln for ln in accepts), port
