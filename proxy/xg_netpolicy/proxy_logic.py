@@ -14,7 +14,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from .domains import DomainSet, PathRules
+from .domains import DomainSet, InspectHosts, PathRules
 from .state import State
 
 log = logging.getLogger("xg-proxy")
@@ -77,7 +77,7 @@ class PolicyCache:
         self._checked = 0.0
         self.state = State()
         self._blocked: dict[str | None, DomainSet] = {}
-        self._inspect = DomainSet()
+        self._inspect = InspectHosts()
         self._ai_doms = DomainSet()
         self._ide_doms = DomainSet()
         self._ai_paths = PathRules()
@@ -102,7 +102,7 @@ class PolicyCache:
             return
         self._mtime = m
         self._blocked = {}
-        self._inspect = DomainSet.of(self.state.inspect_hosts)
+        self._inspect = InspectHosts.of(self.state.inspect_hosts)
         self._ai_doms = DomainSet.of(self.state.categories.get("ai", []))
         self._ide_doms = DomainSet.of(self.state.categories.get("ide", []))
         self._ai_paths = PathRules.of(self.state.path_rules.get("ai", []))

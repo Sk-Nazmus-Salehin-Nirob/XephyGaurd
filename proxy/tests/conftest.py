@@ -25,7 +25,7 @@ def state_dict():
         "always_block": ["doh"],
         "doh_ips": ["8.8.8.8", "1.1.1.1", "2001:4860:4860::8888"],
         "google": {"force_udm14": True, "hide_selectors": ["#xg-ai-overview"]},
-        "inspect_hosts": ["google.com", "www.bing.com", "huggingface.co", "duckduckgo.com"],
+        "inspect_hosts": ["google.com", "www.google.com", "www.bing.com", "huggingface.co", "duckduckgo.com"],
         "log_urls": {"enabled": False},
     }
 

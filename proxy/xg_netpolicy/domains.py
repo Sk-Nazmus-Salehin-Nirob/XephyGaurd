@@ -82,6 +82,58 @@ class DomainSet:
         return len(self.domains)
 
 
+# Sign-in, mail, documents and messaging hosts are never decrypted, whatever inspect_hosts says
+# (a wildcard such as "*.google.com" included). Privacy floor, not a detection signature, so it
+# stays in code where a setting can't remove it. Matched as suffixes.
+NEVER_INSPECT = frozenset({
+    "accounts.google.com", "myaccount.google.com", "mail.google.com", "docs.google.com",
+    "drive.google.com", "calendar.google.com", "contacts.google.com", "chat.google.com",
+    "meet.google.com", "keep.google.com", "photos.google.com", "pay.google.com", "gmail.com",
+    "accounts.youtube.com", "login.live.com", "login.microsoftonline.com", "login.microsoft.com",
+    "account.microsoft.com", "account.live.com", "outlook.live.com", "outlook.office.com",
+    "outlook.office365.com", "login.yahoo.com", "mail.yahoo.com",
+})
+
+
+@dataclass
+class InspectHosts:
+    """Hosts the proxy may decrypt. 'www.google.com' matches only that host; '*.example.com' matches
+    subdomains of example.com (not example.com itself). NEVER_INSPECT hosts never match."""
+
+    exact: set[str] = field(default_factory=set)
+    wildcard: set[str] = field(default_factory=set)
+
+    @classmethod
+    def of(cls, items: Iterable[str]) -> "InspectHosts":
+        s = cls()
+        for it in items:
+            if not isinstance(it, str):
+                continue
+            raw = it.strip().lower()
+            wild = raw.startswith("*.")
+            d = normalize_domain(raw[2:] if wild else raw)
+            if d:
+                (s.wildcard if wild else s.exact).add(d)
+        return s
+
+    def matches(self, host: str | None) -> bool:
+        if not host:
+            return False
+        h = host.lower().rstrip(".")
+        if _NEVER.matches(h):
+            return False
+        if h in self.exact:
+            return True
+        parts = h.split(".")
+        return any(".".join(parts[i:]) in self.wildcard for i in range(1, len(parts) - 1))
+
+    def __len__(self) -> int:
+        return len(self.exact) + len(self.wildcard)
+
+
+_NEVER = DomainSet(set(NEVER_INSPECT))
+
+
 @dataclass
 class PathRules:
     """'huggingface.co/chat' blocks https://huggingface.co/chat and below (and subdomains of the host)."""

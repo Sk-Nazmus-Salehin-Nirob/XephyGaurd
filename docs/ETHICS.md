@@ -37,6 +37,14 @@ Monitor layout (screen Step 35): the number of monitors and each one's position 
 
 Live view pointer position (screen Step 34): two numbers (x, y), up to 30 per second, sent only during a staff-requested live view and never while the screen is masked; not stored, no cursor image, not logged.
 
+## Web traffic decryption
+The CCC filters websites by host name without decrypting them. Only for PCs in a Test or AI-blocking session, and
+only for the exact search hosts in the lab's list (by default Google, Bing, Hugging Face, DuckDuckGo and Brave Search
+pages, `data/network/proxy.yaml`), the proxy decrypts the page to switch off AI summaries and block AI paths. Sub-sites
+of those hosts are not decrypted unless the lab adds them on purpose. Sign-in, mail, document, calendar and chat hosts
+(for example accounts.google.com, mail.google.com, docs.google.com, login.live.com, outlook.office.com) are never
+decrypted, even if the list asks for them. Nothing from a decrypted page is stored except what the table above lists.
+
 ## Screen privacy mask
 A live screen view never shows the content of windows on the CCC's privacy list (password managers, online banking,
 private browser windows and similar; the list is set by the lab admins, not built into the agent). While the focused

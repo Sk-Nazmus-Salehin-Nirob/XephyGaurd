@@ -1,9 +1,10 @@
 import json
+import pathlib
 
 import pytest
 
 from xg_netpolicy import generate
-from xg_netpolicy.domains import DomainSet, PathRules, normalize_domain, parse_list
+from xg_netpolicy.domains import NEVER_INSPECT, DomainSet, InspectHosts, PathRules, normalize_domain, parse_list
 from xg_netpolicy.proxy_logic import PolicyCache, google_search_rewrite, inject_css, refused_destination
 from xg_netpolicy.state import State
 
@@ -166,6 +167,38 @@ def test_tls_decisions(state_file, tmp_path):
     assert c.decide_tls("192.168.10.40", "example.com").action == "block"  # isolated
     assert c.decide_http("192.168.10.21", "huggingface.co", "/chat/x").action == "block"
     assert c.decide_http("192.168.10.21", "huggingface.co", "/datasets").action == "pass"
+
+
+def test_inspect_hosts_match_exactly_with_opt_in_wildcard():
+    h = InspectHosts.of(["Google.com", "www.google.com.", "*.example.org", "*.google.com", "bad host", 7])
+    assert h.matches("google.com") and h.matches("WWW.Google.com") and h.matches("www.google.com.")
+    assert not h.matches("google.com.evil.net") and not h.matches("notgoogle.com")
+    assert h.matches("a.example.org") and h.matches("a.b.example.org")
+    assert not h.matches("example.org")                    # "*." is subdomains only
+    assert h.matches("news.google.com")                    # opted in via *.google.com
+    for host in ("accounts.google.com", "mail.google.com", "docs.google.com", "drive.google.com",
+                 "x.mail.google.com", "login.live.com", "login.microsoftonline.com", "outlook.office.com"):
+        assert not h.matches(host), host                   # never decrypted, wildcard or not
+    assert not InspectHosts.of(sorted(NEVER_INSPECT)).matches("accounts.google.com")
+    assert not h.matches(None) and not h.matches("")
+
+
+def test_seed_inspect_hosts_cover_search_but_not_google_accounts(state_dict, tmp_path):
+    # the seed is a plain YAML list; read it without PyYAML (not a proxy dependency)
+    text = (pathlib.Path(__file__).resolve().parents[2] / "data/network/proxy.yaml").read_text()
+    block = text.split("\ninspect_hosts:\n", 1)[1].split("\n\n", 1)[0]
+    state_dict["inspect_hosts"] = [ln.strip()[2:] for ln in block.splitlines() if ln.strip().startswith("- ")]
+    assert "www.google.com" in state_dict["inspect_hosts"]
+    p = tmp_path / "proxy.json"
+    p.write_text(json.dumps(state_dict))
+    c = PolicyCache(p)
+    for host in ("www.google.com", "google.com", "www.google.co.uk", "www.bing.com", "huggingface.co",
+                 "duckduckgo.com", "search.brave.com"):
+        assert c.decide_tls("192.168.10.21", host).action == "inspect", host
+    for host in ("accounts.google.com", "mail.google.com", "docs.google.com", "drive.google.com",
+                 "login.live.com", "maps.google.com", "cdn.huggingface.co", "copilot.bing.com.evil.net"):
+        assert c.decide_tls("192.168.10.21", host).action == "pass", host
+    assert c.decide_tls("192.168.10.99", "www.google.com").action == "pass"  # no session
 
 
 def test_google_rewrite():

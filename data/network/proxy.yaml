@@ -5,16 +5,25 @@
 version: 1
 
 # Hosts the proxy decrypts with the lab CA, to force udm=14, hide AI summaries and apply path rules.
-# Every other host is filtered by SNI only (no decryption, DECISIONS #10).
+# Every other host is filtered by SNI only (no decryption, DECISIONS #10). Each entry is one exact host;
+# "*.example.com" opts in to every subdomain of example.com. Sign-in, mail and document hosts
+# (accounts.google.com, mail.google.com, docs.google.com, login.live.com, ...) are never decrypted,
+# even through a wildcard (proxy/xg_netpolicy/domains.py NEVER_INSPECT).
 inspect_hosts:
   - google.com
   - www.google.com
   - google.co.uk
+  - www.google.co.uk
   - google.ca
+  - www.google.ca
   - google.com.au
+  - www.google.com.au
   - google.co.in
+  - www.google.co.in
   - google.de
+  - www.google.de
   - google.fr
+  - www.google.fr
   - bing.com
   - www.bing.com
   - huggingface.co
