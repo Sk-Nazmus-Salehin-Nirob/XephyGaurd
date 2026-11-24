@@ -4,8 +4,10 @@
     python -m xg_netpolicy.generate --state ... --out ... --watch --apply     # sidecar mode
 
 --apply runs `nft -f <out>/sets.nft` and `unbound-control -c $XG_UNBOUND_CONF reload` after every change, and
-`conntrack -D -s <ip>` for PCs that newly joined test/isolated (all of them on start). Files are
-written atomically; a broken state document never replaces a working configuration.
+`conntrack -D -s <ip>` for PCs that newly joined test/isolated (all of them on start). sets.nft is
+always applied on the first pass, and again whenever the live table's sets differ from it (checked
+every --resync seconds, e.g. after a reboot or an nftables reload emptied them). Files are written
+atomically; a broken state document never replaces a working configuration.
 """
 from __future__ import annotations
 
@@ -133,6 +135,61 @@ def restricted_ips(s: State) -> set[str]:
     return set(s.groups.get("test", [])) | set(s.groups.get("isolated", []))
 
 
+def desired_sets(s: State) -> dict[str, list]:
+    """The elements sets.nft puts into each set, as collapsed networks (comparable with live_sets)."""
+    want = {f"{g}_clients": list(s.groups.get(g, [])) for g in GROUPS}
+    nets = [ipaddress.ip_network(x, strict=False) for x in s.doh_ips]
+    want["resolver_ips"] = [n for n in nets if n.version == 4]
+    want["resolver_ips6"] = [n for n in nets if n.version == 6]
+    return {k: _collapse(v) for k, v in want.items()}
+
+
+def _collapse(items) -> list:
+    nets = []
+    for x in items:
+        if isinstance(x, dict) and "range" in x:
+            lo, hi = (ipaddress.ip_address(a) for a in x["range"])
+            nets += ipaddress.summarize_address_range(lo, hi)
+        elif isinstance(x, dict) and "prefix" in x:
+            nets.append(ipaddress.ip_network(f'{x["prefix"]["addr"]}/{x["prefix"]["len"]}', strict=False))
+        else:
+            nets.append(ipaddress.ip_network(x, strict=False))
+    out = []
+    for v in (4, 6):
+        out += ipaddress.collapse_addresses(n for n in nets if n.version == v)
+    return out
+
+
+def live_sets() -> dict[str, list] | None:
+    """Elements of the sets in the running `table inet xephyguard`, or None when it can't be read
+    (no nft, no table). Ranges/prefixes that nft merged are collapsed like desired_sets."""
+    try:
+        r = subprocess.run(["nft", "-j", "list", "table", "inet", "xephyguard"], capture_output=True, text=True)
+        if r.returncode:
+            return None
+        doc = json.loads(r.stdout)
+        sets = {}
+        for obj in doc.get("nftables", []):
+            st = obj.get("set") if isinstance(obj, dict) else None
+            if st:
+                # elements with counters/timeouts come wrapped as {"elem": {"val": ...}}
+                el = [e["elem"]["val"] if isinstance(e, dict) and "elem" in e else e for e in st.get("elem", [])]
+                sets[st["name"]] = _collapse(el)
+        return sets
+    except (FileNotFoundError, ValueError, KeyError, TypeError) as e:
+        log.warning("could not read live nft sets: %s", e)
+        return None
+
+
+def sets_out_of_sync(s: State) -> bool:
+    """True when the live table exists but its sets differ from sets.nft (I-PROXY-5)."""
+    live = live_sets()
+    if live is None:
+        return False
+    want = desired_sets(s)
+    return any(live.get(k, []) != v for k, v in want.items())
+
+
 def flush_conntrack(ips) -> None:
     """Delete tracked flows of PCs that just became test/isolated (I-PROXY-4), so a tunnel or a
     redirected flow opened before the change is not carried on by its conntrack/NAT entry."""
@@ -187,10 +244,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--watch", action="store_true")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--interval", type=float, default=1.0)
+    ap.add_argument("--resync", type=float, default=10.0,
+                    help="seconds between checks that the live nft sets still match sets.nft")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     last = None
     restricted: set[str] | None = None  # None until the first apply: then every restricted IP is flushed
+    applied: tuple[State, str | None] | None = None  # last applied state and its network_mode
+    next_check = 0.0
     while True:
         try:
             digest = hashlib.sha256(a.state.read_bytes()).hexdigest() if a.state.exists() else None
@@ -201,10 +262,25 @@ def main(argv: list[str] | None = None) -> int:
                 if a.apply:
                     raw_mode = json.loads(a.state.read_text()).get("network_mode")
                     now = restricted_ips(s)
+                    if restricted is None:
+                        # first pass: the files may predate this process (netpolicy-run.sh pre-generates
+                        # them, or a reboot emptied the sets), so unchanged content proves nothing
+                        changed["nft"] = True
                     apply(a.out, changed, network_mode=raw_mode,
                           flush_ips=now if restricted is None else now - restricted)
                     restricted = now
+                    applied = (s, raw_mode)
+                    next_check = time.monotonic() + a.resync
                 last = digest
+            elif applied and time.monotonic() >= next_check:
+                next_check = time.monotonic() + a.resync
+                s, raw_mode = applied
+                mode = (raw_mode or os.environ.get("XG_NETWORK_MODE", "")).strip()
+                if mode != "proxy_only" and sets_out_of_sync(s):
+                    # table reloaded (xephyguard.nft deletes it) or sets edited by hand: flows opened
+                    # meanwhile were unrestricted, so flush them all once the sets are back
+                    log.warning("live nft sets differ from sets.nft, re-applying")
+                    apply(a.out, {"nft": True}, network_mode=raw_mode, flush_ips=restricted_ips(s))
         except (ValueError, KeyError, json.JSONDecodeError) as e:
             log.error("invalid state document, keeping previous configuration: %s", e)
             last = digest

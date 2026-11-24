@@ -316,3 +316,95 @@ def test_watch_flushes_only_newly_restricted_ips(state_file, state_dict, tmp_pat
         generate.main(["--state", str(state_file), "--out", str(tmp_path / "net"), "--watch", "--apply"])
     # first pass: every restricted IP (connections from before the watcher started); then only the new one
     assert seen == [{"192.168.10.21", "192.168.10.22", "192.168.10.40"}, {"192.168.10.50"}]
+
+
+def _live_json(sets):
+    """nft -j list table output: one set object per name, like nftables 1.0."""
+    objs = [{"metainfo": {"version": "1.0.6", "json_schema_version": 1}},
+            {"table": {"family": "inet", "name": "xephyguard", "handle": 7}}]
+    for name, elem in sets.items():
+        st = {"family": "inet", "name": name, "table": "xephyguard", "type": "ipv4_addr", "handle": 1}
+        if elem:
+            st["elem"] = elem
+        objs.append({"set": st})
+    return json.dumps({"nftables": objs})
+
+
+def _in_sync_sets():
+    return {"test_clients": ["192.168.10.22", "192.168.10.21"], "block_ai_clients": ["192.168.10.30"],
+            "isolated_clients": ["192.168.10.40"], "exempt_clients": [{"elem": {"val": "192.168.10.22"}}],
+            "resolver_ips": [{"range": ["1.1.1.1", "1.1.1.1"]}, {"prefix": {"addr": "8.8.8.8", "len": 32}}],
+            "resolver_ips6": ["2001:4860:4860::8888"]}
+
+
+def test_sets_out_of_sync_compares_live_elements(state_file, monkeypatch):
+    s = generate.State.load(state_file)
+
+    class Res:
+        def __init__(self, code, out=""):
+            self.returncode, self.stdout, self.stderr = code, out, ""
+
+    live = _in_sync_sets()
+    monkeypatch.setattr(generate.subprocess, "run", lambda cmd, **kw: Res(0, _live_json(live)))
+    assert not generate.sets_out_of_sync(s)  # ranges/prefixes/wrapped elements normalised
+
+    live = {k: [] for k in _in_sync_sets()}  # table reloaded by xephyguard.nft: sets empty
+    assert generate.sets_out_of_sync(s)
+    live = dict(_in_sync_sets(), test_clients=["192.168.10.21"])
+    assert generate.sets_out_of_sync(s)
+
+    # no table / no nft: nothing to re-apply to
+    monkeypatch.setattr(generate.subprocess, "run", lambda cmd, **kw: Res(1))
+    assert not generate.sets_out_of_sync(s)
+
+    def missing(cmd, **kw):
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr(generate.subprocess, "run", missing)
+    assert not generate.sets_out_of_sync(s)
+
+
+def test_watch_applies_sets_on_start_even_if_files_unchanged(state_file, tmp_path, monkeypatch):
+    out = tmp_path / "net"
+    generate.generate(state_file, out)  # netpolicy-run.sh pre-generates the files before the watcher
+    seen = []
+    monkeypatch.setattr(generate, "apply", lambda out, changed, network_mode=None, flush_ips=frozenset():
+                        seen.append(dict(changed)))
+    generate.main(["--state", str(state_file), "--out", str(out), "--apply"])
+    assert seen and seen[0]["nft"] is True and seen[0]["unbound"] is False
+
+
+@pytest.mark.parametrize("mode,in_sync,reapplied", [("gateway", True, False), ("gateway", False, True),
+                                                    ("proxy_only", False, False)])
+def test_watch_reapplies_sets_when_live_table_differs(state_file, state_dict, tmp_path, monkeypatch,
+                                                       mode, in_sync, reapplied):
+    state_dict["network_mode"] = mode
+    state_file.write_text(json.dumps(state_dict))
+    calls = []
+    monkeypatch.setattr(generate, "apply", lambda out, changed, network_mode=None, flush_ips=frozenset():
+                        calls.append((dict(changed), set(flush_ips))))
+    checks = []
+    monkeypatch.setattr(generate, "sets_out_of_sync", lambda s: checks.append(s) or not in_sync)
+
+    class Stop(Exception):
+        pass
+
+    sleeps = []
+
+    def fake_sleep(_):
+        sleeps.append(1)
+        if len(sleeps) > 2:
+            raise Stop
+
+    monkeypatch.setattr(generate.time, "sleep", fake_sleep)
+    with pytest.raises(Stop):
+        generate.main(["--state", str(state_file), "--out", str(tmp_path / "net"), "--watch", "--apply",
+                       "--resync", "0"])
+    assert len(calls[0][1]) == 3  # first pass
+    restricted = {"192.168.10.21", "192.168.10.22", "192.168.10.40"}
+    if reapplied:
+        # same digest, but the live sets were emptied: re-apply and flush every restricted PC again
+        assert calls[1:] == [({"nft": True}, restricted)] * 2
+    else:
+        assert calls[1:] == []
+    assert bool(checks) == (mode != "proxy_only")
