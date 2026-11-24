@@ -15,5 +15,5 @@
   The `--watch` loop survives any error in one iteration (invalid document, OSError, failed tool): it logs and counts it and keeps the previous configuration (`watch_survives_*`).
   A group IP or `google.udm14_clients` entry that is not an IPv4 address in `lab_subnet` (IPv6, a second NIC, not a string) is dropped with a warning and the rest of the document is used (`state_skips_bad_group_entries_and_keeps_the_rest`, `watch_applies_document_with_one_bad_ip`); wrong types (a group that is not a list) and a bad `ccc_ip`/`lab_subnet`/interface name still reject it.
 - **Status:** working (`generate_outputs`, `state_groups`, `domain_suffix_matching`,
-  `unbound_control_is_unix_socket_only`).
+  `unbound_control_is_unix_socket_only`; `unbound_checkconf_accepts_generated_views` runs `unbound-checkconf` where it is installed, skipped otherwise).
 - **Test:** 1. Start a Test session. 2. On the PC `nslookup chatgpt.com <ccc-ip>` is blocked.
