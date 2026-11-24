@@ -1,6 +1,7 @@
 """Pure decision logic for the XephyGuard proxy addon (no mitmproxy imports, fully unit-testable)."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
@@ -20,6 +21,42 @@ log = logging.getLogger("xg-proxy")
 
 GOOGLE_HOST = re.compile(r"^(?:www\.|encrypted\.)?google\.[a-z]{2,6}(?:\.[a-z]{2})?$")
 STYLE_NONCE_RE = re.compile(r"<(?:style|script)[^>]*\bnonce=[\"']([^\"']+)[\"']", re.IGNORECASE)
+
+
+UPSTREAM_PORTS = frozenset({80, 443})
+
+
+def refused_destination(host: str, port: int, own_ips: tuple[str, ...] = ()) -> str | None:
+    """Why an upstream connection to host:port must be refused, or None when it may go ahead.
+
+    Applies to every client and both listeners: only web ports, never loopback, link-local,
+    unspecified, multicast or the CCC's own addresses. `host` that is not an IP literal is only
+    checked for localhost names; the caller resolves other names and checks each address.
+    """
+    if port not in UPSTREAM_PORTS:
+        return f"port {port} not allowed"
+    h = (host or "").strip().strip("[]").rstrip(".").lower()
+    if h == "localhost" or h.endswith(".localhost"):
+        return "loopback destination"
+    try:
+        ip = ipaddress.ip_address(h.split("%", 1)[0])
+    except ValueError:
+        return None
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if ip.is_loopback:
+        return "loopback destination"
+    if ip.is_link_local:
+        return "link-local destination"
+    if ip.is_unspecified or ip.is_multicast:
+        return "invalid destination"
+    for own in own_ips:
+        try:
+            if ip == ipaddress.ip_address(own):
+                return "CCC address"
+        except ValueError:
+            continue
+    return None
 
 
 @dataclass

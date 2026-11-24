@@ -147,3 +147,56 @@ def _client_hello_bytes(sni: str) -> bytes:
     body = (b"\x03\x03" + b"\x00" * 32 + b"\x00" + struct.pack("!H", 2) + b"\x13\x01" + b"\x01\x00"
             + struct.pack("!H", len(ext)) + ext)
     return body
+
+
+def _server_data(ip, address):
+    from mitmproxy import connection
+    from mitmproxy.proxy import server_hooks
+
+    client = tflow.tclient_conn()
+    client.peername = (ip, 40001)
+    server = connection.Server(address=address)
+    return server_hooks.ServerConnectionHookData(client=client, server=server)
+
+
+@pytest.mark.parametrize("address", [
+    ("127.0.0.1", 443), ("127.0.0.1", 8953), ("localhost", 443), ("::1", 443), ("::ffff:127.0.0.1", 443),
+    ("169.254.169.254", 80), ("fe80::1", 443), ("192.168.10.2", 443), ("0.0.0.0", 80),
+    ("93.184.215.14", 22), ("93.184.215.14", 8080),
+])
+def test_server_connect_refuses_internal_and_odd_ports(addon, address):
+    import asyncio
+
+    for ip in ("192.168.10.21", "192.168.10.22", "192.168.10.99"):   # test, exempt, no group
+        data = _server_data(ip, address)
+        asyncio.run(addon.server_connect(data))
+        assert data.server.error and "blocked by XephyGuard" in data.server.error
+
+
+def test_server_connect_allows_public_web(addon):
+    import asyncio
+
+    for address in (("93.184.215.14", 443), ("93.184.215.14", 80)):
+        data = _server_data("192.168.10.99", address)
+        asyncio.run(addon.server_connect(data))
+        assert data.server.error is None
+
+
+def test_server_connect_pins_resolved_name(addon, monkeypatch):
+    import asyncio
+    import socket
+
+    answers = {"example.org": "93.184.215.14", "evil.example": "127.0.0.1"}
+
+    async def fake_getaddrinfo(self, host, port, **kw):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (answers[host], port))]
+
+    monkeypatch.setattr(asyncio.BaseEventLoop, "getaddrinfo", fake_getaddrinfo)
+    ok = _server_data("192.168.10.99", ("example.org", 443))
+    asyncio.run(addon.server_connect(ok))
+    assert ok.server.error is None
+    assert ok.server.address == ("93.184.215.14", 443) and ok.server.sni == "example.org"
+
+    bad = _server_data("192.168.10.99", ("evil.example", 443))
+    asyncio.run(addon.server_connect(bad))
+    assert "loopback" in bad.server.error

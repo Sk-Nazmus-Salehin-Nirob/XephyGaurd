@@ -4,7 +4,7 @@ import pytest
 
 from xg_netpolicy import generate
 from xg_netpolicy.domains import DomainSet, PathRules, normalize_domain, parse_list
-from xg_netpolicy.proxy_logic import PolicyCache, google_search_rewrite, inject_css
+from xg_netpolicy.proxy_logic import PolicyCache, google_search_rewrite, inject_css, refused_destination
 from xg_netpolicy.state import State
 
 
@@ -168,3 +168,15 @@ def test_apply_skips_nft_in_proxy_only_or_without_table(state_file, tmp_path, mo
     monkeypatch.setattr(generate.subprocess, "run", lambda cmd, **kw: (calls.append(cmd) or Res(0)))
     generate.apply(out, changed, network_mode="gateway")
     assert ["nft", "-f", str(out / "sets.nft")] in calls
+
+
+def test_refused_destination():
+    own = ("192.168.10.2",)
+    for host, port in [("127.0.0.1", 443), ("127.8.9.1", 80), ("LOCALHOST.", 443), ("a.localhost", 80),
+                       ("[::1]", 443), ("::ffff:127.0.0.1", 443), ("169.254.169.254", 80), ("fe80::1%eth0", 443),
+                       ("0.0.0.0", 443), ("224.0.0.1", 80), ("192.168.10.2", 443), ("8.8.8.8", 8953),
+                       ("example.org", 22)]:
+        assert refused_destination(host, port, own), (host, port)
+    for host, port in [("93.184.215.14", 443), ("example.org", 80), ("2606:2800:21f:cb07::1", 443),
+                       ("192.168.10.30", 443)]:
+        assert refused_destination(host, port, own) is None, (host, port)

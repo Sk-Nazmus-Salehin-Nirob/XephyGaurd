@@ -13,8 +13,11 @@ Behaviour per TLS connection (decided at ClientHello, before any decryption):
 """
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import logging
 import os
+import socket
 import sys
 
 from mitmproxy import ctx, http, tls
@@ -28,6 +31,7 @@ from xg_netpolicy.proxy_logic import (  # noqa: E402
     block_page,
     google_search_rewrite,
     inject_css,
+    refused_destination,
     relax_style_csp,
 )
 
@@ -78,9 +82,45 @@ class XephyGuard:
                     self.events.emit(client_ip=ip, host=sni, layer="sni", action="allowed")
         # "inspect": let mitmproxy intercept with the lab CA
 
-    def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
+    async def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
         if data.client.id in self.blocked_conns:
             data.server.error = "blocked by XephyGuard"
+            return
+        assert self.cache
+        why = await self._refused_upstream(data.server)
+        if why:
+            data.server.error = f"blocked by XephyGuard: {why}"
+            ip = data.client.peername[0] if data.client.peername else None
+            log.warning("refused upstream %s for %s: %s", data.server.address, ip, why)
+
+    async def _refused_upstream(self, server) -> str | None:
+        """Destination check for every client (I-PROXY-1). Hostnames are resolved here and the
+        connection is pinned to the checked address, so a later lookup cannot point elsewhere."""
+        if not server.address:
+            return "no destination"
+        host, port = server.address[0], server.address[1]
+        own = (self.cache.state.ccc_ip,)
+        if why := refused_destination(host, port, own):
+            return why
+        try:
+            ipaddress.ip_address(host.strip("[]").split("%", 1)[0])
+            return None
+        except ValueError:
+            pass
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except OSError as e:
+            return f"cannot resolve {host}: {e}"
+        addrs = [i[4][0] for i in infos]
+        for a in addrs:
+            if why := refused_destination(a, port, own):
+                return f"{host} resolves to {why}"
+        if not addrs:
+            return f"cannot resolve {host}"
+        if server.sni is None:
+            server.sni = host
+        server.address = (addrs[0], port)
+        return None
 
     def client_disconnected(self, client) -> None:
         self.blocked_conns.discard(client.id)
