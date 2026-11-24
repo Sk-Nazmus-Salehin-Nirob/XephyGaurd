@@ -1,5 +1,6 @@
 """Unit tests for per-PC udm14_clients, search rewriting, /async/folwr blocking, and CSP-safe CSS injection."""
 import json
+import pathlib
 import pytest
 
 from xg_netpolicy import state as netstate
@@ -135,3 +136,46 @@ def test_addon_blocks_folwr_and_relaxes_csp(tmp_path, state_dict):
         assert b'id="xephyguard"' in f2.response.content
     finally:
         addon.events.stop()
+
+
+# -- Step 14 (I-PROXY-21): AI-endpoint signatures come from data/network/proxy.yaml via the policy --
+
+def test_builtin_signatures_equal_data_yaml():
+    yaml = pytest.importorskip("yaml")
+    from xg_netpolicy.proxy_logic import SEARCH_AI_DEFAULTS
+
+    seed = yaml.safe_load((pathlib.Path(__file__).resolve().parents[2] / "data" / "network" / "proxy.yaml").read_text())
+    assert seed["google_search_hosts"] == SEARCH_AI_DEFAULTS["search_hosts"]
+    assert seed["google_ai_paths"] == SEARCH_AI_DEFAULTS["ai_paths"]
+    assert seed["search_css_hosts"] == SEARCH_AI_DEFAULTS["css_hosts"]
+
+
+def test_search_ai_signatures_defaults_and_bad_entries(caplog):
+    from xg_netpolicy.proxy_logic import search_ai_signatures
+
+    d = search_ai_signatures({})
+    assert d.is_search_host("www.google.co.uk") and not d.is_search_host("google.evil.example")
+    assert d.is_ai_path("www.google.com", "/async/folwr?x=1") and not d.is_ai_path("www.bing.com", "/async/folwr")
+    assert d.wants_css("www.bing.com") and d.wants_css("www.google.de") and not d.wants_css("example.com")
+    with caplog.at_level("WARNING", logger="xg-proxy"):
+        bad = search_ai_signatures({"search_hosts": ["(", 5, " "], "ai_paths": "nope", "css_hosts": []})
+    assert bad == d   # every bad or empty key falls back to the built-in list
+    assert len(caplog.records) == 4
+
+
+def test_signatures_from_policy_replace_builtin(tmp_path, state_dict):
+    from xg_netpolicy import generate
+    from xg_netpolicy.proxy_logic import PolicyCache, google_search_rewrite
+
+    state_dict["google"] = {**state_dict.get("google", {}), "force_udm14": True,
+                            "search_hosts": [r"^search\.example$"], "ai_paths": ["/ai/stream"],
+                            "css_hosts": ["other.example"]}
+    sp = tmp_path / "state.json"
+    sp.write_text(json.dumps(state_dict))
+    generate.generate(sp, tmp_path / "net")
+    c = PolicyCache(tmp_path / "net" / "proxy.json")
+    sig = c.search_ai
+    assert sig.is_ai_path("search.example", "/ai/stream/1") and not sig.is_ai_path("www.google.com", "/async/folwr")
+    assert sig.wants_css("www.other.example") and not sig.wants_css("www.bing.com")
+    assert google_search_rewrite("search.example", "/search", [("q", "x")], sig) == [("q", "x"), ("udm", "14")]
+    assert google_search_rewrite("www.google.com", "/search", [("q", "x")], sig) is None

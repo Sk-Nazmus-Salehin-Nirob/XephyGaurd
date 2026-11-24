@@ -704,7 +704,7 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
   browser policies on PCs.
 - **Code:** addon `request`/`response` (CSS injection, CSP nonce relaxation),
   `proxy_logic.py`; agent browser policy writer (F91); setting `google_hide_selectors` (default list in
-  `data/network/proxy.yaml`, S-53; the proxy's own host/path signatures are proxy plan Step 14).
+  `data/network/proxy.yaml`, S-53; the proxy's AI-endpoint signatures, Google search-host regex, `/async/folwr` and `bing.com`, are `google_search_hosts`/`google_ai_paths`/`search_css_hosts` in the same file, read by the proxy from the policy's `google` object, with built-in copies kept equal by a test until the server sends them; proxy Step 14).
 - **Status:** working (`google_search_rewrite_sets_udm14_…`, `response_css_injection`,
   `csp_nonce_and_style_relaxation`). `eval/live_checks/google_ai_overview.py` checks it against the live site.
 - **Test:** 1. In a session, search Google on a PC. 2. The URL gets `udm=14` and no AI Overview shows.

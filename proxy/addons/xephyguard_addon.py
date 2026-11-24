@@ -25,7 +25,6 @@ from mitmproxy.proxy import server_hooks
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from xg_netpolicy.proxy_logic import (  # noqa: E402
-    GOOGLE_HOST,
     EventShipper,
     PolicyCache,
     block_page,
@@ -141,12 +140,12 @@ class XephyGuard:
             return
         if self.cache.wants_google_rewrite(ip):
             clean_path = path.split("?", 1)[0]
-            if GOOGLE_HOST.match(host.lower()) and clean_path.startswith("/async/folwr"):
+            if self.cache.search_ai.is_ai_path(host, path):   # e.g. Google /async/folwr (data/network/proxy.yaml)
                 flow.response = http.Response.make(204, b"", {"Cache-Control": "no-store"})
                 self.events.emit(client_ip=ip, host=host, path=clean_path[:256], layer="search-ai",
                                  action="blocked", category="search_ai")
                 return
-            new_q = google_search_rewrite(host, path, list(flow.request.query.items(multi=True)))
+            new_q = google_search_rewrite(host, path, list(flow.request.query.items(multi=True)), self.cache.search_ai)
             if new_q is not None:
                 flow.request.query.clear()
                 for k, v in new_q:
@@ -174,7 +173,7 @@ class XephyGuard:
             return
         selectors = self.cache.state.google.get("hide_selectors", [])
         host = flow.request.pretty_host.lower()
-        if selectors and (GOOGLE_HOST.match(host) or host.endswith("bing.com")):
+        if selectors and self.cache.search_ai.wants_css(host):
             html = flow.response.get_text(strict=False) or ""
             new = inject_css(html, selectors)
             if new:

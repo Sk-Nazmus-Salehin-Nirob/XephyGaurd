@@ -19,7 +19,16 @@ from .state import State
 
 log = logging.getLogger("xg-proxy")
 
-GOOGLE_HOST = re.compile(r"^(?:www\.|encrypted\.)?google\.[a-z]{2,6}(?:\.[a-z]{2})?$")
+# AI-endpoint signatures (I-PROXY-21). They live in data/network/proxy.yaml (google_search_hosts,
+# google_ai_paths, search_css_hosts) and reach the proxy in state.json -> proxy.json `google`
+# (search_hosts, ai_paths, css_hosts). These are only the fallback for a document that lacks them;
+# a test keeps them equal to the YAML.
+SEARCH_AI_DEFAULTS: dict[str, list[str]] = {
+    "search_hosts": [r"^(?:www\.|encrypted\.)?google\.[a-z]{2,6}(?:\.[a-z]{2})?$"],
+    "ai_paths": ["/async/folwr"],
+    "css_hosts": ["bing.com"],
+}
+GOOGLE_HOST = re.compile(SEARCH_AI_DEFAULTS["search_hosts"][0])
 STYLE_NONCE_RE = re.compile(r"<(?:style|script)[^>]*\bnonce=[\"']([^\"']+)[\"']", re.IGNORECASE)
 
 
@@ -59,6 +68,56 @@ def refused_destination(host: str, port: int, own_ips: tuple[str, ...] = ()) -> 
     return None
 
 
+@dataclass(frozen=True)
+class SearchAi:
+    """Where the Google/Bing AI suppression acts: search hosts (regexes on the lower-case host; udm=14
+    rewrite, AI paths, CSS), AI paths on them answered 204 (prefixes, query ignored), and other hosts
+    that get the hide_selectors CSS (host ends with the entry)."""
+    search_hosts: tuple[re.Pattern[str], ...] = (GOOGLE_HOST,)
+    ai_paths: tuple[str, ...] = tuple(SEARCH_AI_DEFAULTS["ai_paths"])
+    css_hosts: tuple[str, ...] = tuple(SEARCH_AI_DEFAULTS["css_hosts"])
+
+    def is_search_host(self, host: str | None) -> bool:
+        h = (host or "").lower()
+        return any(p.match(h) for p in self.search_hosts)
+
+    def is_ai_path(self, host: str | None, path: str) -> bool:
+        clean = path.split("?", 1)[0]
+        return self.is_search_host(host) and any(clean.startswith(p) for p in self.ai_paths)
+
+    def wants_css(self, host: str | None) -> bool:
+        h = (host or "").lower()
+        return self.is_search_host(h) or any(h.endswith(e) for e in self.css_hosts)
+
+
+def search_ai_signatures(google: dict[str, Any]) -> SearchAi:
+    """SearchAi from the policy's `google` object. A key that is missing, not a list or left empty
+    after dropping bad entries (non-string, blank, a regex that doesn't compile; each logged) uses
+    SEARCH_AI_DEFAULTS, so a document from an older CCC keeps today's behaviour."""
+    out: dict[str, list[Any]] = {}
+    for key, default in SEARCH_AI_DEFAULTS.items():
+        raw = google.get(key)
+        if raw is not None and not isinstance(raw, list):
+            log.warning("google.%s must be a list, not %s; using the built-in list", key, type(raw).__name__)
+            raw = None
+        kept: list[Any] = []
+        for e in raw or []:
+            if not isinstance(e, str) or not e.strip():
+                log.warning("google.%s: skipping %r", key, e)
+                continue
+            if key == "search_hosts":
+                try:
+                    kept.append(re.compile(e.strip()))
+                except re.error as err:
+                    log.warning("google.%s: skipping %r (%s)", key, e, err)
+            else:
+                kept.append(e.strip().lower() if key == "css_hosts" else e.strip())
+        if not kept:
+            kept = [re.compile(x) for x in default] if key == "search_hosts" else list(default)
+        out[key] = kept
+    return SearchAi(tuple(out["search_hosts"]), tuple(out["ai_paths"]), tuple(out["css_hosts"]))
+
+
 @dataclass
 class TlsDecision:
     action: str               # "block" | "inspect" | "pass"
@@ -82,6 +141,7 @@ class PolicyCache:
         self._ide_doms = DomainSet()
         self._ai_paths = PathRules()
         self._ide_paths = PathRules()
+        self.search_ai = SearchAi()
         self.reload(force=True)
 
     def reload(self, force: bool = False) -> None:
@@ -107,6 +167,7 @@ class PolicyCache:
         self._ide_doms = DomainSet.of(self.state.categories.get("ide", []))
         self._ai_paths = PathRules.of(self.state.path_rules.get("ai", []))
         self._ide_paths = PathRules.of(self.state.path_rules.get("ide", []))
+        self.search_ai = search_ai_signatures(self.state.google)
         log.info("proxy policy v%s loaded", self.state.version)
 
     def blocked(self, group: str | None) -> DomainSet:
@@ -149,7 +210,7 @@ class PolicyCache:
             return TlsDecision("block", self.state.category_of(hit), hit, "domain blocklist")
         if (
             group in ("test", "block_ai")
-            or (self.wants_google_rewrite(client_ip) and bool(GOOGLE_HOST.match(sni.lower())))
+            or (self.wants_google_rewrite(client_ip) and self.search_ai.is_search_host(sni))
         ) and self._inspect.matches(sni):
             return TlsDecision("inspect", reason="selective inspection host")
         return TlsDecision("pass")
@@ -188,14 +249,15 @@ def loggable_path(path: str, limit: int = 512) -> str:
     return path.split("?", 1)[0].split("#", 1)[0][:limit] or "/"
 
 
-def google_search_rewrite(host: str, path: str, query: list[tuple[str, str]]) -> list[tuple[str, str]] | None:
+def google_search_rewrite(host: str, path: str, query: list[tuple[str, str]],
+                          sig: SearchAi | None = None) -> list[tuple[str, str]] | None:
     """Returns a new query list with udm=14 ("Web" results, no AI Overview) or None if unchanged.
 
-    - Only /search on google.<tld>.
+    - Only /search on a search host (`sig`, default google.<tld>).
     - Leaves other verticals alone (tbm=isch images, udm=2 images, ...), except udm=50 (AI Mode)
       which is forced to 14.
     """
-    if not GOOGLE_HOST.match(host.lower()) or path.split("?", 1)[0] != "/search":
+    if not (sig or SearchAi()).is_search_host(host) or path.split("?", 1)[0] != "/search":
         return None
     keys = {k for k, _ in query}
     if "tbm" in keys:

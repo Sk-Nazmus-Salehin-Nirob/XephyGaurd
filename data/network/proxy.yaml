@@ -37,3 +37,16 @@ google_hide_selectors:
   - 'div[data-attrid="AIOverview"]'
   - '#m-x-content'
   - g-ai-overview
+
+# AI-endpoint signatures the proxy acts on (proxy Step 14, I-PROXY-21). Not settings: the CCC sends them
+# unchanged in state.json `google` as search_hosts / ai_paths / css_hosts. Until it does, the proxy uses the
+# same values built in (proxy/xg_netpolicy/proxy_logic.py SEARCH_AI_DEFAULTS; a test keeps both equal).
+# Google search hosts, as regexes on the lower-case host: udm=14 rewrite, the AI paths below, CSS hiding.
+google_search_hosts:
+  - '^(?:www\.|encrypted\.)?google\.[a-z]{2,6}(?:\.[a-z]{2})?$'
+# Path prefixes on those hosts answered 204 (the AI Overview stream); the query string is ignored.
+google_ai_paths:
+  - /async/folwr
+# Other inspected hosts whose pages get the google_hide_selectors CSS (host ends with the entry).
+search_css_hosts:
+  - bing.com
