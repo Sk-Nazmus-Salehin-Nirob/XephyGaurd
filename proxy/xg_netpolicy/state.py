@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import pathlib
 from dataclasses import dataclass, field
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 from .domains import DomainSet, PathRules
 
 GROUPS = ("test", "block_ai", "isolated", "exempt")
+
+log = logging.getLogger("xg-netpolicy.state")
 
 
 @dataclass
@@ -33,6 +36,8 @@ class State:
     log_urls: dict[str, Any] = field(default_factory=lambda: {"enabled": False, "query": False})
     events_url: str = ""
     events_token: str = ""
+    # entries dropped by validate() as "<where>: <entry> (<reason>)"; not read from the document
+    skipped: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "State":
@@ -40,9 +45,9 @@ class State:
         for k, v in d.items():
             if hasattr(s, k):
                 setattr(s, k, v)
+        s.validate()
         for g in GROUPS:
             s.groups.setdefault(g, [])
-        s.validate()
         return s
 
     @classmethod
@@ -50,18 +55,54 @@ class State:
         return cls.from_dict(json.loads(pathlib.Path(path).read_text()))
 
     def validate(self) -> None:
+        """Structural errors (wrong types, bad ccc_ip/lab_subnet/interface names) raise ValueError
+        and reject the document. A single bad PC entry in a group or in google.udm14_clients
+        (not a string, not an IPv4 address, outside lab_subnet) is dropped with a warning, so
+        one odd PC never stops a session from being enforced for all the others."""
         ipaddress.ip_address(self.ccc_ip)
         net = ipaddress.ip_network(self.lab_subnet, strict=False)
+        if not isinstance(self.groups, dict):
+            raise ValueError(f"groups must be an object, not {type(self.groups).__name__}")
+        if not isinstance(self.google, dict):
+            raise ValueError(f"google must be an object, not {type(self.google).__name__}")
+        self.skipped = []
+        groups: dict[str, list[str]] = {}
         for g, ips in self.groups.items():
-            for ip in ips:
-                if ipaddress.ip_address(ip) not in net:
-                    raise ValueError(f"{g}: {ip} is outside the lab subnet {self.lab_subnet}")
-        for ip in self.google.get("udm14_clients") or []:
-            if ipaddress.ip_address(ip) not in net:
-                raise ValueError(f"udm14_clients: {ip} is outside the lab subnet {self.lab_subnet}")
+            if not isinstance(ips, list):
+                raise ValueError(f"groups.{g} must be a list, not {type(ips).__name__}")
+            groups[g] = self._pc_ips(f"groups.{g}", ips, net)
+        self.groups = groups
+        udm = self.google.get("udm14_clients")
+        if udm is not None:
+            if not isinstance(udm, list):
+                raise ValueError(f"udm14_clients must be a list, not {type(udm).__name__}")
+            self.google = {**self.google, "udm14_clients": self._pc_ips("udm14_clients", udm, net)}
         for name in self.lan_if, self.wan_if:
-            if not name.replace("-", "").replace("_", "").replace(".", "").isalnum():
+            if not isinstance(name, str) or not name.replace("-", "").replace("_", "").replace(".", "").isalnum():
                 raise ValueError(f"bad interface name {name!r}")
+
+    def _pc_ips(self, where: str, entries: list[Any], net: ipaddress.IPv4Network | ipaddress.IPv6Network) -> list[str]:
+        kept: list[str] = []
+        for e in entries:
+            reason = None
+            if not isinstance(e, str):
+                reason = f"not a string ({type(e).__name__})"
+            else:
+                try:
+                    a = ipaddress.ip_address(e.strip())
+                except ValueError:
+                    reason = "not an IP address"
+                else:
+                    if a.version != 4:
+                        reason = "not IPv4"
+                    elif a not in net:
+                        reason = f"outside the lab subnet {self.lab_subnet}"
+            if reason:
+                self.skipped.append(f"{where}: {e!r} ({reason})")
+                log.warning("%s: skipping %r, %s", where, e, reason)
+            else:
+                kept.append(str(a))
+        return kept
 
     # -- derived views ------------------------------------------------------------------------
     def group_of(self, ip: str | None) -> str | None:

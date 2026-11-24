@@ -47,10 +47,87 @@ def test_state_groups(state_dict):
     assert not s.blocked_domains_for_group("exempt").matches("openai.com")
 
 
-def test_state_rejects_foreign_ip(state_dict):
-    state_dict["groups"]["test"].append("10.0.0.5")
+BAD_PC_ENTRIES = ["10.0.0.5", "2001:db8::5", "fe80::1", "::ffff:192.168.10.23", "not-an-ip", "", 5, None,
+                  ["192.168.10.24"]]
+
+
+def test_state_skips_bad_group_entries_and_keeps_the_rest(state_dict, caplog):
+    state_dict["groups"]["test"] += BAD_PC_ENTRIES + [" 192.168.10.26 "]
+    with caplog.at_level("WARNING", logger="xg-netpolicy.state"):
+        s = State.from_dict(state_dict)
+    assert s.groups["test"] == ["192.168.10.21", "192.168.10.22", "192.168.10.26"]
+    assert s.groups["block_ai"] == ["192.168.10.30"] and s.groups["isolated"] == ["192.168.10.40"]
+    assert len(s.skipped) == len(BAD_PC_ENTRIES) and all(x.startswith("groups.test: ") for x in s.skipped)
+    assert "'10.0.0.5' (outside the lab subnet 192.168.10.0/24)" in s.skipped[0]
+    assert "(not IPv4)" in s.skipped[1] and "(not a string (int))" in s.skipped[6]
+    assert caplog.text.count("groups.test: skipping") == len(BAD_PC_ENTRIES)
+    assert s.group_of("192.168.10.21") == "test" and s.group_of("10.0.0.5") is None
+
+
+@pytest.mark.parametrize("bad", [
+    {"groups": ["192.168.10.21"]},
+    {"groups": {"test": "192.168.10.21"}},
+    {"groups": {"test": None}},
+    {"google": ["udm14"]},
+    {"google": {"udm14_clients": "192.168.10.21"}},
+    {"ccc_ip": "ccc"},
+    {"lab_subnet": "lab"},
+    {"lan_if": "lan0; flush ruleset"},
+])
+def test_state_still_rejects_structural_errors(state_dict, bad):
     with pytest.raises(ValueError):
-        State.from_dict(state_dict)
+        State.from_dict(dict(state_dict, **bad))
+
+
+def test_generate_and_proxy_enforce_other_pcs_when_one_ip_is_bad(state_dict, tmp_path):
+    state_dict["groups"]["test"] += ["10.0.0.5", "2001:db8::5"]
+    state_dict["groups"]["isolated"].append(7)
+    state_dict["google"]["udm14_clients"] = ["192.168.10.21", "fe80::1"]
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps(state_dict))
+    out = tmp_path / "net"
+    generate.generate(state, out)
+    sets = (out / "sets.nft").read_text()
+    assert "add element inet xephyguard test_clients { 192.168.10.21, 192.168.10.22 }" in sets
+    assert "add element inet xephyguard isolated_clients { 192.168.10.40 }" in sets
+    unbound = (out / "unbound-xephyguard.conf").read_text()
+    assert "access-control-view: 192.168.10.21/32 xg_test" in unbound
+    assert "10.0.0.5" not in unbound + sets and "2001:db8" not in unbound + sets
+    proxy = json.loads((out / "proxy.json").read_text())
+    assert proxy["groups"]["test"] == ["192.168.10.21", "192.168.10.22"]
+    assert proxy["google"]["udm14_clients"] == ["192.168.10.21"]
+    assert state_dict["google"]["udm14_clients"] == ["192.168.10.21", "fe80::1"]  # input not mutated
+
+    # the proxy also validates what it reads (a hand-edited or older proxy.json): one bad IP
+    # must not keep the previous policy for every PC
+    pj = out / "proxy.json"
+    pj.write_text(json.dumps(dict(state_dict, version=8)))
+    c = PolicyCache(pj)
+    assert c.state.version == 8
+    assert c.decide_tls("192.168.10.21", "chatgpt.com").action == "block"
+    assert c.decide_tls("192.168.10.40", "example.com").action == "block"
+    assert c.decide_tls("10.0.0.5", "chatgpt.com").action == "pass"
+    assert c.wants_google_rewrite("192.168.10.21") is True
+
+
+def test_watch_applies_document_with_one_bad_ip(state_file, state_dict, tmp_path, monkeypatch, caplog):
+    calls = []
+    monkeypatch.setattr(generate, "apply", lambda out, changed, network_mode=None, flush_ips=frozenset():
+                        calls.append((json.loads((out / "proxy.json").read_text())["version"], set(flush_ips))))
+    out = tmp_path / "net"
+
+    def on_sleep(n):
+        if n == 1:  # a new Test session; one PC reported from an address outside the lab subnet
+            groups = dict(state_dict["groups"], test=state_dict["groups"]["test"] + ["192.168.10.50", "10.0.0.5"])
+            state_file.write_text(json.dumps(dict(state_dict, version=6, groups=groups)))
+        return n < 3
+
+    with caplog.at_level("WARNING"):
+        _run_watch(state_file, out, monkeypatch, on_sleep)
+    assert [v for v, _ in calls] == [5, 6]
+    assert calls[1][1] == {"192.168.10.50"}  # conntrack flushed for the new PC only (Step 4)
+    assert "invalid state document" not in caplog.text
+    assert "groups.test: skipping '10.0.0.5', outside the lab subnet" in caplog.text
 
 
 def test_generate_outputs(state_file, tmp_path):
@@ -431,8 +508,8 @@ def _run_watch(state_file, out, monkeypatch, on_sleep, extra=()):
 
 @pytest.mark.parametrize("bad", [
     {"groups": None},                       # AttributeError in from_dict
-    {"lan_if": 7},                          # AttributeError in validate
-    {"groups": {"test": [5]}},              # TypeError/ValueError from ipaddress
+    {"lan_if": 7},                          # not a valid interface name
+    {"groups": {"test": "192.168.10.21"}},  # a group that is not a list (one bad IP is only skipped)
     {"network_mode": 3},                    # non-str mode would break apply
     "not json",
     [1, 2],                                 # not an object

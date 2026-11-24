@@ -18,9 +18,13 @@ def test_state_validates_udm14_clients(state_dict):
     netstate.State.from_dict(state_dict).validate()
 
     bad = dict(state_dict)
-    bad["google"] = dict(state_dict["google"], udm14_clients=["10.99.0.5"])
+    bad["google"] = dict(state_dict["google"], udm14_clients=["10.99.0.5", "192.168.10.21", "2001:db8::1"])
+    s = netstate.State.from_dict(bad)
+    assert s.google["udm14_clients"] == ["192.168.10.21"]  # bad entries skipped, not the document
+    assert [x.split(" (")[0] for x in s.skipped] == ["udm14_clients: '10.99.0.5'", "udm14_clients: '2001:db8::1'"]
+    bad["google"] = dict(state_dict["google"], udm14_clients="192.168.10.21")
     with pytest.raises(ValueError, match="udm14_clients"):
-        netstate.State.from_dict(bad).validate()
+        netstate.State.from_dict(bad)
 
 
 def test_always_on_udm14_client_inspects_google_only(tmp_path, state_dict):
