@@ -85,6 +85,8 @@ def nft_sets(s: State) -> str:
 
 
 def proxy_json(s: State) -> str:
+    """The proxy's policy. Never holds `events_token`: the proxy gets that secret from env
+    XG_INTERNAL_TOKEN (I-PROXY-13), so this file, written 0644, holds nothing secret."""
     doc = {
         "version": s.version,
         "groups": s.groups,
@@ -96,7 +98,6 @@ def proxy_json(s: State) -> str:
         "inspect_hosts": s.inspect_hosts,
         "log_urls": s.log_urls,
         "events_url": s.events_url,
-        "events_token": s.events_token,
         "ccc_ip": s.ccc_ip,
         "lab_subnet": s.lab_subnet,
     }

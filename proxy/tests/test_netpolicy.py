@@ -634,3 +634,70 @@ def test_one_shot_exit_code_reports_failure(state_file, tmp_path):
     assert generate.main(["--state", str(state_file), "--out", str(out)]) == 0
     state_file.write_text('{"groups": null}')
     assert generate.main(["--state", str(state_file), "--out", str(out)]) == 1
+
+
+# -- Step 13 (I-PROXY-13): events_token never in proxy.json, the proxy reads env XG_INTERNAL_TOKEN --
+
+def test_proxy_json_has_no_events_token(state_dict, tmp_path):
+    st = State.from_dict({**state_dict, "events_url": "http://127.0.0.1:8000/api/internal/net-events",
+                          "events_token": "secret-internal-token"})
+    generate.generate_state(st, tmp_path / "net")
+    text = (tmp_path / "net" / "proxy.json").read_text()
+    assert "secret-internal-token" not in text and "events_token" not in text
+    assert json.loads(text)["events_url"].endswith("/net-events")
+
+
+def _ship_and_capture(tmp_path, monkeypatch, doc_token, env_token):
+    from xg_netpolicy import proxy_logic
+    from xg_netpolicy.proxy_logic import EventShipper
+
+    p = tmp_path / "proxy.json"
+    doc = {"events_url": "http://127.0.0.1:8000/api/internal/net-events"}
+    if doc_token is not None:
+        doc["events_token"] = doc_token
+    p.write_text(json.dumps(doc))
+    if env_token is None:
+        monkeypatch.delenv("XG_INTERNAL_TOKEN", raising=False)
+    else:
+        monkeypatch.setenv("XG_INTERNAL_TOKEN", env_token)
+    sent = []
+
+    class Resp:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        sent.append(req.get_header("Authorization"))
+        return Resp()
+
+    monkeypatch.setattr(proxy_logic.urllib.request, "urlopen", fake_urlopen)
+    shipper = EventShipper(PolicyCache(p), fallback=str(tmp_path / "ev.jsonl"))
+    shipper.stop()  # no background thread racing the direct call below
+    shipper._ship([{"action": "blocked", "host": "openai.com"}])
+    return sent
+
+
+def test_shipper_uses_env_token(tmp_path, monkeypatch):
+    assert _ship_and_capture(tmp_path, monkeypatch, None, "env-token-1234") == ["Bearer env-token-1234"]
+    # env wins over a token left in an older proxy.json
+    assert _ship_and_capture(tmp_path, monkeypatch, "file-token", "env-token-1234") == ["Bearer env-token-1234"]
+
+
+def test_shipper_falls_back_to_old_proxy_json_token(tmp_path, monkeypatch, caplog):
+    with caplog.at_level("WARNING", logger="xg-proxy"):
+        assert _ship_and_capture(tmp_path, monkeypatch, "file-token", None) == ["Bearer file-token"]
+    assert any("XG_INTERNAL_TOKEN is not set" in r.message for r in caplog.records)
+    assert _ship_and_capture(tmp_path, monkeypatch, None, "  ") == ["Bearer "]
+
+
+def test_compose_passes_internal_token_to_proxy():
+    import re
+
+    compose = (pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy" / "docker-compose.yml").read_text()
+    proxy = re.search(r"\n  proxy:.*?(?=\n  \w)", compose, re.S).group(0)
+    assert "XG_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}" in proxy

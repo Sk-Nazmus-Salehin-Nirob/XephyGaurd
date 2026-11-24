@@ -268,8 +268,14 @@ def block_page(host: str, reason: str) -> str:
     return BLOCK_PAGE.format(host=esc(host), reason=esc(reason))
 
 
+TOKEN_ENV = "XG_INTERNAL_TOKEN"
+
+
 class EventShipper:
-    """Batches network events and POSTs them to the CCC; falls back to a JSONL file."""
+    """Batches network events and POSTs them to the CCC; falls back to a JSONL file.
+
+    The bearer token comes from env XG_INTERNAL_TOKEN (I-PROXY-13); `events_token` in proxy.json is
+    only read when the env var is unset (a proxy.json from an older generator), with a warning."""
 
     def __init__(self, cache: PolicyCache, fallback: str = "/var/log/xephyguard/proxy-events.jsonl") -> None:
         self.cache = cache
@@ -278,6 +284,7 @@ class EventShipper:
         self._seen_lock = threading.Lock()
         self._seen_observed: dict[tuple[str | None, str], float] = {}
         self._stop = threading.Event()
+        self._warned_token = False
         self._t = threading.Thread(target=self._run, daemon=True)
         self._t.start()
 
@@ -321,8 +328,21 @@ class EventShipper:
             if batch:
                 self._ship(batch)
 
+    def token(self) -> str:
+        env = os.environ.get(TOKEN_ENV, "").strip()
+        if env:
+            return env
+        legacy = self.cache.state.events_token
+        if not self._warned_token:
+            self._warned_token = True
+            if legacy:
+                log.warning("%s is not set; using events_token from %s (older generator)", TOKEN_ENV, self.cache.path)
+            else:
+                log.warning("%s is not set; event shipping will be refused by the CCC", TOKEN_ENV)
+        return legacy if isinstance(legacy, str) else ""
+
     def _ship(self, batch: list[dict[str, Any]]) -> None:
-        url, token = self.cache.state.events_url, self.cache.state.events_token
+        url, token = self.cache.state.events_url, self.token()
         if url:
             try:
                 req = urllib.request.Request(url, data=json.dumps({"events": batch}).encode(), method="POST",
