@@ -7,7 +7,9 @@
 `conntrack -D -s <ip>` for PCs that newly joined test/isolated (all of them on start). sets.nft is
 always applied on the first pass, and again whenever the live table's sets differ from it (checked
 every --resync seconds, e.g. after a reboot or an nftables reload emptied them). Files are written
-atomically; a broken state document never replaces a working configuration.
+atomically; a broken state document never replaces a working configuration. In --watch mode an
+error in one iteration (bad document, OSError, failed tool, bug) is logged and counted and the
+loop keeps running with the previous configuration.
 """
 from __future__ import annotations
 
@@ -237,6 +239,33 @@ def apply(out: pathlib.Path, changed: dict[str, bool], network_mode: str | None 
             log.info("unbound reloaded")
 
 
+class InvalidState(Exception):
+    """The state document can't be used (bad JSON, wrong types, failed validation)."""
+
+
+def _load(path: pathlib.Path) -> tuple[State, str | None]:
+    """Parse the state document and its raw network_mode. Any parse/validation error becomes
+    InvalidState; OSError (file replaced or unreadable just now) is passed through for a retry."""
+    try:
+        s = State.load(path)
+        raw_mode = json.loads(path.read_text()).get("network_mode")
+        if raw_mode is not None and not isinstance(raw_mode, str):
+            raise TypeError(f"network_mode must be a string, not {type(raw_mode).__name__}")
+        return s, raw_mode
+    except OSError:
+        raise
+    except Exception as e:  # ValueError, KeyError, TypeError, AttributeError from from_dict/validate
+        raise InvalidState(f"{type(e).__name__}: {e}") from e
+
+
+def _log_failure(consecutive: int, total: int, msg: str, exc: BaseException, trace: bool) -> None:
+    # every failure is counted; a persistent one (e.g. read-only out dir) is logged on the 1st,
+    # 2nd, 4th, 8th... consecutive attempt so the log stays readable
+    if consecutive & (consecutive - 1) == 0:
+        log.error("%s (failure %d, %d in a row), keeping previous configuration: %s",
+                  msg, total, consecutive, exc, exc_info=exc if trace else None)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--state", required=True, type=pathlib.Path)
@@ -252,15 +281,20 @@ def main(argv: list[str] | None = None) -> int:
     restricted: set[str] | None = None  # None until the first apply: then every restricted IP is flushed
     applied: tuple[State, str | None] | None = None  # last applied state and its network_mode
     next_check = 0.0
+    redo = False  # an earlier attempt for this digest failed half-way: rewrite/re-apply everything
+    failures = consecutive = 0
     while True:
+        digest = None
         try:
             digest = hashlib.sha256(a.state.read_bytes()).hexdigest() if a.state.exists() else None
             if digest and digest != last:
-                s = State.load(a.state)
+                s, raw_mode = _load(a.state)
                 changed = generate_state(s, a.out)
                 log.info("state %s -> %s", digest[:12], {k: v for k, v in changed.items() if v} or "no changes")
+                if redo:
+                    # files written before the failure compare equal now, but were never applied
+                    changed = dict.fromkeys(changed, True)
                 if a.apply:
-                    raw_mode = json.loads(a.state.read_text()).get("network_mode")
                     now = restricted_ips(s)
                     if restricted is None:
                         # first pass: the files may predate this process (netpolicy-run.sh pre-generates
@@ -272,6 +306,7 @@ def main(argv: list[str] | None = None) -> int:
                     applied = (s, raw_mode)
                     next_check = time.monotonic() + a.resync
                 last = digest
+                redo = False
             elif applied and time.monotonic() >= next_check:
                 next_check = time.monotonic() + a.resync
                 s, raw_mode = applied
@@ -281,13 +316,26 @@ def main(argv: list[str] | None = None) -> int:
                     # meanwhile were unrestricted, so flush them all once the sets are back
                     log.warning("live nft sets differ from sets.nft, re-applying")
                     apply(a.out, {"nft": True}, network_mode=raw_mode, flush_ips=restricted_ips(s))
-        except (ValueError, KeyError, json.JSONDecodeError) as e:
-            log.error("invalid state document, keeping previous configuration: %s", e)
-            last = digest
+        except InvalidState as e:
+            failures += 1
+            consecutive += 1
+            _log_failure(consecutive, failures, "invalid state document", e, trace=False)
+            last = digest  # wait for the CCC to write a new document instead of re-parsing this one
+        except Exception as e:
+            # OSError (state replaced mid-read, out dir unwritable, a tool not runnable) or a bug:
+            # the watcher must outlive it (I-PROXY-6); the same digest is retried next iteration
+            failures += 1
+            consecutive += 1
+            _log_failure(consecutive, failures, "watch iteration failed", e, trace=True)
+            if digest and digest != last:
+                redo = True
+        else:
+            if consecutive:
+                log.info("recovered after %d failed iteration(s)", consecutive)
+            consecutive = 0
         if not a.watch:
-            return 0
+            return 1 if consecutive else 0
         time.sleep(a.interval)
-
 
 if __name__ == "__main__":
     sys.exit(main())

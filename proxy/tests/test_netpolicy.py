@@ -408,3 +408,111 @@ def test_watch_reapplies_sets_when_live_table_differs(state_file, state_dict, tm
     else:
         assert calls[1:] == []
     assert bool(checks) == (mode != "proxy_only")
+
+
+class _Stop(Exception):
+    pass
+
+
+def _run_watch(state_file, out, monkeypatch, on_sleep, extra=()):
+    """Run the watcher until on_sleep(n) returns False (n = 1-based sleep count)."""
+    sleeps = []
+
+    def fake_sleep(_):
+        sleeps.append(1)
+        if not on_sleep(len(sleeps)):
+            raise _Stop
+
+    monkeypatch.setattr(generate.time, "sleep", fake_sleep)
+    with pytest.raises(_Stop):
+        generate.main(["--state", str(state_file), "--out", str(out), "--watch", "--apply", *extra])
+    return len(sleeps)
+
+
+@pytest.mark.parametrize("bad", [
+    {"groups": None},                       # AttributeError in from_dict
+    {"lan_if": 7},                          # AttributeError in validate
+    {"groups": {"test": [5]}},              # TypeError/ValueError from ipaddress
+    {"network_mode": 3},                    # non-str mode would break apply
+    "not json",
+    [1, 2],                                 # not an object
+])
+def test_watch_survives_invalid_documents(state_file, state_dict, tmp_path, monkeypatch, caplog, bad):
+    calls = []
+    monkeypatch.setattr(generate, "apply", lambda out, changed, network_mode=None, flush_ips=frozenset():
+                        calls.append(state_version()))
+    out = tmp_path / "net"
+
+    def state_version():
+        return json.loads((out / "proxy.json").read_text())["version"]
+
+    def on_sleep(n):
+        if n == 1:  # the CCC writes a broken document
+            doc = bad if isinstance(bad, (str, list)) else dict(state_dict, **bad)
+            state_file.write_text(doc if isinstance(doc, str) else json.dumps(doc))
+        elif n == 3:  # then a good one
+            state_file.write_text(json.dumps(dict(state_dict, version=9)))
+        return n < 5
+
+    with caplog.at_level("ERROR", logger="xg-netpolicy"):
+        _run_watch(state_file, out, monkeypatch, on_sleep)
+    assert calls == [5, 9]  # previous config kept while broken, new one applied afterwards
+    # the broken document is reported once, not re-parsed every second
+    assert caplog.text.count("invalid state document (failure 1, 1 in a row)") == 1
+    assert "failure 2" not in caplog.text
+
+
+def test_watch_survives_oserror_and_retries_everything(state_file, tmp_path, monkeypatch, caplog):
+    calls = []
+    real_write = generate._write
+
+    def flaky_write(path, text):
+        if len(calls) == 0 and path.name == "sets.nft" and not getattr(flaky_write, "failed", 0) >= 2:
+            flaky_write.failed = getattr(flaky_write, "failed", 0) + 1
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_write(path, text)
+
+    monkeypatch.setattr(generate, "_write", flaky_write)
+    monkeypatch.setattr(generate, "apply", lambda out, changed, network_mode=None, flush_ips=frozenset():
+                        calls.append((dict(changed), set(flush_ips))))
+    with caplog.at_level("INFO", logger="xg-netpolicy"):
+        _run_watch(state_file, tmp_path / "net", monkeypatch, lambda n: n < 4)
+    # unbound-xephyguard.conf was written before the failure; the retry must still apply it
+    assert calls == [({"unbound": True, "nft": True, "proxy": True},
+                      {"192.168.10.21", "192.168.10.22", "192.168.10.40"})]
+    assert "watch iteration failed (failure 1, 1 in a row)" in caplog.text
+    assert "failure 2, 2 in a row" in caplog.text
+    assert "recovered after 2 failed iteration(s)" in caplog.text
+
+
+def test_watch_survives_failing_resync_check_and_apply(state_file, tmp_path, monkeypatch, caplog):
+    calls = []
+
+    def apply(out, changed, network_mode=None, flush_ips=frozenset()):
+        calls.append(dict(changed))
+        if len(calls) == 2:
+            raise OSError("nft: Operation not permitted")
+
+    monkeypatch.setattr(generate, "apply", apply)
+    checks = []
+
+    def out_of_sync(s):
+        checks.append(1)
+        if len(checks) == 1:
+            raise RuntimeError("unexpected nft -j output")
+        return True
+
+    monkeypatch.setattr(generate, "sets_out_of_sync", out_of_sync)
+    with caplog.at_level("ERROR", logger="xg-netpolicy"):
+        n = _run_watch(state_file, tmp_path / "net", monkeypatch, lambda n: n < 5, extra=("--resync", "0"))
+    assert n == 5  # still looping
+    # first pass, then: check raised, re-apply raised, re-apply, re-apply
+    assert len(checks) == 4 and calls[1:] == [{"nft": True}] * 3
+    assert "RuntimeError" in caplog.text and "nft: Operation not permitted" in caplog.text
+
+
+def test_one_shot_exit_code_reports_failure(state_file, tmp_path):
+    out = tmp_path / "net"
+    assert generate.main(["--state", str(state_file), "--out", str(out)]) == 0
+    state_file.write_text('{"groups": null}')
+    assert generate.main(["--state", str(state_file), "--out", str(out)]) == 1

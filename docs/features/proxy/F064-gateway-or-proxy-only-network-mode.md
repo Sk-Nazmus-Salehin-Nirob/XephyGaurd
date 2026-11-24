@@ -8,5 +8,6 @@
   proxy reached by PAC (proxy_only).
 - **Trigger:** setting `network_mode` ([F104](../server/F104-settings.md)), `XG_NETWORK_MODE`; installer question.
 - **Code:** `NetworkPolicyWriter`, `proxy/xg_netpolicy/generate.py`, `ccc-deploy/docker/proxy-entrypoint.sh`.
+  The `--watch` loop survives any error in one iteration (invalid document, OSError, failed tool): it logs and counts it and keeps the previous configuration (`watch_survives_*`).
 - **Status:** partly working (tests pass; gateway mode never run on a real two-NIC host).
 - **Test:** 1. Set proxy_only. 2. `curl --cacert ca.crt https://<ccc>/proxy.pac` returns a PAC pointing at the CCC.
