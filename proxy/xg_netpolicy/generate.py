@@ -3,7 +3,7 @@
     python -m xg_netpolicy.generate --state /var/lib/xephyguard/policy/state.json --out /var/lib/xephyguard/net
     python -m xg_netpolicy.generate --state ... --out ... --watch --apply     # sidecar mode
 
---apply runs `nft -f <out>/sets.nft` and `unbound-control reload` after every change. Files are
+--apply runs `nft -f <out>/sets.nft` and `unbound-control -c $XG_UNBOUND_CONF reload` after every change. Files are
 written atomically; a broken state document never replaces a working configuration.
 """
 from __future__ import annotations
@@ -121,6 +121,9 @@ def _nft_table_present() -> bool:
         return False
 
 
+UNBOUND_CONF = "/etc/unbound/unbound.conf"
+
+
 def apply(out: pathlib.Path, changed: dict[str, bool], network_mode: str | None = None) -> None:
     if changed.get("nft"):
         mode = (network_mode or os.environ.get("XG_NETWORK_MODE", "")).strip()
@@ -134,7 +137,9 @@ def apply(out: pathlib.Path, changed: dict[str, bool], network_mode: str | None 
             else:
                 log.info("nftables sets updated")
     if changed.get("unbound"):
-        r = subprocess.run(["unbound-control", "reload"], capture_output=True, text=True)
+        # -c: the running config names the control socket (unix socket, I-PROXY-2)
+        conf = os.environ.get("XG_UNBOUND_CONF") or UNBOUND_CONF
+        r = subprocess.run(["unbound-control", "-c", conf, "reload"], capture_output=True, text=True)
         if r.returncode:
             log.error("unbound reload failed: %s", r.stderr.strip() or r.stdout.strip())
         else:

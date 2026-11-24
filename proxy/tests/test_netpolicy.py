@@ -153,9 +153,17 @@ def test_apply_skips_nft_in_proxy_only_or_without_table(state_file, tmp_path, mo
     monkeypatch.setattr(generate.subprocess, "run", fake_run)
 
     # proxy_only skips nft entirely and still reloads unbound
+    monkeypatch.delenv("XG_UNBOUND_CONF", raising=False)
     generate.apply(out, changed, network_mode="proxy_only")
     assert all(c[0] != "nft" for c in calls)
-    assert ["unbound-control", "reload"] in calls
+    assert ["unbound-control", "-c", "/etc/unbound/unbound.conf", "reload"] in calls
+
+    # the run script exports the config actually in use (proxy_only renders its own)
+    calls.clear()
+    monkeypatch.setenv("XG_UNBOUND_CONF", str(out / "unbound.conf"))
+    generate.apply(out, changed, network_mode="proxy_only")
+    assert ["unbound-control", "-c", str(out / "unbound.conf"), "reload"] in calls
+    monkeypatch.delenv("XG_UNBOUND_CONF")
 
     # missing inet xephyguard table in gateway mode skips nft -f sets.nft cleanly
     calls.clear()
@@ -180,3 +188,14 @@ def test_refused_destination():
     for host, port in [("93.184.215.14", 443), ("example.org", 80), ("2606:2800:21f:cb07::1", 443),
                        ("192.168.10.30", 443)]:
         assert refused_destination(host, port, own) is None, (host, port)
+
+
+@pytest.mark.parametrize("rel", ["proxy/dns/unbound.conf", "ccc-deploy/docker/unbound-local.conf"])
+def test_unbound_control_is_unix_socket_only(rel):
+    import pathlib
+
+    conf = (pathlib.Path(__file__).resolve().parents[2] / rel).read_text()
+    rc = conf.split("remote-control:", 1)[1]
+    ifaces = [ln.split(":", 1)[1].strip() for ln in rc.splitlines() if ln.strip().startswith("control-interface:")]
+    assert ifaces == ["/run/xephyguard-unbound/unbound.ctl"]
+    assert "control-port" not in rc

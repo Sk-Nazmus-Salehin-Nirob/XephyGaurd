@@ -8,6 +8,9 @@
   normally.
 - **Trigger:** Docker service `netpolicy`; reads net state.
 - **Code:** `proxy/xg_netpolicy/` (`generate.py`, `domains.py`, `state.py`), `proxy/dns/unbound.conf`,
-  `ccc-deploy/docker/netpolicy-run.sh`.
-- **Status:** working (`generate_outputs`, `state_groups`, `domain_suffix_matching`).
+  `ccc-deploy/docker/netpolicy-run.sh`. Unbound remote control listens only on the unix socket
+  `/run/xephyguard-unbound/unbound.ctl` inside the netpolicy container (no TCP port, no keys);
+  `generate --apply` reloads with `unbound-control -c $XG_UNBOUND_CONF reload`.
+- **Status:** working (`generate_outputs`, `state_groups`, `domain_suffix_matching`,
+  `unbound_control_is_unix_socket_only`).
 - **Test:** 1. Start a Test session. 2. On the PC `nslookup chatgpt.com <ccc-ip>` is blocked.

@@ -20,6 +20,9 @@ if [ -f /etc/unbound/unbound-local.conf.tmpl ]; then
     /etc/unbound/unbound-local.conf.tmpl "$OUT/unbound.conf" "$IF_LINES"
   UNBOUND_CONF="$OUT/unbound.conf"
 fi
+# Unbound remote control socket lives here (container-private, not a volume)
+install -d -m 0750 -o root -g root /run/xephyguard-unbound
+export XG_UNBOUND_CONF="$UNBOUND_CONF"
 unbound-checkconf "$UNBOUND_CONF"
 unbound -d -c "$UNBOUND_CONF" &
 UNBOUND=$!
