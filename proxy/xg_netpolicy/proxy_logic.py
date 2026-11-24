@@ -182,6 +182,12 @@ class PolicyCache:
         return group in ("test", "block_ai") and bool(self.state.google.get("force_udm14", True))
 
 
+def loggable_path(path: str, limit: int = 512) -> str:
+    """Path of a request as shipped in events: never the query string or fragment, which hold typed
+    text such as search terms (I-PROXY-9, PRIVACY). The `log_urls.query` setting no longer widens this."""
+    return path.split("?", 1)[0].split("#", 1)[0][:limit] or "/"
+
+
 def google_search_rewrite(host: str, path: str, query: list[tuple[str, str]]) -> list[tuple[str, str]] | None:
     """Returns a new query list with udm=14 ("Web" results, no AI Overview) or None if unchanged.
 

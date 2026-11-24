@@ -20,7 +20,7 @@ such controls work.
 | Copy/paste size, line count, "looks like code" flag — **never the text** | – | ✓ | ✓ |
 | Work-folder save timestamps and size changes — **never file contents** | – | – | ✓ |
 | Blocked website attempts (host name) | – | if blocking | ✓ |
-| Visited hosts/paths of allowed sites | – | off by default | off by default |
+| Visited hosts/paths of allowed sites (never the query string, so never search terms) | – | off by default | off by default |
 | Live screen view by lab staff (on demand, not stored; every view is logged in `screen_view_audits`) | on request | on request | on request |
 | Streaming cost while viewed: frames/s, kbit/s, CPU % and throttle level (numbers only, in the heartbeat) | on request | on request | on request |
 | Screenshot saved as evidence by an instructor, only from their own open audited live view (with a note; saving and every viewing audited; deleted with raw data) | on request | on request | on request |

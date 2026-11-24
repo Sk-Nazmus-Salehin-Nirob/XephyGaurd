@@ -31,6 +31,7 @@ from xg_netpolicy.proxy_logic import (  # noqa: E402
     block_page,
     google_search_rewrite,
     inject_css,
+    loggable_path,
     refused_destination,
     relax_style_csp,
 )
@@ -134,7 +135,7 @@ class XephyGuard:
         d = self.cache.decide_http(ip, host, path)
         if d.action == "block":
             flow.response = http.Response.make(403, block_page(host, d.reason), {"Content-Type": "text/html; charset=utf-8"})
-            self.events.emit(client_ip=ip, host=host, path=path.split("?", 1)[0][:256],
+            self.events.emit(client_ip=ip, host=host, path=loggable_path(path, 256),
                              layer="http" if flow.request.scheme == "http" else "path", action="blocked",
                              category=d.category, matched=d.matched, reason=d.reason)
             return
@@ -155,13 +156,13 @@ class XephyGuard:
                                  category="search_ai")
         ai_match = self.cache.match_ai_domain(host) or self.cache.match_ai_path(host, path)
         if ai_match and self.events.should_emit_observed(ip, ai_match[0]):
-            self.events.emit(client_ip=ip, host=host, path=path.split("?", 1)[0][:256],
+            self.events.emit(client_ip=ip, host=host, path=loggable_path(path, 256),
                              layer="http" if flow.request.scheme == "http" else "path",
                              action="observed", category=ai_match[1], matched=ai_match[0])
-        lu = self.cache.state.log_urls
-        if lu.get("enabled") and not ai_match:
-            p = flow.request.path if lu.get("query") else flow.request.path.split("?", 1)[0]
-            self.events.emit(client_ip=ip, host=host, path=p[:512], layer="http", action="allowed")
+        if self.cache.state.log_urls.get("enabled") and not ai_match:
+            # host + path only; the query (search terms) is never shipped, even with log_urls.query
+            self.events.emit(client_ip=ip, host=host, path=loggable_path(flow.request.path), layer="http",
+                             action="allowed")
 
     def response(self, flow: http.HTTPFlow) -> None:
         assert self.cache

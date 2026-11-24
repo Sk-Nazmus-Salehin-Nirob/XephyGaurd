@@ -137,6 +137,23 @@ def test_http_request_observes_allowed_ai_path(addon):
     assert emitted[0]["matched"] == "duckduckgo.com/aichat"
 
 
+@pytest.mark.parametrize("log_urls", [{"enabled": True, "query": False}, {"enabled": True, "query": True}])
+def test_allowed_and_observed_events_never_carry_the_query(addon, log_urls):
+    emitted = []
+    addon.events.emit = lambda **kw: emitted.append(kw)
+    addon.cache.reload(force=True)
+    addon.cache.state.log_urls = log_urls
+    addon.request(_flow("192.168.10.99", "example.com", "/docs/page?q=my+exam+answer&x=1#frag"))
+    addon.request(_flow("192.168.10.99", "duckduckgo.com", "/aichat?q=write+my+essay"))
+    addon.request(_flow("192.168.10.99", "example.org", "?q=only"))
+    assert [(e["action"], e["host"], e["path"]) for e in emitted] == [
+        ("allowed", "example.com", "/docs/page"),
+        ("observed", "duckduckgo.com", "/aichat"),
+        ("allowed", "example.org", "/"),
+    ]
+    assert not any("q=" in e["path"] or "?" in e["path"] for e in emitted)
+
+
 def _client_hello_bytes(sni: str) -> bytes:
     """Builds a minimal TLS 1.2 ClientHello handshake body with an SNI extension."""
     import struct

@@ -5,7 +5,7 @@ import pytest
 
 from xg_netpolicy import generate
 from xg_netpolicy.domains import NEVER_INSPECT, DomainSet, InspectHosts, PathRules, normalize_domain, parse_list
-from xg_netpolicy.proxy_logic import PolicyCache, google_search_rewrite, inject_css, refused_destination
+from xg_netpolicy.proxy_logic import PolicyCache, google_search_rewrite, inject_css, loggable_path, refused_destination
 from xg_netpolicy.state import State
 
 
@@ -199,6 +199,14 @@ def test_seed_inspect_hosts_cover_search_but_not_google_accounts(state_dict, tmp
                  "login.live.com", "maps.google.com", "cdn.huggingface.co", "copilot.bing.com.evil.net"):
         assert c.decide_tls("192.168.10.21", host).action == "pass", host
     assert c.decide_tls("192.168.10.99", "www.google.com").action == "pass"  # no session
+
+
+def test_loggable_path_drops_query_and_fragment():
+    assert loggable_path("/search?q=answer+to+q3") == "/search"
+    assert loggable_path("/a/b#x?y") == "/a/b"
+    assert loggable_path("?q=x") == "/" and loggable_path("") == "/"
+    assert loggable_path("/" + "a" * 600) == "/" + "a" * 511
+    assert loggable_path("/p?q=1", 2) == "/p"
 
 
 def test_google_rewrite():

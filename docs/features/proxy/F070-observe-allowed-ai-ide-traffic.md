@@ -6,6 +6,7 @@
 
 - **What:** when AI is allowed, the proxy still records host + path of AI/IDE requests and raises
   alerts.
+  Events carry the path without the query string or fragment (`proxy_logic.loggable_path`), so typed search terms are never shipped; this also holds for `log_urls` "allowed" events, whatever `log_urls.query` (`/settings` "Include search terms") says (`allowed_and_observed_events_never_carry_the_query`, `loggable_path_drops_query_and_fragment`).
 - **Code:** addon `tls_clienthello`, `request`; `S/Http/Controllers/Internal/NetEventsController.php`.
 - **Side effects:** `POST /api/internal/net-events` (internal token) → `net_events`, `alerts`.
 - **Status:** working (`tls_clienthello_observes_allowed_ai_and_ide_traffic`,
