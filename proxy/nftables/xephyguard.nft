@@ -54,13 +54,19 @@ table inet xephyguard {
 
     chain forward {
         type filter hook forward priority filter; policy drop;
-        ct state established,related accept
+        # Restricted PCs come before the established accept (I-PROXY-4): a VPN/SSH tunnel opened
+        # before a Test session or isolation is an established flow. Their web and DNS traffic goes
+        # to the CCC itself (input), so they need no forwarded traffic in either direction.
+        # xg_netpolicy also deletes their conntrack entries when they join these sets.
         iifname "@LAN_IF@" ip saddr @isolated_clients counter drop
+        iifname "@LAN_IF@" ip saddr @test_clients counter drop comment "Test mode: proxy path only"
+        oifname "@LAN_IF@" ip daddr @isolated_clients counter drop
+        oifname "@LAN_IF@" ip daddr @test_clients counter drop
+        ct state established,related accept
         iifname "@LAN_IF@" udp dport 443 counter drop comment "QUIC"
         iifname "@LAN_IF@" meta l4proto { tcp, udp } th dport 853 counter drop comment "DoT"
         iifname "@LAN_IF@" ip daddr @resolver_ips counter drop comment "public resolvers / DoH"
         iifname "@LAN_IF@" ip6 daddr @resolver_ips6 counter drop
-        iifname "@LAN_IF@" ip saddr @test_clients counter drop comment "Test mode: proxy path only"
         iifname "@LAN_IF@" oifname "@WAN_IF@" ip saddr @LAB_SUBNET@ accept
     }
 

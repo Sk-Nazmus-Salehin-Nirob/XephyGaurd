@@ -226,3 +226,93 @@ def test_wan_input_accepts_only_established_and_required_ports():
     ]
     for port in ("53", "80", "443", "8080", "8085", "@PROXY_PORT@", "@AGENT_PORT@"):
         assert not any(f"dport {port} " in ln or f"dport {{ {port}" in ln for ln in accepts), port
+
+
+def test_forward_restricted_drops_come_before_established():
+    import pathlib
+
+    nft = (pathlib.Path(__file__).resolve().parents[2] / "proxy/nftables/xephyguard.nft").read_text()
+    fwd = _nft_chain(nft, "forward")
+    est = fwd.index("ct state established,related accept")
+    for rule in ('iifname "@LAN_IF@" ip saddr @isolated_clients counter drop',
+                 'iifname "@LAN_IF@" ip saddr @test_clients counter drop comment "Test mode: proxy path only"',
+                 'oifname "@LAN_IF@" ip daddr @isolated_clients counter drop',
+                 'oifname "@LAN_IF@" ip daddr @test_clients counter drop'):
+        assert fwd.index(rule) < est, rule
+    # only the general lab accept follows; nothing accepts restricted PCs before their drops
+    assert not any(" accept" in ln for ln in fwd[:est])
+
+
+class _Res:
+    def __init__(self, code=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = code, stdout, stderr
+
+
+def test_apply_flushes_conntrack_after_sets(state_file, tmp_path, monkeypatch):
+    out = tmp_path / "net"
+    changed = generate.generate(state_file, out)
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        if cmd[0] == "conntrack":
+            # conntrack-tools exits 1 when nothing matched
+            return _Res(1, "", "conntrack v1.4.7 (conntrack-tools): 0 flow entries have been deleted.")
+        return _Res(0)
+
+    monkeypatch.setattr(generate.subprocess, "run", fake_run)
+    generate.apply(out, changed, network_mode="gateway", flush_ips={"192.168.10.40", "192.168.10.21"})
+    nft_i = calls.index(["nft", "-f", str(out / "sets.nft")])
+    flushes = [i for i, c in enumerate(calls) if c[0] == "conntrack"]
+    assert [calls[i] for i in flushes] == [["conntrack", "-D", "-s", "192.168.10.21"],
+                                           ["conntrack", "-D", "-s", "192.168.10.40"]]
+    assert all(i > nft_i for i in flushes)
+
+    # unchanged sets still flush (sets are already loaded), but never in proxy_only mode
+    calls.clear()
+    generate.apply(out, {}, network_mode="gateway", flush_ips={"192.168.10.40"})
+    assert ["conntrack", "-D", "-s", "192.168.10.40"] in calls
+    calls.clear()
+    generate.apply(out, changed, network_mode="proxy_only", flush_ips={"192.168.10.40"})
+    assert not any(c[0] in ("nft", "conntrack") for c in calls)
+
+    # a failed nft -f leaves the old sets: flushing would only let flows reopen unrestricted
+    calls.clear()
+    monkeypatch.setattr(generate.subprocess, "run",
+                        lambda cmd, **kw: calls.append(cmd) or _Res(1 if cmd[:2] == ["nft", "-f"] else 0))
+    generate.apply(out, changed, network_mode="gateway", flush_ips={"192.168.10.40"})
+    assert not any(c[0] == "conntrack" for c in calls)
+
+
+def test_flush_conntrack_without_binary_warns(monkeypatch, caplog):
+    def missing(cmd, **kw):
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr(generate.subprocess, "run", missing)
+    with caplog.at_level("WARNING", logger="xg-netpolicy"):
+        generate.flush_conntrack({"192.168.10.40"})
+    assert "conntrack not installed" in caplog.text
+
+
+def test_watch_flushes_only_newly_restricted_ips(state_file, state_dict, tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(generate, "apply", lambda out, changed, network_mode=None, flush_ips=frozenset():
+                        seen.append(set(flush_ips)))
+
+    class Stop(Exception):
+        pass
+
+    def fake_sleep(_):
+        if len(seen) == 1:
+            state_dict["groups"]["test"].append("192.168.10.50")  # joins a Test session
+            state_dict["groups"]["isolated"] = []                  # released
+            state_dict["version"] += 1
+            state_file.write_text(json.dumps(state_dict))
+        else:
+            raise Stop
+
+    monkeypatch.setattr(generate.time, "sleep", fake_sleep)
+    with pytest.raises(Stop):
+        generate.main(["--state", str(state_file), "--out", str(tmp_path / "net"), "--watch", "--apply"])
+    # first pass: every restricted IP (connections from before the watcher started); then only the new one
+    assert seen == [{"192.168.10.21", "192.168.10.22", "192.168.10.40"}, {"192.168.10.50"}]

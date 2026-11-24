@@ -3,7 +3,8 @@
     python -m xg_netpolicy.generate --state /var/lib/xephyguard/policy/state.json --out /var/lib/xephyguard/net
     python -m xg_netpolicy.generate --state ... --out ... --watch --apply     # sidecar mode
 
---apply runs `nft -f <out>/sets.nft` and `unbound-control -c $XG_UNBOUND_CONF reload` after every change. Files are
+--apply runs `nft -f <out>/sets.nft` and `unbound-control -c $XG_UNBOUND_CONF reload` after every change, and
+`conntrack -D -s <ip>` for PCs that newly joined test/isolated (all of them on start). Files are
 written atomically; a broken state document never replaces a working configuration.
 """
 from __future__ import annotations
@@ -104,7 +105,10 @@ def _write(path: pathlib.Path, text: str) -> bool:
 
 
 def generate(state_path: pathlib.Path, out: pathlib.Path) -> dict[str, bool]:
-    s = State.load(state_path)
+    return generate_state(State.load(state_path), out)
+
+
+def generate_state(s: State, out: pathlib.Path) -> dict[str, bool]:
     out.mkdir(parents=True, exist_ok=True)
     return {
         "unbound": _write(out / "unbound-xephyguard.conf", unbound_conf(s)),
@@ -124,18 +128,48 @@ def _nft_table_present() -> bool:
 UNBOUND_CONF = "/etc/unbound/unbound.conf"
 
 
-def apply(out: pathlib.Path, changed: dict[str, bool], network_mode: str | None = None) -> None:
-    if changed.get("nft"):
+def restricted_ips(s: State) -> set[str]:
+    """IPs in the nft sets whose forwarded traffic is dropped (test_clients, isolated_clients)."""
+    return set(s.groups.get("test", [])) | set(s.groups.get("isolated", []))
+
+
+def flush_conntrack(ips) -> None:
+    """Delete tracked flows of PCs that just became test/isolated (I-PROXY-4), so a tunnel or a
+    redirected flow opened before the change is not carried on by its conntrack/NAT entry."""
+    for ip in sorted(ips):
+        try:
+            r = subprocess.run(["conntrack", "-D", "-s", ip], capture_output=True, text=True)
+        except FileNotFoundError:
+            log.warning("conntrack not installed; open flows of %d new restricted PC(s) not flushed", len(ips))
+            return
+        msg = (r.stderr or r.stdout or "").strip()
+        # exit 1 with "0 flow entries have been deleted" only means the PC had nothing open
+        if r.returncode and "0 flow entries" not in msg:
+            log.error("conntrack -D -s %s failed: %s", ip, msg)
+        else:
+            log.info("conntrack flushed for %s", ip)
+
+
+def apply(out: pathlib.Path, changed: dict[str, bool], network_mode: str | None = None,
+          flush_ips: set[str] | frozenset[str] = frozenset()) -> None:
+    """flush_ips: IPs newly in test/isolated; their conntrack entries are deleted once the sets
+    are in place (never before, or the next packet would recreate them unrestricted)."""
+    if changed.get("nft") or flush_ips:
         mode = (network_mode or os.environ.get("XG_NETWORK_MODE", "")).strip()
         if mode == "proxy_only" or not _nft_table_present():
             log.info("skipping nft sets reload (%s)",
                      "proxy_only mode" if mode == "proxy_only" else "table inet xephyguard unavailable")
         else:
-            r = subprocess.run(["nft", "-f", str(out / "sets.nft")], capture_output=True, text=True)
-            if r.returncode:
-                log.error("nft failed: %s", r.stderr.strip())
-            else:
-                log.info("nftables sets updated")
+            ok = True
+            if changed.get("nft"):
+                r = subprocess.run(["nft", "-f", str(out / "sets.nft")], capture_output=True, text=True)
+                ok = not r.returncode
+                if ok:
+                    log.info("nftables sets updated")
+                else:
+                    log.error("nft failed: %s", r.stderr.strip())
+            if ok and flush_ips:
+                flush_conntrack(flush_ips)
     if changed.get("unbound"):
         # -c: the running config names the control socket (unix socket, I-PROXY-2)
         conf = os.environ.get("XG_UNBOUND_CONF") or UNBOUND_CONF
@@ -156,15 +190,20 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     last = None
+    restricted: set[str] | None = None  # None until the first apply: then every restricted IP is flushed
     while True:
         try:
             digest = hashlib.sha256(a.state.read_bytes()).hexdigest() if a.state.exists() else None
             if digest and digest != last:
-                changed = generate(a.state, a.out)
+                s = State.load(a.state)
+                changed = generate_state(s, a.out)
                 log.info("state %s -> %s", digest[:12], {k: v for k, v in changed.items() if v} or "no changes")
                 if a.apply:
                     raw_mode = json.loads(a.state.read_text()).get("network_mode")
-                    apply(a.out, changed, network_mode=raw_mode)
+                    now = restricted_ips(s)
+                    apply(a.out, changed, network_mode=raw_mode,
+                          flush_ips=now if restricted is None else now - restricted)
+                    restricted = now
                 last = digest
         except (ValueError, KeyError, json.JSONDecodeError) as e:
             log.error("invalid state document, keeping previous configuration: %s", e)
