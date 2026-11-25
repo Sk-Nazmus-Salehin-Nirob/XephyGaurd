@@ -387,6 +387,19 @@ def block_page(host: str, reason: str) -> str:
 TOKEN_ENV = "XG_INTERNAL_TOKEN"
 
 
+EVENT_HOST_MAX = 255  # NetEventsController: events.*.host max:255
+EVENT_PATH_MAX = 512  # events.*.path max:512
+
+
+def event_text(value: Any, limit: int) -> Any:
+    """A client-controlled event string as the CCC accepts it: characters that are not printable
+    (control characters, the surrogates mitmproxy uses for undecodable bytes, which JSON can't carry
+    to PHP) are dropped, then the rest is cut to `limit` characters. Non-strings are left alone."""
+    if not isinstance(value, str):
+        return value
+    return "".join(ch for ch in value if ch.isprintable())[:limit]
+
+
 class EventShipper:
     """Batches network events and POSTs them to the CCC; falls back to a JSONL file.
 
@@ -422,6 +435,11 @@ class EventShipper:
     def emit(self, **ev: Any) -> None:
         if isinstance(ev.get("client_ip"), str):
             ev["client_ip"] = ev["client_ip"].removeprefix("::ffff:")
+        # host is the client's Host header or SNI: one over-long or unencodable value would get the
+        # whole batch rejected by the CCC (host max:255), hiding other PCs' events (I-PROXY-11)
+        for key, limit in (("host", EVENT_HOST_MAX), ("path", EVENT_PATH_MAX)):
+            if key in ev:
+                ev[key] = event_text(ev[key], limit)
         ev.setdefault("ts", int(time.time() * 1000))
         try:
             self.q.put_nowait(ev)

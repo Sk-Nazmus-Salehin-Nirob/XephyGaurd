@@ -887,3 +887,44 @@ def test_policy_reload_retries_unreadable_file(state_file, tmp_path, monkeypatch
     c._checked = 0.0
     c.reload()
     assert c.state.version == 6
+
+
+# -- Step 21 (I-PROXY-11): client-controlled host/path cleaned and cut before queueing --
+
+def test_event_text_drops_non_printable_and_truncates():
+    from xg_netpolicy.proxy_logic import event_text
+
+    assert event_text("chatgpt.com", 255) == "chatgpt.com"
+    assert event_text("a\x00b\r\nc\td\x7fe\x1b[31m", 255) == "abcde[31m"
+    assert event_text("bad\udc80host​.com", 255) == "badhost.com"  # surrogateescape byte, zero-width space
+    assert event_text("x" * 1000, 255) == "x" * 255
+    assert event_text("\x00" * 300 + "ok", 255) == "ok"  # cleaned first, then cut
+    assert event_text("ünïcode.example", 255) == "ünïcode.example"
+    assert event_text(None, 255) is None and event_text(5, 255) == 5
+
+
+def test_shipper_cleans_host_and_path_before_queueing(state_file, tmp_path):
+    from xg_netpolicy.proxy_logic import EventShipper
+
+    generate.generate(state_file, tmp_path / "net")
+    shipper = EventShipper(PolicyCache(tmp_path / "net" / "proxy.json"), fallback=str(tmp_path / "ev.jsonl"))
+    shipper.stop()  # no worker taking events from the queue
+    shipper.emit(client_ip="192.168.10.21", host="h" * 300 + "\x00\n", path="/p\x00a\udc80th" + "y" * 600,
+                 layer="http", action="blocked")
+    shipper.emit(client_ip="192.168.10.21", host=None, layer="sni", action="blocked")
+    ev = shipper.q.get_nowait()
+    assert ev["host"] == "h" * 255 and ev["path"] == ("/path" + "y" * 600)[:512]
+    json.dumps({"events": [ev]}).encode("utf-8")  # encodable: no lone surrogates left
+    ev = shipper.q.get_nowait()
+    assert ev["host"] is None and "path" not in ev  # absent or non-string fields stay as they are
+
+
+def test_event_limits_match_net_events_controller():
+    """The cut follows the server's validation (host max 255, path max 512), so the batch is accepted."""
+    import re
+
+    from xg_netpolicy.proxy_logic import EVENT_HOST_MAX, EVENT_PATH_MAX
+
+    ctrl = (pathlib.Path(__file__).resolve().parents[2] / "server/app/Http/Controllers/Internal/NetEventsController.php").read_text(encoding="utf-8")
+    assert int(re.search(r"'events\.\*\.host' => '[^']*max:(\d+)'", ctrl)[1]) == EVENT_HOST_MAX
+    assert int(re.search(r"'events\.\*\.path' => '[^']*max:(\d+)'", ctrl)[1]) == EVENT_PATH_MAX
