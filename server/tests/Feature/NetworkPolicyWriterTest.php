@@ -133,6 +133,19 @@ class NetworkPolicyWriterTest extends TestCase
         $this->assertSame(['/not-a-setting'], Setting::get('google_ai_paths'));
     }
 
+    /** Proxy Step 13 (I-PROXY-13): the proxy's bearer comes from env XG_INTERNAL_TOKEN, never from state.json. */
+    public function test_state_json_holds_no_events_token(): void
+    {
+        $this->bootLab();
+        config(['xephyguard.internal_token' => 'secret-internal-token-1234']);
+        $state = app(NetworkPolicyWriter::class)->write();
+        $this->assertArrayNotHasKey('events_token', $state);
+        $this->assertStringEndsWith('/api/internal/net-events', $state['events_url']);
+        $json = (string) file_get_contents(config('xephyguard.net_state_path'));
+        $this->assertStringNotContainsString('secret-internal-token-1234', $json);
+        $this->assertStringNotContainsString('events_token', $json);
+    }
+
     public function test_write_is_atomic_and_mode_0640(): void
     {
         $this->bootLab();

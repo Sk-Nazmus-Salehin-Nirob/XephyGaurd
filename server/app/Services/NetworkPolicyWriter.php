@@ -102,14 +102,14 @@ class NetworkPolicyWriter
             // the proxy records `observed` AI/IDE events only for these PCs (and only with log_urls on); isolated PCs are not listed
             'session_clients' => array_values(array_unique($sessionClients)),
             'log_urls' => $logUrls,
+            // no events_token: the proxy reads env XG_INTERNAL_TOKEN (proxy Step 13, I-PROXY-13; S-60)
             'events_url' => rtrim(config('xephyguard.internal_url'), '/').'/api/internal/net-events',
-            'events_token' => config('xephyguard.internal_token'),
         ];
     }
 
     /**
-     * Atomic write, mode 0640: the file holds `events_token`, so only the owner (app) and its group may read
-     * it; the sidecars read it as root. A unique temp file in the same directory, then rename (S-24, I-SERVER-17).
+     * Atomic write, mode 0640: no secret in it since S-60 (the proxy's token comes from env), but lab IPs and
+     * policy stay readable only by the owner (app) and its group; the sidecars read it as root. A unique temp file in the same directory, then rename (S-24, I-SERVER-17).
      */
     public function write(): array
     {

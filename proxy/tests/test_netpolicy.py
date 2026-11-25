@@ -747,11 +747,20 @@ def test_shipper_falls_back_to_old_proxy_json_token(tmp_path, monkeypatch, caplo
 
 
 def test_compose_passes_internal_token_to_proxy():
+    """Every compose file gives the proxy XG_INTERNAL_TOKEN (server S-60: state.json no longer carries
+    events_token): production by `environment`, local through the same env_file the Laravel app reads."""
     import re
 
-    compose = (pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy" / "docker-compose.yml").read_text()
-    proxy = re.search(r"\n  proxy:.*?(?=\n  \w)", compose, re.S).group(0)
-    assert "XG_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}" in proxy
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy"
+    files = sorted(deploy.glob("docker-compose*.yml"))
+    assert {f.name for f in files} >= {"docker-compose.yml", "docker-compose.local.yml"}
+    for f in files:
+        compose = f.read_text()
+        proxy = re.search(r"\n  proxy:.*?(?=\n  \w|\nvolumes:|\Z)", compose, re.S).group(0)
+        app = re.search(r"\nx-app: &app\n(?:  .*\n)*?  env_file: (\S+)", compose)
+        explicit = "XG_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}" in proxy
+        shared = app is not None and f"env_file: {app.group(1)}" in proxy
+        assert explicit or shared, f.name
 
 
 # -- Step 17 (I-PROXY-29): network_mode comes from the parsed State, the document is read once per digest --
@@ -1217,7 +1226,7 @@ def test_server_shaped_document_with_session_clients(tmp_path):
         "inspect_hosts": ["www.google.com"],
         "session_clients": ["192.168.10.21", "192.168.10.22"],
         "log_urls": {"enabled": True},
-        "events_url": "http://127.0.0.1:8080/api/internal/net-events", "events_token": "x" * 32,
+        "events_url": "http://127.0.0.1:8080/api/internal/net-events",   # no events_token since server S-60
     }
     p = tmp_path / "state.json"
     p.write_text(json.dumps(doc))
@@ -1231,6 +1240,23 @@ def test_server_shaped_document_with_session_clients(tmp_path):
     assert c.decide_tls("192.168.10.21", "chatgpt.com").action == "pass"   # AI allowed in this profile
     without = {k: v for k, v in doc.items() if k != "session_clients"}       # an older CCC: group fallback
     assert not State.from_dict(without).in_session("192.168.10.21")
+
+
+def test_server_shaped_document_without_events_token(tmp_path, monkeypatch):
+    """I-PROXY-13 CROSS (server S-60): state.json has no events_token; it parses, proxy.json holds no
+    token and the shipper sends the env token."""
+    doc = {"version": 14, "ccc_ip": "192.168.10.2", "lab_subnet": "192.168.10.0/24", "lan_if": "enp2s0",
+           "wan_if": "enp1s0", "groups": {"test": [], "block_ai": [], "isolated": [], "exempt": []},
+           "categories": {}, "path_rules": [], "group_categories": {"test": [], "block_ai": []},
+           "always_block": ["doh"], "doh_ips": [], "inspect_hosts": [], "log_urls": {"enabled": False},
+           "events_url": "http://127.0.0.1:8080/api/internal/net-events"}
+    s = State.from_dict(doc)
+    assert s.events_token == "" and s.events_url.endswith("/net-events")
+    p = tmp_path / "state.json"
+    p.write_text(json.dumps(doc))
+    generate.generate(p, tmp_path / "net")
+    assert "events_token" not in (tmp_path / "net" / "proxy.json").read_text()
+    assert _ship_and_capture(tmp_path, monkeypatch, None, "env-token-5678") == ["Bearer env-token-5678"]
 
 
 # -- I-PROXY-20: per-request lookups stay cheap with large imported lists --------------------------

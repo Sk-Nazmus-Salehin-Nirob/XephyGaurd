@@ -10,7 +10,7 @@
   blocklists, retiring a PC, setup.
 - **Code:** `S/Console/Commands/NetWrite.php`, `S/Services/NetworkPolicyWriter.php` (`build`, `write`).
 - **In/out/side effects:** writes `XG_NET_STATE` (default `storage/app/net/state.json`) atomically
-  (unique temp file + rename), mode 0640 because it holds `events_token`; the sidecars read it as root.
+  (unique temp file + rename), mode 0640 (lab IPs and policy; no secret since S-60: `events_token` is no longer written, the proxy reads env `XG_INTERNAL_TOKEN`, `state_json_holds_no_events_token`); the sidecars read it as root.
   All PCs are resolved with a fixed query count (`PolicyService::effectiveMany`, S-24).
   `inspect_hosts` and `google.hide_selectors` come from `data/network/proxy.yaml` unless an admin saved a
   different list on `/settings` (`NetworkSeed`, S-53).
