@@ -56,7 +56,7 @@ def test_state_skips_bad_group_entries_and_keeps_the_rest(state_dict, caplog):
     state_dict["groups"]["test"] += BAD_PC_ENTRIES + [" 192.168.10.26 "]
     with caplog.at_level("WARNING", logger="xg-netpolicy.state"):
         s = State.from_dict(state_dict)
-    assert s.groups["test"] == ["192.168.10.21", "192.168.10.22", "192.168.10.26"]
+    assert s.groups["test"] == ["192.168.10.21", "192.168.10.26"]
     assert s.groups["block_ai"] == ["192.168.10.30"] and s.groups["isolated"] == ["192.168.10.40"]
     assert len(s.skipped) == len(BAD_PC_ENTRIES) and all(x.startswith("groups.test: ") for x in s.skipped)
     assert "'10.0.0.5' (outside the lab subnet 192.168.10.0/24)" in s.skipped[0]
@@ -91,13 +91,13 @@ def test_generate_and_proxy_enforce_other_pcs_when_one_ip_is_bad(state_dict, tmp
     out = tmp_path / "net"
     generate.generate(state, out)
     sets = (out / "sets.nft").read_text()
-    assert "add element inet xephyguard test_clients { 192.168.10.21, 192.168.10.22 }" in sets
+    assert "add element inet xephyguard test_clients { 192.168.10.21 }" in sets
     assert "add element inet xephyguard isolated_clients { 192.168.10.40 }" in sets
     unbound = (out / "unbound-xephyguard.conf").read_text()
     assert "access-control-view: 192.168.10.21/32 xg_test" in unbound
     assert "10.0.0.5" not in unbound + sets and "2001:db8" not in unbound + sets
     proxy = json.loads((out / "proxy.json").read_text())
-    assert proxy["groups"]["test"] == ["192.168.10.21", "192.168.10.22"]
+    assert proxy["groups"]["test"] == ["192.168.10.21"]
     assert proxy["google"]["udm14_clients"] == ["192.168.10.21"]
     assert state_dict["google"]["udm14_clients"] == ["192.168.10.21", "fe80::1"]  # input not mutated
 
@@ -147,7 +147,7 @@ def test_generate_outputs(state_file, tmp_path):
     block_ai_view = unbound.split('name: "xg_block_ai"')[1].split("view:")[0]
     assert "githubcopilot.com" not in block_ai_view
     nft = (out / "sets.nft").read_text()
-    assert "add element inet xephyguard test_clients { 192.168.10.21, 192.168.10.22 }" in nft
+    assert "add element inet xephyguard test_clients { 192.168.10.21 }" in nft
     assert "resolver_ips6 { 2001:4860:4860::8888 }" in nft
     proxy = json.loads((out / "proxy.json").read_text())
     assert proxy["version"] == 5
@@ -435,7 +435,7 @@ def test_watch_flushes_only_newly_restricted_ips(state_file, state_dict, tmp_pat
     with pytest.raises(Stop):
         generate.main(["--state", str(state_file), "--out", str(tmp_path / "net"), "--watch", "--apply"])
     # first pass: every restricted IP (connections from before the watcher started); then only the new one
-    assert seen == [{"192.168.10.21", "192.168.10.22", "192.168.10.40"}, {"192.168.10.50"}]
+    assert seen == [{"192.168.10.21", "192.168.10.40"}, {"192.168.10.50"}]
 
 
 def _live_json(sets):
@@ -452,7 +452,7 @@ def _live_json(sets):
 
 
 def _in_sync_sets():
-    return {"test_clients": ["192.168.10.22", "192.168.10.21"], "block_ai_clients": ["192.168.10.30"],
+    return {"test_clients": ["192.168.10.21"], "block_ai_clients": ["192.168.10.30"],
             "isolated_clients": ["192.168.10.40"], "exempt_clients": [{"elem": {"val": "192.168.10.22"}}],
             "resolver_ips": [{"range": ["1.1.1.1", "1.1.1.1"]}, {"prefix": {"addr": "8.8.8.8", "len": 32}}],
             "resolver_ips6": ["2001:4860:4860::8888"],
@@ -472,7 +472,7 @@ def test_sets_out_of_sync_compares_live_elements(state_file, monkeypatch):
 
     live = {k: [] for k in _in_sync_sets()}  # table reloaded by xephyguard.nft: sets empty
     assert generate.sets_out_of_sync(s)
-    live = dict(_in_sync_sets(), test_clients=["192.168.10.21"])
+    live = dict(_in_sync_sets(), test_clients=["192.168.10.21", "192.168.10.22"])
     assert generate.sets_out_of_sync(s)
     live = dict(_in_sync_sets(), vpn_udp_ports=[51820])  # the port sets are compared too (Step 18)
     assert generate.sets_out_of_sync(s)
@@ -527,8 +527,8 @@ def test_watch_reapplies_sets_when_live_table_differs(state_file, state_dict, tm
     with pytest.raises(Stop):
         generate.main(["--state", str(state_file), "--out", str(tmp_path / "net"), "--watch", "--apply",
                        "--resync", "0"])
-    assert len(calls[0][1]) == 3  # first pass
-    restricted = {"192.168.10.21", "192.168.10.22", "192.168.10.40"}
+    assert len(calls[0][1]) == 2  # first pass
+    restricted = {"192.168.10.21", "192.168.10.40"}
     if reapplied:
         # same digest, but the live sets were emptied: re-apply and flush every restricted PC again
         assert calls[1:] == [({"nft": True}, restricted)] * 2
@@ -606,7 +606,7 @@ def test_watch_survives_oserror_and_retries_everything(state_file, tmp_path, mon
         _run_watch(state_file, tmp_path / "net", monkeypatch, lambda n: n < 4)
     # unbound-xephyguard.conf was written before the failure; the retry must still apply it
     assert calls == [({"unbound": True, "nft": True, "proxy": True},
-                      {"192.168.10.21", "192.168.10.22", "192.168.10.40"})]
+                      {"192.168.10.21", "192.168.10.40"})]
     assert "watch iteration failed (failure 1, 1 in a row)" in caplog.text
     assert "failure 2, 2 in a row" in caplog.text
     assert "recovered after 2 failed iteration(s)" in caplog.text
@@ -1089,3 +1089,49 @@ def test_conntrack_not_flushed_when_nft_fails(state_file, tmp_path, monkeypatch)
     generate.apply(out, changed, network_mode="gateway", flush_ips={"192.168.10.21"})
     assert not any(c[0] == "conntrack" for c in calls)
     assert json.loads((out / "health.json").read_text())["nft_ok"] is False
+
+
+# -- Step 24 (I-PROXY-28): groups are disjoint; exempt wins, then isolated, test, block_ai --
+
+def test_state_makes_groups_disjoint_exempt_wins(state_dict, caplog):
+    state_dict["groups"] = {"test": ["192.168.10.21", "192.168.10.22", "192.168.10.41", "192.168.10.21"],
+                            "block_ai": ["192.168.10.30", "192.168.10.31", "192.168.10.21"],
+                            "isolated": ["192.168.10.40", "192.168.10.41", "192.168.10.42"],
+                            "exempt": ["192.168.10.22", "192.168.10.31", "192.168.10.42"]}
+    with caplog.at_level("WARNING", logger="xg-netpolicy.state"):
+        s = State.from_dict(state_dict)
+    assert s.groups == {"test": ["192.168.10.21"], "block_ai": ["192.168.10.30"],
+                        "isolated": ["192.168.10.40", "192.168.10.41"],
+                        "exempt": ["192.168.10.22", "192.168.10.31", "192.168.10.42"]}
+    assert sorted(s.skipped) == sorted([
+        "groups.isolated: '192.168.10.42' (also in exempt, exempt wins)",
+        "groups.test: '192.168.10.22' (also in exempt, exempt wins)",
+        "groups.test: '192.168.10.41' (also in isolated, isolated wins)",
+        "groups.block_ai: '192.168.10.31' (also in exempt, exempt wins)",
+        "groups.block_ai: '192.168.10.21' (also in test, test wins)"])  # the repeated .21 is only de-duplicated
+    assert caplog.text.count("keeping it only in") == 5
+    for ip, g in (("192.168.10.22", "exempt"), ("192.168.10.31", "exempt"), ("192.168.10.41", "isolated"),
+                  ("192.168.10.21", "test")):
+        assert s.group_of(ip) == g
+
+
+def test_gateway_dns_and_proxy_agree_on_an_ip_in_two_groups(state_dict, tmp_path):
+    # exempt + test used to get the test DNS view and test_clients drops while the proxy let it pass;
+    # exempt + block_ai used to be dropped towards VPN ports (Step 18)
+    state_dict["groups"] = {"test": ["192.168.10.21", "192.168.10.22"], "block_ai": ["192.168.10.30", "192.168.10.31"],
+                            "isolated": [], "exempt": ["192.168.10.22", "192.168.10.31"]}
+    out = tmp_path / "net"
+    generate.generate_state(State.from_dict(state_dict), out)
+    unbound = (out / "unbound-xephyguard.conf").read_text()
+    assert "192.168.10.22/32" not in unbound and "192.168.10.31/32" not in unbound
+    assert "access-control-view: 192.168.10.21/32 xg_test" in unbound
+    sets = (out / "sets.nft").read_text()
+    assert "add element inet xephyguard test_clients { 192.168.10.21 }" in sets
+    assert "add element inet xephyguard block_ai_clients { 192.168.10.30 }" in sets
+    assert "add element inet xephyguard exempt_clients { 192.168.10.22, 192.168.10.31 }" in sets
+    assert generate.restricted_ips(State.from_dict(state_dict)) == {"192.168.10.21"}
+    c = PolicyCache(out / "proxy.json")
+    assert json.loads((out / "proxy.json").read_text())["groups"]["test"] == ["192.168.10.21"]
+    for ip in ("192.168.10.22", "192.168.10.31"):
+        assert c.decide_tls(ip, "chatgpt.com").action == "pass"
+    assert c.decide_tls("192.168.10.21", "chatgpt.com").action == "block"

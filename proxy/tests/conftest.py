@@ -15,7 +15,7 @@ def state_dict():
         "lab_subnet": "192.168.10.0/24",
         "lan_if": "enp2s0",
         "wan_if": "enp1s0",
-        "groups": {"test": ["192.168.10.21", "192.168.10.22"], "block_ai": ["192.168.10.30"],
+        "groups": {"test": ["192.168.10.21"], "block_ai": ["192.168.10.30"],
                    "isolated": ["192.168.10.40"], "exempt": ["192.168.10.22"]},
         "categories": {"ai": ["openai.com", "chatgpt.com", "claude.ai"], "ide": ["githubcopilot.com"],
                        "marketplace": ["marketplace.visualstudio.com"], "vpn": ["protonvpn.com"],

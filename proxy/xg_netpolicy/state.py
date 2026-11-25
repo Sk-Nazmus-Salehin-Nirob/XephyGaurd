@@ -11,6 +11,8 @@ from typing import Any
 from .domains import DomainSet, PathRules
 
 GROUPS = ("test", "block_ai", "isolated", "exempt")
+# A PC listed in several groups is kept only in the first of these (State._disjoint, I-PROXY-28).
+GROUP_PRECEDENCE = ("exempt", "isolated", "test", "block_ai")
 
 log = logging.getLogger("xg-netpolicy.state")
 
@@ -95,7 +97,7 @@ class State:
             if not isinstance(ips, list):
                 raise ValueError(f"groups.{g} must be a list, not {type(ips).__name__}")
             groups[g] = self._pc_ips(f"groups.{g}", ips, net)
-        self.groups = groups
+        self.groups = self._disjoint(groups)
         udm = self.google.get("udm14_clients")
         if udm is not None:
             if not isinstance(udm, list):
@@ -185,6 +187,25 @@ class State:
                 kept.append(str(a))
         return kept
 
+    def _disjoint(self, groups: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Each IP stays in one group only (I-PROXY-28), the first in GROUP_PRECEDENCE (exempt wins,
+        as in group_of), so Unbound, nft and the proxy all treat a PC the same way. An IP repeated
+        within a group is kept once. A dropped membership is logged and recorded in `skipped`."""
+        owner: dict[str, str] = {}
+        out = {g: list(v) for g, v in groups.items()}
+        for g in GROUP_PRECEDENCE:
+            kept: list[str] = []
+            for ip in groups.get(g, []):
+                if ip not in owner:
+                    owner[ip] = g
+                    kept.append(ip)
+                elif owner[ip] != g:
+                    self.skipped.append(f"groups.{g}: {ip!r} (also in {owner[ip]}, {owner[ip]} wins)")
+                    log.warning("groups.%s: %s is also in %s, keeping it only in %s", g, ip, owner[ip], owner[ip])
+            if g in out:
+                out[g] = kept
+        return out
+
     def _vpn_ports(self, entries: Any) -> list[str]:
         """Canonical "port/proto" entries, de-duplicated in their order. A bad entry is dropped with
         a warning; a missing list, a non-list or one with nothing valid left gives the defaults."""
@@ -216,11 +237,12 @@ class State:
 
     # -- derived views ------------------------------------------------------------------------
     def group_of(self, ip: str | None) -> str | None:
-        """Most restrictive group a client belongs to (exempt wins over everything)."""
+        """The client's group; validate() already made groups disjoint with the same precedence
+        (exempt wins over everything)."""
         if not ip:
             return None
         ip = ip.removeprefix("::ffff:")
-        for g in ("exempt", "isolated", "test", "block_ai"):
+        for g in GROUP_PRECEDENCE:
             if ip in self.groups.get(g, []):
                 return g
         return None
