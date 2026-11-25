@@ -177,9 +177,31 @@ def test_observed_path_keeps_only_the_first_segment(addon):
     assert [(e["action"], e["path"]) for e in emitted] == [("observed", "/chat")]
 
 
+def test_allowed_events_only_during_a_session(addon):
+    """Server S-66 (ETHICS.md "Visited hosts/paths of allowed sites": always-on "–"): with log_urls on,
+    `allowed` SNI and HTTP events are recorded only for PCs in a running session, like `observed`."""
+    emitted = _capture(addon, log_urls={"enabled": True}, session_clients=["192.168.10.21"])
+    for ip in ("192.168.10.21", "192.168.10.99", "192.168.10.22"):   # in session; none; exempt but not listed
+        _send_sni(addon, ip, "example.com")
+        addon.request(_flow(ip, "example.org", "/docs"))
+    assert [(e["client_ip"], e["layer"], e["action"]) for e in emitted] == [
+        ("192.168.10.21", "sni", "allowed"), ("192.168.10.21", "http", "allowed")]
+    assert addon.events.stats["deduped_allowed"] == 0   # suppressed before the dedup, not counted as repeats
+    emitted.clear()
+    addon.cache.state.session_clients = None          # older CCC: the group fallback decides (exempt counts)
+    _send_sni(addon, "192.168.10.22", "example.net")
+    _send_sni(addon, "192.168.10.99", "example.net")
+    assert [e["client_ip"] for e in emitted] == ["192.168.10.22"]
+    emitted.clear()
+    addon.cache.state.log_urls = {"enabled": False}
+    _send_sni(addon, "192.168.10.21", "example.info")
+    assert emitted == []
+
+
 @pytest.mark.parametrize("log_urls", [{"enabled": True, "query": False}, {"enabled": True, "query": True}])
 def test_allowed_and_observed_events_never_carry_the_query(addon, log_urls):
-    emitted = _capture(addon, log_urls=log_urls)
+    # in-session PCs: allowed events are recorded only during a session (server S-66)
+    emitted = _capture(addon, log_urls=log_urls, session_clients=["192.168.10.99", "192.168.10.22"])
     addon.request(_flow("192.168.10.99", "example.com", "/docs/page?q=my+exam+answer&x=1#frag"))
     addon.request(_flow("192.168.10.22", "duckduckgo.com", "/aichat?q=write+my+essay"))
     addon.request(_flow("192.168.10.99", "example.org", "?q=only"))
@@ -392,7 +414,8 @@ def test_tls_clienthello_dedups_allowed_sni_per_client_host_per_minute(addon, mo
 
     from xg_netpolicy import proxy_logic
 
-    addon.cache.state.log_urls = {"enabled": True, "query": False}
+    addon.cache.state.log_urls = {"enabled": True}
+    addon.cache.state.session_clients = ["192.168.10.99", "192.168.10.98"]   # allowed only in a session (S-66)
     emitted = []
     addon.events.emit = lambda **kw: emitted.append(kw)
     clock = [1000.0]

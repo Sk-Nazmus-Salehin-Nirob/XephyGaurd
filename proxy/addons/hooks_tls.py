@@ -51,7 +51,7 @@ class TlsHooks:
                     if self.cache.records_observed(ip) and self.events.should_emit_observed(ip, ai_match[0]):
                         self.events.emit(client_ip=ip, host=sni, layer="sni", action="observed",
                                          category=ai_match[1], matched=ai_match[0])
-                elif self.cache.state.log_urls.get("enabled") and self.events.should_emit_allowed(ip, sni):
+                elif self.cache.records_allowed(ip) and self.events.should_emit_allowed(ip, sni):   # in a session only
                     self.events.emit(client_ip=ip, host=sni, layer="sni", action="allowed")
         # "inspect": let mitmproxy intercept with the lab CA
         if d.action in ("pass", "inspect"):

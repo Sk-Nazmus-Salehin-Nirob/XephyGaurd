@@ -283,6 +283,12 @@ class PolicyCache:
         session (I-PROXY-10, ETHICS.md "Visited hosts/paths of allowed sites")."""
         return bool(self.state.log_urls.get("enabled")) and self.state.in_session(client_ip)
 
+    def records_allowed(self, client_ip: str | None) -> bool:
+        """`allowed` visit events (`log_urls`) follow the same rule as `observed`: only with `log_urls`
+        on and for a PC in a running session, never outside class (ETHICS.md "Visited hosts/paths of
+        allowed sites", always-on column "–"; server S-66)."""
+        return self.records_observed(client_ip)
+
     def wants_google_rewrite(self, client_ip: str | None) -> bool:
         if not client_ip:
             return False
