@@ -1198,6 +1198,41 @@ def test_session_clients_validated_and_copied_to_proxy_json(state_dict, tmp_path
     assert json.loads((tmp_path / "net" / "proxy.json").read_text())["session_clients"] == ["192.168.10.99"]
 
 
+def test_server_shaped_document_with_session_clients(tmp_path):
+    """I-PROXY-10 CROSS (server S-58): a document as NetworkPolicyWriter::build writes it, Practice with
+    AI allowed. The session PCs block nothing, so every group but isolated is empty ([] from PHP), and
+    only session_clients says they are in a session; isolated and non-session PCs are not observed."""
+    doc = {
+        "version": 12, "generated_at": "2026-11-25T10:00:00+00:00", "network_mode": "gateway",
+        "ccc_ip": "192.168.10.2", "lab_subnet": "192.168.10.0/24", "lan_if": "enp2s0", "wan_if": "enp1s0",
+        "proxy_port": 3128, "agent_port": 8443,
+        "groups": {"test": [], "block_ai": [], "isolated": ["192.168.10.23"], "exempt": []},
+        "categories": {"ai": ["chatgpt.com"], "doh": ["dns.google"]},
+        "path_rules": [],                                  # PHP json_encode of an empty array
+        "group_categories": {"test": [], "block_ai": []},
+        "always_block": ["doh"], "doh_ips": [],
+        "google": {"force_udm14": False, "udm14_clients": [], "hide_selectors": ["g-ai-overview"],
+                   "search_hosts": [r"^(?:www\.|encrypted\.)?google\.[a-z]{2,6}(?:\.[a-z]{2})?$"],
+                   "ai_paths": ["/async/folwr"], "css_hosts": ["bing.com"]},
+        "inspect_hosts": ["www.google.com"],
+        "session_clients": ["192.168.10.21", "192.168.10.22"],
+        "log_urls": {"enabled": True},
+        "events_url": "http://127.0.0.1:8080/api/internal/net-events", "events_token": "x" * 32,
+    }
+    p = tmp_path / "state.json"
+    p.write_text(json.dumps(doc))
+    generate.generate(p, tmp_path / "net")
+    assert json.loads((tmp_path / "net" / "proxy.json").read_text())["session_clients"] == ["192.168.10.21", "192.168.10.22"]
+    c = PolicyCache(tmp_path / "net" / "proxy.json")
+    assert c.state.group_of("192.168.10.21") is None                  # in no group ...
+    assert c.records_observed("192.168.10.21") and c.records_observed("::ffff:192.168.10.22")   # ... but in the session
+    assert not c.records_observed("192.168.10.23")                    # isolated
+    assert not c.records_observed("192.168.10.99")                    # not in the session
+    assert c.decide_tls("192.168.10.21", "chatgpt.com").action == "pass"   # AI allowed in this profile
+    without = {k: v for k, v in doc.items() if k != "session_clients"}       # an older CCC: group fallback
+    assert not State.from_dict(without).in_session("192.168.10.21")
+
+
 # -- I-PROXY-20: per-request lookups stay cheap with large imported lists --------------------------
 def _big_policy(state_dict, n=5000):
     """5,000 domains spread over five categories and 5,000 path rules (ai and ide)."""

@@ -270,7 +270,7 @@ The proxy sends (a test keeps this list, the addon and `NetEventsController` equ
 Limits: ≤ 1000 events, `host` ≤ 255, `path` ≤ 512, `layer` ≤ 16, `category` ≤ 24, `matched` ≤ 255 chars, `ts` in ms.
 `observed` = a passed (not blocked) connection or request to a known AI (`category: ai`) or IDE-AI backend
 (`category: ide`) domain or path; the proxy sends it only with `log_urls.enabled` and for a PC in a session (listed in
-`session_clients`, or, without that list, in the `test`, `block_ai` or `exempt` group), with only the first path segment
+`session_clients`, which the CCC fills with every non-isolated PC in a running session, or, without that list, in the `test`, `block_ai` or `exempt` group), with only the first path segment
 (`/search/<query-slug>` is sent as `/search`), at most once per (client IP, matched domain) per 30 s. For a known
 PC the CCC raises a `proxy.ai_observed` / `proxy.ide_ai_observed` alert (high, at most one per PC, session and title per
 30 min); other categories and unknown IPs are only stored in `net_events`.

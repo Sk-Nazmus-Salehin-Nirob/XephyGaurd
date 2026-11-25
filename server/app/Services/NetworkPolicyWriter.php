@@ -22,6 +22,7 @@ class NetworkPolicyWriter
         $groups = ['test' => [], 'block_ai' => [], 'isolated' => [], 'exempt' => []];
         $groupCats = ['test' => [], 'block_ai' => []];
         $udm14Clients = [];
+        $sessionClients = [];   // every PC in a running session, whatever its profile blocks (proxy Step 27, I-PROXY-10)
         $udm14 = true;
         $pcs = Pc::query()->active()->whereNotNull('ip')->get();
         $effective = $this->policies->effectiveMany($pcs->reject(fn ($pc) => $pc->isolated));   // fixed query count (S-24)
@@ -40,6 +41,7 @@ class NetworkPolicyWriter
             if (! $session) {
                 continue;
             }
+            $sessionClients[] = $pc->ip;
             if ($override && ! $cats) {
                 $groups['exempt'][] = $pc->ip;          // accommodation: profile without blocking
 
@@ -95,6 +97,8 @@ class NetworkPolicyWriter
                 'css_hosts' => NetworkSeed::defaults('search_css_hosts'),
             ],
             'inspect_hosts' => NetworkSeed::get('inspect_hosts'),
+            // the proxy records `observed` AI/IDE events only for these PCs (and only with log_urls on); isolated PCs are not listed
+            'session_clients' => array_values(array_unique($sessionClients)),
             'log_urls' => $logUrls,
             'events_url' => rtrim(config('xephyguard.internal_url'), '/').'/api/internal/net-events',
             'events_token' => config('xephyguard.internal_token'),

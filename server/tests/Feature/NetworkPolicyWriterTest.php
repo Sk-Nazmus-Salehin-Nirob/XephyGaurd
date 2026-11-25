@@ -69,6 +69,27 @@ class NetworkPolicyWriterTest extends TestCase
         $this->assertSame(['192.168.10.23'], $state['groups']['block_ai']);
     }
 
+    /** Proxy Step 27 (I-PROXY-10): session_clients lists every session PC, also one whose profile blocks nothing. */
+    public function test_session_clients_lists_every_pc_in_a_running_session(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        $this->pcs(21, 3);
+        $this->assertSame([], app(NetworkPolicyWriter::class)->build()['session_clients']);   // no session
+
+        $sm = app(SessionManager::class);
+        $session = $sm->start($lab, $this->profile('Practice: AI allowed, logged'), 'CS101');
+        Pc::where('name', 'PC-23')->firstOrFail()->update(['isolated' => true]);
+        $state = app(NetworkPolicyWriter::class)->build();
+        $this->assertSame([], $state['groups']['test']);       // nothing blocked, so in no group ...
+        $this->assertSame([], $state['groups']['block_ai']);
+        $this->assertSame(['192.168.10.21', '192.168.10.22'], $state['session_clients']);   // ... but in the session
+        $this->assertSame(['192.168.10.23'], $state['groups']['isolated']);
+
+        $sm->stop($session);
+        $this->assertSame([], app(NetworkPolicyWriter::class)->build()['session_clients']);
+    }
+
     public function test_effective_many_matches_effective(): void
     {
         Queue::fake();

@@ -261,8 +261,8 @@ class State:
 
     def in_session(self, ip: str | None) -> bool:
         """True when the PC is in a running session: listed in `session_clients`, or, when the
-        document has no such list, in test, block_ai or exempt (a session PC whose profile blocks
-        nothing is in no group, so it counts as not in a session until the server sends the list)."""
+        document has no such list (a CCC older than server S-58), in test, block_ai or exempt (a
+        session PC whose profile blocks nothing is in no group, so such a CCC's PC is not counted)."""
         if not ip:
             return False
         ip = ip.removeprefix("::ffff:")
