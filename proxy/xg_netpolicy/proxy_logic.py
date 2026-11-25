@@ -408,6 +408,11 @@ PURGE_INTERVAL_S = 3600.0
 # which are dropped, instead of being spilled and replayed forever
 REJECTED_STATUS = frozenset({400, 413, 422})
 
+ALLOWED_DEDUP_S = 60.0   # one `allowed` SNI event per (client, host) per minute (I-PROXY-30)
+OBSERVED_DEDUP_S = 30.0
+DEDUP_MAX_KEYS = 8192    # per dedup table; older keys are pruned beyond this
+STATS_INTERVAL_S = 60.0  # proxy-stats.json next to the spill file is rewritten this often
+
 
 def retention_days() -> int:
     raw = os.environ.get(RETENTION_ENV, "").strip()
@@ -442,28 +447,50 @@ class EventShipper:
         self.q: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=50000)
         self._seen_lock = threading.Lock()
         self._seen_observed: dict[tuple[str | None, str], float] = {}
+        self._seen_allowed: dict[tuple[str | None, str], float] = {}
         self._stop = threading.Event()
         self._warned_token = False
         # spilled: kept for replay; replayed: delivered later; rejected: refused by the CCC as
-        # invalid and dropped; purged: past retention; spill_lost: could not be kept
-        self.stats: dict[str, int] = {"spilled": 0, "replayed": 0, "rejected": 0, "purged": 0, "spill_lost": 0}
+        # invalid and dropped; purged: past retention; spill_lost: could not be kept;
+        # queue_full: dropped by emit because the queue was full; deduped_allowed/_observed:
+        # suppressed as repeats within the dedup window. Written to proxy-stats.json (stats_path).
+        self.stats: dict[str, int] = {"spilled": 0, "replayed": 0, "rejected": 0, "purged": 0, "spill_lost": 0,
+                                      "queue_full": 0, "deduped_allowed": 0, "deduped_observed": 0}
+        self._logged_queue_full = 0
         self._t = threading.Thread(target=self._run, daemon=True)
         self._t.start()
 
-    def should_emit_observed(self, client_ip: str | None, matched: str, window_s: float = 30.0) -> bool:
-        """Deduplicates observed AI/IDE events per (client_ip, matched_domain) within window_s."""
+    def _first_in_window(self, seen: dict[tuple[str | None, str], float], counter: str,
+                         client_ip: str | None, name: str, window_s: float) -> bool:
+        """True for the first (client_ip, name) within window_s (and records it); a repeat is
+        counted in stats[counter] and returns False."""
         ip = client_ip.removeprefix("::ffff:") if client_ip else None
         now = time.monotonic()
-        key = (ip, matched)
+        key = (ip, name)
         with self._seen_lock:
-            last = self._seen_observed.get(key)
+            last = seen.get(key)
             if last is not None and now - last < window_s:
+                self.stats[counter] += 1
                 return False
-            if len(self._seen_observed) > 4096:
+            if len(seen) >= DEDUP_MAX_KEYS:
                 cutoff = now - window_s
-                self._seen_observed = {k: v for k, v in self._seen_observed.items() if v > cutoff}
-            self._seen_observed[key] = now
+                for k in [k for k, v in seen.items() if v <= cutoff]:
+                    del seen[k]
+                if len(seen) >= DEDUP_MAX_KEYS:  # all still inside the window: keep the newest half
+                    for k, _ in sorted(seen.items(), key=lambda kv: kv[1])[:len(seen) // 2]:
+                        del seen[k]
+            seen[key] = now
             return True
+
+    def should_emit_observed(self, client_ip: str | None, matched: str, window_s: float = OBSERVED_DEDUP_S) -> bool:
+        """Deduplicates observed AI/IDE events per (client_ip, matched_domain) within window_s."""
+        return self._first_in_window(self._seen_observed, "deduped_observed", client_ip, matched, window_s)
+
+    def should_emit_allowed(self, client_ip: str | None, host: str, window_s: float = ALLOWED_DEDUP_S) -> bool:
+        """Deduplicates `log_urls` allowed SNI events per (client_ip, host) within window_s; a
+        browser opens many TLS connections per site, each would be one event (I-PROXY-30)."""
+        name = (host or "").strip().rstrip(".").lower()
+        return self._first_in_window(self._seen_allowed, "deduped_allowed", client_ip, name, window_s)
 
     def emit(self, **ev: Any) -> None:
         if isinstance(ev.get("client_ip"), str):
@@ -477,18 +504,49 @@ class EventShipper:
         try:
             self.q.put_nowait(ev)
         except queue.Full:
-            pass
+            with self._seen_lock:
+                self.stats["queue_full"] += 1
 
     def stop(self) -> None:
         self._stop.set()
         self._t.join(timeout=3)
+        self.write_stats()
+
+    @property
+    def stats_path(self) -> pathlib.Path:
+        return pathlib.Path(self.fallback).with_name("proxy-stats.json")
+
+    def write_stats(self) -> None:
+        """Writes the counters to proxy-stats.json (atomic, counts only, no hosts or IPs) and logs
+        events dropped because the queue was full since the last write."""
+        with self._seen_lock:
+            snap = dict(self.stats)
+        snap["queued"] = self.q.qsize()
+        snap["updated_at"] = int(time.time())
+        lost = snap["queue_full"] - self._logged_queue_full
+        if lost > 0:
+            log.warning("%d events dropped: event queue full (%d in total)", lost, snap["queue_full"])
+            self._logged_queue_full = snap["queue_full"]
+        f = self.stats_path
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f.name + ".tmp")
+            tmp.write_text(json.dumps(snap, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+            os.chmod(tmp, 0o644)
+            tmp.replace(f)
+        except OSError as e:
+            log.warning("cannot write %s (%s)", f, e)
 
     def _run(self) -> None:
         next_purge = 0.0
+        next_stats = time.monotonic() + STATS_INTERVAL_S
         while not self._stop.is_set():
             if time.monotonic() >= next_purge:
                 self.purge_spill()
                 next_purge = time.monotonic() + PURGE_INTERVAL_S
+            if time.monotonic() >= next_stats:
+                self.write_stats()
+                next_stats = time.monotonic() + STATS_INTERVAL_S
             batch: list[dict[str, Any]] = []
             try:
                 batch.append(self.q.get(timeout=1.0))

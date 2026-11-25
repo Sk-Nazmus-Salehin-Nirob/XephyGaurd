@@ -223,3 +223,40 @@ def test_compose_passes_retention_to_proxy():
     compose = (pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy" / "docker-compose.yml").read_text()
     proxy = re.search(r"\n  proxy:.*?(?=\n  \w)", compose, re.S).group(0)
     assert "XG_RETENTION_RAW_DAYS: ${XG_RETENTION_RAW_DAYS:-140}" in proxy
+
+
+def test_allowed_dedup_table_stays_bounded(shipper, monkeypatch):
+    monkeypatch.setattr(proxy_logic, "DEDUP_MAX_KEYS", 100)
+    for i in range(1000):
+        assert shipper.should_emit_allowed("192.168.10.30", f"h{i}.example") is True
+    assert len(shipper._seen_allowed) <= 100
+    assert shipper.should_emit_allowed("192.168.10.30", "h999.example") is False  # newest kept
+
+
+def test_full_queue_drops_are_counted_logged_and_written_to_stats(shipper, caplog):
+    import queue as _queue
+    shipper.q = _queue.Queue(maxsize=2)
+    for i in range(5):
+        shipper.emit(**_ev(i))
+    assert shipper.stats["queue_full"] == 3
+    shipper.should_emit_allowed("192.168.10.30", "a.example")
+    shipper.should_emit_allowed("192.168.10.30", "a.example")
+    shipper.should_emit_observed("192.168.10.30", "openai.com")
+    shipper.should_emit_observed("192.168.10.30", "openai.com")
+    with caplog.at_level("WARNING", logger="xg-proxy"):
+        shipper.write_stats()
+        shipper.write_stats()  # nothing new: no second warning
+    assert sum("3 events dropped: event queue full" in r.getMessage() for r in caplog.records) == 1
+    stats = json.loads(shipper.stats_path.read_text())
+    assert stats["queue_full"] == 3 and stats["deduped_allowed"] == 1 and stats["deduped_observed"] == 1
+    assert stats["queued"] == 2 and "spilled" in stats and "rejected" in stats
+    assert shipper.stats_path.name == "proxy-stats.json"
+    assert "192.168.10.30" not in shipper.stats_path.read_text()  # counts only
+
+
+def test_stop_writes_stats(tmp_path):
+    p = tmp_path / "proxy.json"
+    p.write_text("{}")
+    s = EventShipper(PolicyCache(p), fallback=str(tmp_path / "log" / "ev.jsonl"))
+    s.stop()
+    assert json.loads((tmp_path / "log" / "proxy-stats.json").read_text())["queue_full"] == 0

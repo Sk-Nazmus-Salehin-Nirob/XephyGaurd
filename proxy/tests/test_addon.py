@@ -312,3 +312,38 @@ def test_tls_clienthello_blocks_before_any_policy_loaded(addon, tmp_path):
     client, data = _hello("192.168.10.99", "example.com")
     addon.tls_clienthello(data)
     assert data.ignore_connection is True and client.id in addon.blocked_conns
+
+
+def test_tls_clienthello_dedups_allowed_sni_per_client_host_per_minute(addon, monkeypatch):
+    from mitmproxy import tls
+    from mitmproxy.proxy import context
+
+    from xg_netpolicy import proxy_logic
+
+    addon.cache.state.log_urls = {"enabled": True, "query": False}
+    emitted = []
+    addon.events.emit = lambda **kw: emitted.append(kw)
+    clock = [1000.0]
+    monkeypatch.setattr(proxy_logic.time, "monotonic", lambda: clock[0])
+
+    def send_sni(ip, sni):
+        client = tutils.tclient_conn() if hasattr(tutils, "tclient_conn") else tflow.tclient_conn()
+        client.peername = (ip, 40000)
+        data = tls.ClientHelloData(context.Context(client, None), tls.ClientHello(_client_hello_bytes(sni)))
+        addon.tls_clienthello(data)
+
+    for _ in range(5):  # a browser opens several TLS connections per page
+        send_sni("192.168.10.99", "example.com")
+    send_sni("::ffff:192.168.10.99", "EXAMPLE.com")  # same client and host
+    send_sni("192.168.10.98", "example.com")         # another client
+    send_sni("192.168.10.99", "example.org")         # another host
+    clock[0] += 59.0
+    send_sni("192.168.10.99", "example.com")
+    clock[0] += 1.5                                  # a minute after the first event
+    send_sni("192.168.10.99", "example.com")
+
+    got = [(e["client_ip"], e["host"]) for e in emitted]
+    assert got == [("192.168.10.99", "example.com"), ("192.168.10.98", "example.com"),
+                   ("192.168.10.99", "example.org"), ("192.168.10.99", "example.com")]
+    assert all(e["action"] == "allowed" for e in emitted)
+    assert addon.events.stats["deduped_allowed"] == 6
