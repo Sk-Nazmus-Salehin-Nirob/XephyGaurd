@@ -14,6 +14,11 @@ GROUPS = ("test", "block_ai", "isolated", "exempt")
 
 log = logging.getLogger("xg-netpolicy.state")
 
+# VPN/tunnel ports block_ai PCs may not reach through the gateway (I-PROXY-18), as "port/proto".
+# Same list as data/network/proxy.yaml `vpn_ports` (a test keeps them equal); used when the state
+# document has no usable `vpn_ports` (missing, not a list, or nothing valid left).
+VPN_PORTS_DEFAULTS = ["51820/udp", "1194/udp", "1194/tcp", "500/udp", "4500/udp", "1723/tcp", "22/tcp", "1701/udp"]
+
 
 @dataclass
 class State:
@@ -37,6 +42,8 @@ class State:
     log_urls: dict[str, Any] = field(default_factory=lambda: {"enabled": False, "query": False})
     events_url: str = ""
     events_token: str = ""
+    # "port/proto" (tcp|udp); validate() replaces a missing or unusable list with VPN_PORTS_DEFAULTS
+    vpn_ports: list[str] | None = None
     # entries dropped by validate() as "<where>: <entry> (<reason>)"; not read from the document
     skipped: list[str] = field(default_factory=list)
 
@@ -80,6 +87,7 @@ class State:
             if not isinstance(udm, list):
                 raise ValueError(f"udm14_clients must be a list, not {type(udm).__name__}")
             self.google = {**self.google, "udm14_clients": self._pc_ips("udm14_clients", udm, net)}
+        self.vpn_ports = self._vpn_ports(self.vpn_ports)
         for name in self.lan_if, self.wan_if:
             if not isinstance(name, str) or not name.replace("-", "").replace("_", "").replace(".", "").isalnum():
                 raise ValueError(f"bad interface name {name!r}")
@@ -106,6 +114,35 @@ class State:
             else:
                 kept.append(str(a))
         return kept
+
+    def _vpn_ports(self, entries: Any) -> list[str]:
+        """Canonical "port/proto" entries, de-duplicated in their order. A bad entry is dropped with
+        a warning; a missing list, a non-list or one with nothing valid left gives the defaults."""
+        if entries is None:
+            return list(VPN_PORTS_DEFAULTS)
+        if not isinstance(entries, list):
+            self.skipped.append(f"vpn_ports: {entries!r} (not a list)")
+            log.warning("vpn_ports is not a list (%s), using the built-in VPN ports", type(entries).__name__)
+            return list(VPN_PORTS_DEFAULTS)
+        kept: list[str] = []
+        for e in entries:
+            port, _, proto = e.strip().lower().partition("/") if isinstance(e, str) else ("", "", "")
+            if port.isascii() and port.isdigit() and 1 <= int(port) <= 65535 and proto in ("tcp", "udp"):
+                v = f"{int(port)}/{proto}"
+                if v not in kept:
+                    kept.append(v)
+            else:
+                self.skipped.append(f"vpn_ports: {e!r} (not port/tcp or port/udp)")
+                log.warning("vpn_ports: skipping %r, not port/tcp or port/udp", e)
+        if not kept:
+            log.warning("vpn_ports has no valid entry, using the built-in VPN ports")
+            return list(VPN_PORTS_DEFAULTS)
+        return kept
+
+    def vpn_port_numbers(self, proto: str) -> list[int]:
+        """Sorted port numbers of vpn_ports for "tcp" or "udp" (the vpn_<proto>_ports nft set)."""
+        ports = self.vpn_ports if self.vpn_ports is not None else VPN_PORTS_DEFAULTS
+        return sorted({int(p) for p, _, pr in (e.partition("/") for e in ports) if pr == proto})
 
     # -- derived views ------------------------------------------------------------------------
     def group_of(self, ip: str | None) -> str | None:

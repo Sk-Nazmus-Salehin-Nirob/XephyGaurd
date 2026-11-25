@@ -32,6 +32,8 @@ log = logging.getLogger("xg-netpolicy")
 
 # an nft set element as a collapsed network
 Net = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
+# a set's elements: collapsed networks (address sets) or sorted port numbers (vpn_*_ports)
+Elems = Union[list[Net], list[int]]
 
 
 def unbound_conf(s: State) -> str:
@@ -81,6 +83,13 @@ def nft_sets(s: State) -> str:
     lines.append("flush set inet xephyguard resolver_ips6")
     if v6:
         lines.append(f"add element inet xephyguard resolver_ips6 {{ {', '.join(v6)} }}")
+    for proto in ("tcp", "udp"):
+        # VPN/tunnel ports dropped for block_ai PCs in forward (I-PROXY-18)
+        name = f"vpn_{proto}_ports"
+        lines.append(f"flush set inet xephyguard {name}")
+        ports = s.vpn_port_numbers(proto)
+        if ports:
+            lines.append(f"add element inet xephyguard {name} {{ {', '.join(map(str, ports))} }}")
     return "\n".join(lines) + "\n"
 
 
@@ -143,13 +152,17 @@ def restricted_ips(s: State) -> set[str]:
     return set(s.groups.get("test", [])) | set(s.groups.get("isolated", []))
 
 
-def desired_sets(s: State) -> dict[str, list[Net]]:
-    """The elements sets.nft puts into each set, as collapsed networks (comparable with live_sets)."""
+def desired_sets(s: State) -> dict[str, Elems]:
+    """The elements sets.nft puts into each set, as collapsed networks or sorted ports
+    (comparable with live_sets)."""
     want: dict[str, list[Any]] = {f"{g}_clients": list(s.groups.get(g, [])) for g in GROUPS}
     nets = [ipaddress.ip_network(x, strict=False) for x in s.doh_ips]
     want["resolver_ips"] = [n for n in nets if n.version == 4]
     want["resolver_ips6"] = [n for n in nets if n.version == 6]
-    return {k: _collapse(v) for k, v in want.items()}
+    sets: dict[str, Elems] = {k: _collapse(v) for k, v in want.items()}
+    for proto in ("tcp", "udp"):
+        sets[f"vpn_{proto}_ports"] = s.vpn_port_numbers(proto)
+    return sets
 
 
 def _collapse(items: Iterable[Any]) -> list[Net]:
@@ -169,7 +182,19 @@ def _collapse(items: Iterable[Any]) -> list[Net]:
     return out
 
 
-def live_sets() -> dict[str, list[Net]] | None:
+def _ports(items: Iterable[Any]) -> list[int]:
+    """inet_service elements (ints, or {"range": [lo, hi]}) as sorted port numbers."""
+    ports: set[int] = set()
+    for x in items:
+        if isinstance(x, dict) and "range" in x:
+            lo, hi = (int(a) for a in x["range"])
+            ports.update(range(lo, hi + 1))
+        else:
+            ports.add(int(x))
+    return sorted(ports)
+
+
+def live_sets() -> dict[str, Elems] | None:
     """Elements of the sets in the running `table inet xephyguard`, or None when it can't be read
     (no nft, no table). Ranges/prefixes that nft merged are collapsed like desired_sets."""
     try:
@@ -177,13 +202,13 @@ def live_sets() -> dict[str, list[Net]] | None:
         if r.returncode:
             return None
         doc = json.loads(r.stdout)
-        sets: dict[str, list[Net]] = {}
+        sets: dict[str, Elems] = {}
         for obj in doc.get("nftables", []):
             st = obj.get("set") if isinstance(obj, dict) else None
             if st:
                 # elements with counters/timeouts come wrapped as {"elem": {"val": ...}}
                 el = [e["elem"]["val"] if isinstance(e, dict) and "elem" in e else e for e in st.get("elem", [])]
-                sets[st["name"]] = _collapse(el)
+                sets[st["name"]] = _ports(el) if st.get("type") == "inet_service" else _collapse(el)
         return sets
     except (FileNotFoundError, ValueError, KeyError, TypeError) as e:
         log.warning("could not read live nft sets: %s", e)

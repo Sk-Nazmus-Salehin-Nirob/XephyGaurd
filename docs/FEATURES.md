@@ -682,7 +682,8 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 - **Test:** 1. Start a Test session. 2. On the PC `nslookup chatgpt.com <ccc-ip>` is blocked.
 
 ### F66. nftables gateway rules
-- **What:** forwards lab traffic, redirects HTTP(S) to the proxy, blocks DoH/DoT IPs and VPN ports.
+- **What:** forwards lab traffic, redirects HTTP(S) to the proxy, blocks DoH/DoT IPs and QUIC, gives Test-mode PCs no forwarded egress, and drops VPN/tunnel ports (`vpn_ports` in `data/network/proxy.yaml`) for block_ai PCs only.
+  In `forward`, before the established accept, so an earlier tunnel stops too (`forward_drops_vpn_ports_for_block_ai_before_established`); `exempt_clients` is filled but no rule reads it. VPNs on 443/80 are not covered.
 - **Code:** `proxy/nftables/xephyguard.nft`, `xg_netpolicy` (`apply_skips_nft_in_proxy_only_or_without_table`).
 - **Status:** partly working (ruleset syntax checked in CI; never run on a real gateway).
 - **Test:** 1. On the CCC: `sudo nft list ruleset | grep xephyguard`.

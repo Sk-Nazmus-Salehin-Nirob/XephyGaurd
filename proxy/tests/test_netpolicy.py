@@ -441,7 +441,8 @@ def _live_json(sets):
     objs = [{"metainfo": {"version": "1.0.6", "json_schema_version": 1}},
             {"table": {"family": "inet", "name": "xephyguard", "handle": 7}}]
     for name, elem in sets.items():
-        st = {"family": "inet", "name": name, "table": "xephyguard", "type": "ipv4_addr", "handle": 1}
+        typ = "inet_service" if name.startswith("vpn_") else "ipv4_addr"
+        st = {"family": "inet", "name": name, "table": "xephyguard", "type": typ, "handle": 1}
         if elem:
             st["elem"] = elem
         objs.append({"set": st})
@@ -452,7 +453,8 @@ def _in_sync_sets():
     return {"test_clients": ["192.168.10.22", "192.168.10.21"], "block_ai_clients": ["192.168.10.30"],
             "isolated_clients": ["192.168.10.40"], "exempt_clients": [{"elem": {"val": "192.168.10.22"}}],
             "resolver_ips": [{"range": ["1.1.1.1", "1.1.1.1"]}, {"prefix": {"addr": "8.8.8.8", "len": 32}}],
-            "resolver_ips6": ["2001:4860:4860::8888"]}
+            "resolver_ips6": ["2001:4860:4860::8888"],
+            "vpn_tcp_ports": [1723, 22, 1194], "vpn_udp_ports": [51820, 1194, {"range": [500, 500]}, 4500, 1701]}
 
 
 def test_sets_out_of_sync_compares_live_elements(state_file, monkeypatch):
@@ -469,6 +471,11 @@ def test_sets_out_of_sync_compares_live_elements(state_file, monkeypatch):
     live = {k: [] for k in _in_sync_sets()}  # table reloaded by xephyguard.nft: sets empty
     assert generate.sets_out_of_sync(s)
     live = dict(_in_sync_sets(), test_clients=["192.168.10.21"])
+    assert generate.sets_out_of_sync(s)
+    live = dict(_in_sync_sets(), vpn_udp_ports=[51820])  # the port sets are compared too (Step 18)
+    assert generate.sets_out_of_sync(s)
+    live = _in_sync_sets()
+    del live["vpn_tcp_ports"]  # a ruleset from before Step 18 has no port sets
     assert generate.sets_out_of_sync(s)
 
     # no table / no nft: nothing to re-apply to
@@ -744,3 +751,67 @@ def test_state_network_mode_default_and_type_check(state_dict):
     assert State.from_dict({**doc, "network_mode": "proxy_only"}).network_mode == "proxy_only"
     with pytest.raises(ValueError, match="network_mode"):
         State.from_dict({**doc, "network_mode": 3})
+
+
+# -- Step 18 (I-PROXY-18): block_ai PCs may not reach VPN/tunnel ports; ports from data/ YAML --
+
+def test_builtin_vpn_ports_equal_data_yaml():
+    yaml = pytest.importorskip("yaml")
+    from xg_netpolicy.state import VPN_PORTS_DEFAULTS
+
+    seed = yaml.safe_load((pathlib.Path(__file__).resolve().parents[2] / "data/network/proxy.yaml").read_text())
+    assert seed["vpn_ports"] == VPN_PORTS_DEFAULTS
+    assert State.from_dict({"vpn_ports": seed["vpn_ports"]}).vpn_ports == VPN_PORTS_DEFAULTS
+
+
+def test_state_vpn_ports_defaults_and_bad_entries(state_dict, caplog):
+    from xg_netpolicy.state import VPN_PORTS_DEFAULTS
+
+    assert State.from_dict(state_dict).vpn_ports == VPN_PORTS_DEFAULTS  # today's state.json has none
+    for unusable in (None, "22/tcp", {"22": "tcp"}, [], ["nope", 5]):
+        assert State.from_dict(dict(state_dict, vpn_ports=unusable)).vpn_ports == VPN_PORTS_DEFAULTS, unusable
+    caplog.clear()
+    s = State.from_dict(dict(state_dict, vpn_ports=[" 51820/UDP ", "22/tcp", "22/tcp", "0/tcp", "65536/udp",
+                                                     "53/icmp", "x/tcp", "²/tcp", 1194, "8443"]))
+    assert s.vpn_ports == ["51820/udp", "22/tcp"]
+    assert s.vpn_port_numbers("tcp") == [22] and s.vpn_port_numbers("udp") == [51820]
+    assert len([r for r in caplog.records if "vpn_ports: skipping" in r.getMessage()]) == 7
+    assert len([x for x in s.skipped if x.startswith("vpn_ports:")]) == 7
+    assert State().vpn_port_numbers("tcp") == [22, 1194, 1723]  # not validated yet: defaults too
+
+
+def test_sets_nft_fills_vpn_port_sets(state_dict, tmp_path):
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps(state_dict))
+    out = tmp_path / "net"
+    generate.generate(state, out)
+    nft = (out / "sets.nft").read_text().splitlines()
+    i = nft.index("flush set inet xephyguard vpn_tcp_ports")
+    assert nft[i + 1] == "add element inet xephyguard vpn_tcp_ports { 22, 1194, 1723 }"
+    j = nft.index("flush set inet xephyguard vpn_udp_ports")
+    assert nft[j + 1] == "add element inet xephyguard vpn_udp_ports { 500, 1194, 1701, 4500, 51820 }"
+    # a list from the state replaces the built-in one; an emptied proto still flushes its set
+    state_dict["vpn_ports"] = ["443/udp"]
+    state.write_text(json.dumps(state_dict))
+    assert generate.generate(state, out)["nft"]
+    nft = (out / "sets.nft").read_text()
+    assert "flush set inet xephyguard vpn_tcp_ports\nflush set inet xephyguard vpn_udp_ports\n" in nft
+    assert nft.endswith("add element inet xephyguard vpn_udp_ports { 443 }\n")
+    assert generate.desired_sets(State.load(state))["vpn_udp_ports"] == [443]
+
+
+def test_forward_drops_vpn_ports_for_block_ai_before_established():
+    nft = (pathlib.Path(__file__).resolve().parents[2] / "proxy/nftables/xephyguard.nft").read_text()
+    assert "set vpn_tcp_ports    { type inet_service; }" in nft
+    assert "set vpn_udp_ports    { type inet_service; }" in nft
+    fwd = _nft_chain(nft, "forward")
+    est = fwd.index("ct state established,related accept")
+    for proto in ("tcp", "udp"):
+        rule = (f'iifname "@LAN_IF@" ip saddr @block_ai_clients {proto} dport @vpn_{proto}_ports '
+                'counter drop comment "block_ai: VPN/tunnel"')
+        assert fwd.index(rule) < est, rule
+    # Steps 3-4 order kept: test/isolated drops first, nothing accepted before the established rule
+    assert fwd.index('oifname "@LAN_IF@" ip daddr @test_clients counter drop') < fwd.index(rule)
+    assert not any(" accept" in ln for ln in fwd[:est])
+    # exempt_clients stays a filled set that no rule reads (documented in the ruleset)
+    assert not any("@exempt_clients" in ln for ln in nft.splitlines() if not ln.strip().startswith("#"))
