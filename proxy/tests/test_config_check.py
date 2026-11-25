@@ -77,3 +77,20 @@ def test_unbound_checkconf_accepts_generated_views(state_dict, tmp_path):
                     f'    include: "{(out / "unbound-xephyguard.conf").as_posix()}"\n')
     code, msg = _run_checker(["unbound-checkconf", str(main)])
     assert code == 0, msg
+
+
+def test_requirements_mitmproxy_range_matches_image_pin():
+    """I-PROXY-32: proxy/requirements.txt bounds mitmproxy below the next major after the image's
+    `FROM mitmproxy/mitmproxy:<major>`, so a local install can't pull a major the addon (tls,
+    server_hooks APIs) was never run against; the installed mitmproxy is in that range."""
+    import mitmproxy.version
+    pin = re.search(r"^FROM mitmproxy/mitmproxy:(\d+)\b", (ROOT / "ccc-deploy/docker/proxy.Dockerfile").read_text(), re.M)
+    assert pin, "proxy.Dockerfile no longer pins a mitmproxy major"
+    major = int(pin.group(1))
+    req = [ln.strip() for ln in (ROOT / "proxy/requirements.txt").read_text().splitlines() if ln.strip().startswith("mitmproxy")]
+    m = re.fullmatch(r"mitmproxy>=(\d+),<(\d+)", req[0]) if len(req) == 1 else None
+    assert m, f"expected one 'mitmproxy>=N,<M' line, got {req}"
+    low, high = int(m.group(1)), int(m.group(2))
+    assert low <= major and high == major + 1, (low, high, major)
+    installed = int(mitmproxy.version.VERSION.split(".")[0])
+    assert low <= installed < high, f"installed mitmproxy {mitmproxy.version.VERSION} outside >={low},<{high}"

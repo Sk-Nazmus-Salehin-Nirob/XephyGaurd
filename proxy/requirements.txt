@@ -1,1 +1,1 @@
-mitmproxy>=11
+mitmproxy>=11,<13
