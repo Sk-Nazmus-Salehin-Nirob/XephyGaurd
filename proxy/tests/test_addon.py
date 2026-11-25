@@ -274,3 +274,41 @@ def test_protocol_lists_every_emitted_action_and_layer():
     assert {a for a, _ in emitted} == doc_actions and {la for _, la in emitted} == doc_layers
     ctrl = (ROOT / "server/app/Http/Controllers/Internal/NetEventsController.php").read_text(encoding="utf-8")
     assert set(re.search(r"'events\.\*\.action' => 'required\|in:([\w,]+)'", ctrl)[1].split(",")) == doc_actions
+
+
+
+# -- Step 20 (I-PROXY-15): tls_clienthello always leaves a decision; an error blocks --
+
+def _hello(ip, sni):
+    from mitmproxy import tls
+    from mitmproxy.proxy import context
+
+    client = tflow.tclient_conn()
+    client.peername = (ip, 40002)
+    return client, tls.ClientHelloData(context.Context(client, None), tls.ClientHello(_client_hello_bytes(sni)))
+
+
+def test_tls_clienthello_fails_closed_on_error(addon, monkeypatch, caplog):
+    import asyncio
+
+    def boom(ip, sni):
+        raise TypeError("broken policy")
+
+    monkeypatch.setattr(addon.cache, "decide_tls", boom)
+    client, data = _hello("192.168.10.99", "example.com")
+    addon.tls_clienthello(data)
+    assert data.ignore_connection is True and client.id in addon.blocked_conns
+    assert "tls_clienthello failed, blocking the connection" in caplog.text
+    up = _server_data("192.168.10.99", ("93.184.215.14", 443))
+    up.client = client
+    asyncio.run(addon.server_connect(up))
+    assert up.server.error == "blocked by XephyGuard"
+
+
+def test_tls_clienthello_blocks_before_any_policy_loaded(addon, tmp_path):
+    from xg_netpolicy.proxy_logic import PolicyCache
+
+    addon.cache = PolicyCache(tmp_path / "missing.json")
+    client, data = _hello("192.168.10.99", "example.com")
+    addon.tls_clienthello(data)
+    assert data.ignore_connection is True and client.id in addon.blocked_conns

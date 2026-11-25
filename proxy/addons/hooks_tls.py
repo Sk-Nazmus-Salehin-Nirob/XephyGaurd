@@ -21,6 +21,16 @@ class TlsHooks:
 
     # ---------------------------------------------------------------- TLS (no decryption needed)
     def tls_clienthello(self, data: tls.ClientHelloData) -> None:
+        """Always leaves a decision: an error anywhere below blocks the connection (fail closed,
+        I-PROXY-15) instead of letting mitmproxy intercept it with no policy applied."""
+        try:
+            self._tls_clienthello(data)
+        except Exception:
+            log.exception("tls_clienthello failed, blocking the connection")
+            data.ignore_connection = True
+            self.blocked_conns.add(data.context.client.id)
+
+    def _tls_clienthello(self, data: tls.ClientHelloData) -> None:
         assert self.cache and self.events
         client = data.context.client
         ip = client.peername[0] if client.peername else None

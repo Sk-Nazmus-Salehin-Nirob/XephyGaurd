@@ -126,14 +126,21 @@ class TlsDecision:
     reason: str = ""
 
 
+NO_POLICY = "no valid proxy policy loaded yet"
+
+
 class PolicyCache:
-    """Hot-reloads proxy.json (checked at most every `interval` seconds)."""
+    """Hot-reloads proxy.json (checked at most every `interval` seconds). A document that can't be
+    read, parsed or validated never replaces the last good policy (I-PROXY-15). Until one valid
+    policy has loaded (`loaded`), every TLS and HTTP decision is "block" (fail closed)."""
 
     def __init__(self, path: str | pathlib.Path, interval: float = 2.0) -> None:
         self.path = pathlib.Path(path)
         self.interval = interval
         self._mtime = 0.0
+        self._failed_mtime: float | None = None  # mtime of a document that failed to load (logged once)
         self._checked = 0.0
+        self.loaded = False
         self.state = State()
         self._blocked: dict[str | None, DomainSet] = {}
         self._inspect = InspectHosts()
@@ -151,23 +158,37 @@ class PolicyCache:
         self._checked = now
         try:
             m = self.path.stat().st_mtime
-        except FileNotFoundError:
-            return
-        if not force and m == self._mtime:
+        except OSError:
+            return  # not written yet (or unreadable dir): keep the current policy, check again later
+        if not force and m in (self._mtime, self._failed_mtime):
             return
         try:
-            self.state = State.from_dict(json.loads(self.path.read_text()))
-        except (ValueError, json.JSONDecodeError) as e:
-            log.error("proxy policy %s invalid, keeping previous: %s", self.path, e)
+            text = self.path.read_text()
+        except OSError as e:
+            # e.g. replaced between stat and read: transient, so retried at the next check
+            log.warning("proxy policy %s unreadable, keeping previous: %s", self.path, e)
             return
-        self._mtime = m
+        try:
+            state = State.from_dict(json.loads(text))
+            # build every derived view before swapping, so a failure leaves no half-updated policy
+            derived = (InspectHosts.of(state.inspect_hosts),
+                       DomainSet.of(state.categories.get("ai", [])), DomainSet.of(state.categories.get("ide", [])),
+                       PathRules.of(state.path_rules.get("ai", [])), PathRules.of(state.path_rules.get("ide", [])),
+                       search_ai_signatures(state.google))
+        except Exception as e:  # ValueError, TypeError, AttributeError, KeyError, RecursionError, ...
+            if m != self._failed_mtime:
+                log.error("proxy policy %s invalid, keeping %s: %s: %s", self.path,
+                          f"v{self.state.version}" if self.loaded else "fail-closed (no policy loaded yet)",
+                          type(e).__name__, e)
+            self._failed_mtime = m
+            return
+        self.state = state
+        (self._inspect, self._ai_doms, self._ide_doms, self._ai_paths, self._ide_paths,
+         self.search_ai) = derived
         self._blocked = {}
-        self._inspect = InspectHosts.of(self.state.inspect_hosts)
-        self._ai_doms = DomainSet.of(self.state.categories.get("ai", []))
-        self._ide_doms = DomainSet.of(self.state.categories.get("ide", []))
-        self._ai_paths = PathRules.of(self.state.path_rules.get("ai", []))
-        self._ide_paths = PathRules.of(self.state.path_rules.get("ide", []))
-        self.search_ai = search_ai_signatures(self.state.google)
+        self._mtime = m
+        self._failed_mtime = None
+        self.loaded = True
         log.info("proxy policy v%s loaded", self.state.version)
 
     def blocked(self, group: str | None) -> DomainSet:
@@ -198,6 +219,8 @@ class PolicyCache:
     # -- decisions ------------------------------------------------------------------------------
     def decide_tls(self, client_ip: str | None, sni: str | None) -> TlsDecision:
         self.reload()
+        if not self.loaded:
+            return TlsDecision("block", "no_policy", sni, NO_POLICY)
         group = self.state.group_of(client_ip)
         if group == "isolated":
             return TlsDecision("block", "isolated", sni, "PC is isolated")
@@ -218,6 +241,8 @@ class PolicyCache:
     def decide_http(self, client_ip: str | None, host: str, path: str) -> TlsDecision:
         """For plaintext HTTP and for inspected HTTPS requests."""
         self.reload()
+        if not self.loaded:
+            return TlsDecision("block", "no_policy", host, NO_POLICY)
         group = self.state.group_of(client_ip)
         if group == "isolated":
             return TlsDecision("block", "isolated", host, "PC is isolated")

@@ -815,3 +815,75 @@ def test_forward_drops_vpn_ports_for_block_ai_before_established():
     assert not any(" accept" in ln for ln in fwd[:est])
     # exempt_clients stays a filled set that no rule reads (documented in the ruleset)
     assert not any("@exempt_clients" in ln for ln in nft.splitlines() if not ln.strip().startswith("#"))
+
+
+# -- Step 20 (I-PROXY-15): reload never replaces the last good policy; no policy yet = fail closed --
+
+def _rewrite(path, text, mtime):
+    import os
+
+    path.write_text(text)
+    os.utime(path, (mtime, mtime))
+
+
+@pytest.mark.parametrize("bad", ["[]", "{not json", '"policy"', '{"groups": null}', '{"categories": {"ai": 5}}',
+                                 '{"path_rules": {"ai": 7}}', '{"inspect_hosts": 3}', '{"google": []}',
+                                 '{"categories": []}'])  # type checks of scalars (lab_subnet: 12): Step 22
+def test_policy_reload_keeps_last_good_on_any_error(state_file, tmp_path, caplog, bad):
+    out = tmp_path / "net"
+    generate.generate(state_file, out)
+    pj = out / "proxy.json"
+    _rewrite(pj, pj.read_text(), 1_000_000)
+    c = PolicyCache(pj)
+    assert c.loaded and c.state.version == 5
+    assert c.decide_tls("192.168.10.21", "chatgpt.com").action == "block"
+    caplog.clear()
+    _rewrite(pj, bad, 1_000_100)
+    c.reload(force=True)
+    c.reload(force=True)
+    assert c.loaded and c.state.version == 5  # previous policy kept, still enforced
+    assert c.decide_tls("192.168.10.21", "chatgpt.com").action == "block"
+    assert c.decide_tls("192.168.10.21", "example.com").action == "pass"
+    assert c.decide_http("192.168.10.21", "huggingface.co", "/chat").action == "block"
+    errors = [r for r in caplog.records if "invalid, keeping v5" in r.getMessage()]
+    assert len(errors) == 1  # the same broken document is logged (and parsed) once
+
+
+def test_policy_fails_closed_until_a_valid_policy_loads(state_file, tmp_path):
+    out = tmp_path / "net"
+    pj = out / "proxy.json"
+    c = PolicyCache(pj, interval=0)  # not written yet
+    assert not c.loaded
+    for ip in ("192.168.10.21", "192.168.10.22", "192.168.10.99", None):
+        d = c.decide_tls(ip, "example.com")
+        assert (d.action, d.category) == ("block", "no_policy"), ip
+        assert c.decide_http(ip, "example.com", "/").action == "block"
+    out.mkdir()
+    _rewrite(pj, '{"groups": []}', 1_000_000)  # invalid first document: still closed
+    assert c.decide_tls("192.168.10.99", "example.com").action == "block" and not c.loaded
+    generate.generate(state_file, out)
+    _rewrite(pj, pj.read_text(), 1_000_100)
+    assert c.decide_tls("192.168.10.99", "example.com").action == "pass" and c.loaded
+    assert c.decide_tls("192.168.10.21", "chatgpt.com").action == "block"
+
+
+def test_policy_reload_retries_unreadable_file(state_file, tmp_path, monkeypatch, caplog):
+    out = tmp_path / "net"
+    generate.generate(state_file, out)
+    pj = out / "proxy.json"
+    c = PolicyCache(pj)
+    doc = json.loads(pj.read_text())
+    _rewrite(pj, json.dumps(dict(doc, version=6)), 1_000_100)
+    real = pathlib.Path.read_text
+
+    def flaky(self, *a, **kw):
+        raise PermissionError("replaced mid-read")
+
+    monkeypatch.setattr(pathlib.Path, "read_text", flaky)
+    c.reload(force=True)
+    assert c.state.version == 5 and "unreadable, keeping previous" in caplog.text
+    monkeypatch.setattr(pathlib.Path, "read_text", real)
+    c.reload()  # same mtime, not marked as failed: read again at the next check
+    c._checked = 0.0
+    c.reload()
+    assert c.state.version == 6
