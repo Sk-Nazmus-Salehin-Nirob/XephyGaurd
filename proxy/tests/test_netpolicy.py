@@ -1304,3 +1304,27 @@ def test_precomputed_lookups_keep_first_match_order():
     s.categories = {"vpn": ["example.com"]}
     s.validate()
     assert s.category_of("example.com") == "vpn"
+
+
+def test_path_rule_hosts_are_inspected_for_their_group(state_file, state_dict, tmp_path):
+    """I-PROXY-17: a rule host missing from inspect_hosts (hf.co/chat, aws.amazon.com/q) is still
+    decrypted for a group whose rules name it, so the rule applies over HTTPS. Exact host only, never
+    a NEVER_INSPECT host, never for a group the rule does not apply to."""
+    state_dict["path_rules"] = {"ai": ["hf.co/chat", "huggingface.co/chat", "accounts.google.com/x"],
+                                "ide": ["aws.amazon.com/q"]}
+    state_file.write_text(json.dumps(state_dict))
+    generate.generate(state_file, tmp_path / "net")
+    c = PolicyCache(tmp_path / "net" / "proxy.json")
+    test, block_ai, exempt, none = "192.168.10.21", "192.168.10.30", "192.168.10.22", "192.168.10.99"
+    for host in ("hf.co", "HF.CO.", "aws.amazon.com"):
+        d = c.decide_tls(test, host)
+        assert (d.action, d.reason) == ("inspect", "path rule host"), host
+    assert c.decide_http(test, "hf.co", "/chat/x").action == "block"
+    assert c.decide_http(test, "aws.amazon.com", "/q").category == "ide"
+    assert c.decide_tls(block_ai, "hf.co").action == "inspect"
+    assert c.decide_tls(block_ai, "aws.amazon.com").action == "pass"     # ide rules don't apply to block_ai
+    for ip in (exempt, none):
+        assert c.decide_tls(ip, "hf.co").action == "pass", ip
+    for host in ("cdn.hf.co", "console.aws.amazon.com", "amazon.com", "accounts.google.com", "hf.co.evil.net"):
+        assert c.decide_tls(test, host).action == "pass", host
+    assert c.decide_tls(test, "huggingface.co").reason == "selective inspection host"   # already listed

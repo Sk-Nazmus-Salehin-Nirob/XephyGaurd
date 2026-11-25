@@ -18,7 +18,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from .domains import DomainSet, InspectHosts, PathRules
+from .domains import DomainSet, InspectHosts, PathRules, never_inspect
 from .state import GROUPS, State
 
 log = logging.getLogger("xg-proxy")
@@ -240,11 +240,15 @@ class PolicyCache:
         hit = self.blocked(group).matches(sni)
         if hit:
             return TlsDecision("block", self.state.category_of(hit), hit, "domain blocklist")
+        restricted = group in ("test", "block_ai")
         if (
-            group in ("test", "block_ai")
-            or (self.wants_google_rewrite(client_ip) and self.search_ai.is_search_host(sni))
+            restricted or (self.wants_google_rewrite(client_ip) and self.search_ai.is_search_host(sni))
         ) and self._inspect.matches(sni):
             return TlsDecision("inspect", reason="selective inspection host")
+        # a host named by one of the group's own path rules (hf.co/chat, aws.amazon.com/q) is
+        # inspected too, else its rule could never apply over HTTPS (I-PROXY-17); exact host only
+        if restricted and not never_inspect(sni) and self.state.path_rules_for_group(group).has_rule_host(sni):
+            return TlsDecision("inspect", reason="path rule host")
         return TlsDecision("pass")
 
     def decide_http(self, client_ip: str | None, host: str, path: str) -> TlsDecision:

@@ -136,6 +136,11 @@ class InspectHosts:
 _NEVER = DomainSet(set(NEVER_INSPECT))
 
 
+def never_inspect(host: str | None) -> bool:
+    """True for NEVER_INSPECT hosts and their subdomains."""
+    return bool(host) and _NEVER.matches(host) is not None
+
+
 def normalize_path(path: str) -> str:
     """Request path as an origin is likely to read it, for path-rule matching (I-PROXY-16): no query
     or fragment, percent-decoded (repeated until stable, at most 3 times, so `%2563` is caught too),
@@ -191,3 +196,8 @@ class PathRules:
                     best = (pos, f"{rh}{rp}")
                     break   # later entries of this host come after pos
         return best[1] if best else None
+
+    def has_rule_host(self, host: str | None) -> bool:
+        """True when host is exactly a rule host (I-PROXY-17: such a host is inspected for the
+        group so its rules can apply; its subdomains are not, as with inspect_hosts)."""
+        return bool(host) and host.lower().rstrip(".") in self._by_host

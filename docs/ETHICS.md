@@ -41,7 +41,9 @@ Live view pointer position (screen Step 34): two numbers (x, y), up to 30 per se
 The CCC filters websites by host name without decrypting them. Only for PCs in a Test or AI-blocking session, and
 only for the exact search hosts in the lab's list (by default Google, Bing, Hugging Face, DuckDuckGo and Brave Search
 pages, `data/network/proxy.yaml`), the proxy decrypts the page to switch off AI summaries and block AI paths. Sub-sites
-of those hosts are not decrypted unless the lab adds them on purpose. Sign-in, mail, document, calendar and chat hosts
+of those hosts are not decrypted unless the lab adds them on purpose. A host named by one of the session's blocked-path
+rules (for example hf.co for `hf.co/chat`, aws.amazon.com for `aws.amazon.com/q` in Test mode) is decrypted as well, that exact host
+only, so the rule can block the path. Sign-in, mail, document, calendar and chat hosts
 (for example accounts.google.com, mail.google.com, docs.google.com, login.live.com, outlook.office.com) are never
 decrypted, even if the list asks for them. Nothing from a decrypted page is stored except what the table above lists.
 
