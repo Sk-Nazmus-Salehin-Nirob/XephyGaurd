@@ -21,5 +21,7 @@ class ShipperHooks:
                 self.events = EventShipper(self.cache, ctx.options.xg_events_fallback)
 
     def done(self) -> None:
+        if hasattr(self, "stop_live"):
+            self.stop_live()
         if self.events:
             self.events.stop()

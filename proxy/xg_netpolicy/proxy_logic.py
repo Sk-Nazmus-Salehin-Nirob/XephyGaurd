@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import itertools
 import json
 import logging
 import os
@@ -128,6 +129,7 @@ class TlsDecision:
 
 
 NO_POLICY = "no valid proxy policy loaded yet"
+_LOADS = itertools.count(1)  # PolicyCache.generation: unique per successful load, across instances
 
 
 class PolicyCache:
@@ -142,6 +144,7 @@ class PolicyCache:
         self._failed_mtime: float | None = None  # mtime of a document that failed to load (logged once)
         self._checked = 0.0
         self.loaded = False
+        self.generation = 0     # changes on every successful load (live connections are rechecked, I-PROXY-22)
         self.state = State()
         self._blocked: dict[str | None, DomainSet] = {}
         self._inspect = InspectHosts()
@@ -190,6 +193,7 @@ class PolicyCache:
         self._mtime = m
         self._failed_mtime = None
         self.loaded = True
+        self.generation = next(_LOADS)
         log.info("proxy policy v%s loaded", self.state.version)
 
     def blocked(self, group: str | None) -> DomainSet:
@@ -254,6 +258,18 @@ class PolicyCache:
         if rule:
             return TlsDecision("block", "ai", rule, "path rule")
         return TlsDecision("pass")
+
+    def recheck_live(self, live: dict[str, tuple[str | None, str | None, str]]) -> list[str]:
+        """Ids of live TLS connections ({id: (client_ip, sni, action at ClientHello)}) whose decision
+        tightened under the current policy (I-PROXY-22): now "block", or now "inspect" while passed
+        through. Closing them makes the client reconnect and get the new decision. A decision that
+        loosened (e.g. inspect -> pass after a session ends) keeps its connection."""
+        out = []
+        for cid, (ip, sni, old) in list(live.items()):
+            new = self.decide_tls(ip, sni).action
+            if new != old and new in ("block", "inspect"):
+                out.append(cid)
+        return out
 
     def records_observed(self, client_ip: str | None) -> bool:
         """`observed` AI/IDE events are recorded only with `log_urls` on and for a PC in a running

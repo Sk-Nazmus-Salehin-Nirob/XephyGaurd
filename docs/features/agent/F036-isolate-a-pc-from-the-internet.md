@@ -17,5 +17,8 @@
 - **Code:** `SessionController::isolate`, `SessionManager::isolate`; agent `isolate_notice` +
   policy `isolate`; Linux `A/platform/linux/network_isolator.cpp` (nft via `popen`), Windows
   `A/platform/windows/isolator_win.cpp`.
+- **Gateway proxy:** an isolated PC is in the `isolated` group of `proxy.json`; besides refusing new
+  connections, the proxy closes the PC's TLS connections that were already open when it was isolated
+  (`proxy/addons/hooks_live.py`, within about 2 s of the new policy, I-PROXY-22; see F67).
 - **Status:** working on Linux (`isolate cuts the Internet (LAN + CCC kept)…`); Windows unclear.
 - **Test:** 1. Isolate a PC. 2. On it, `curl https://example.com` fails and the CCC page still loads.

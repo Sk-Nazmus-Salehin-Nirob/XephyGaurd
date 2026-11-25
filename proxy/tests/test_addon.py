@@ -268,7 +268,7 @@ def test_addon_hooks_split_into_modules_and_load_as_script():
     a = mod.addons[0]
     where = {"load": "hooks_shipper", "configure": "hooks_shipper", "done": "hooks_shipper",
              "tls_clienthello": "hooks_tls", "server_connect": "hooks_tls", "client_disconnected": "hooks_tls",
-             "request": "hooks_http", "response": "hooks_http"}
+             "request": "hooks_http", "response": "hooks_http", "running": "hooks_live"}
     for hook, module in where.items():
         assert getattr(type(a), hook).__module__ == module, hook
     assert a.cache is None and a.events is None and a.blocked_conns == set()
@@ -380,3 +380,84 @@ def test_tls_clienthello_dedups_allowed_sni_per_client_host_per_minute(addon, mo
                    ("192.168.10.99", "example.org"), ("192.168.10.99", "example.com")]
     assert all(e["action"] == "allowed" for e in emitted)
     assert addon.events.stats["deduped_allowed"] == 6
+
+
+# -- Step 30 (I-PROXY-22): a new policy closes live connections it now blocks or inspects --
+
+def _repolicy(addon, state_file, tmp_path, **groups):
+    import json
+
+    d = json.loads(state_file.read_text())
+    d["groups"].update(groups)
+    d["version"] += 1
+    state_file.write_text(json.dumps(d))
+    generate.generate(state_file, tmp_path / "net")
+    addon.cache.reload(force=True)
+
+
+class _Handler:
+    def __init__(self):
+        self.client = object()
+        self.closed = []
+
+    def close_connection(self, conn):
+        self.closed.append(conn)
+
+
+def test_policy_change_closes_tightened_live_connections(addon, state_file, tmp_path):
+    passed = _send_sni(addon, "192.168.10.99", "claude.ai")            # unassigned PC: passed through
+    inspected = _send_sni(addon, "192.168.10.30", "huggingface.co")    # block_ai: inspected
+    other = _send_sni(addon, "192.168.10.99", "example.org")           # stays allowed
+    ids = {n: d.context.client.id for n, d in (("p", passed), ("i", inspected), ("o", other))}
+    assert set(addon.live_conns) == set(ids.values())
+    handlers = {cid: _Handler() for cid in ids.values()}
+    addon._handler = handlers.get
+    assert addon.check_live() == []                    # first check: same decisions, nothing closed
+    assert addon.check_live() == []                    # no new policy: not rechecked
+    # session starts for .99 (block_ai), .30 is isolated
+    _repolicy(addon, state_file, tmp_path, block_ai=["192.168.10.99"], isolated=["192.168.10.40", "192.168.10.30"])
+    assert sorted(addon.check_live()) == sorted([ids["p"], ids["i"]])
+    assert handlers[ids["p"]].closed == [handlers[ids["p"]].client] and handlers[ids["i"]].closed
+    assert handlers[ids["o"]].closed == [] and set(addon.live_conns) == {ids["o"]}
+
+
+def test_policy_change_inspect_for_passed_connection_and_loosened_kept(addon, state_file, tmp_path):
+    passed = _send_sni(addon, "192.168.10.99", "huggingface.co")       # unassigned: passed
+    inspected = _send_sni(addon, "192.168.10.30", "huggingface.co")    # block_ai: inspected
+    handlers = {d.context.client.id: _Handler() for d in (passed, inspected)}
+    addon._handler = handlers.get
+    addon.check_live()
+    _repolicy(addon, state_file, tmp_path, block_ai=["192.168.10.99"])  # .99 now inspected
+    assert addon.check_live() == [passed.context.client.id]
+    # .30 becomes exempt: inspect -> pass loosens, the connection is kept
+    _repolicy(addon, state_file, tmp_path, block_ai=["192.168.10.99"], exempt=["192.168.10.22", "192.168.10.30"])
+    assert addon.check_live() == [] and inspected.context.client.id in addon.live_conns
+
+
+def test_live_connection_forgotten_on_disconnect_and_missing_handler(addon, state_file, tmp_path):
+    d = _send_sni(addon, "192.168.10.99", "claude.ai")
+    addon.client_disconnected(d.context.client)
+    assert addon.live_conns == {}
+    d = _send_sni(addon, "192.168.10.99", "claude.ai")
+    addon._handler = lambda cid: None                  # already gone in mitmproxy: logged, not raised
+    addon.check_live()
+    _repolicy(addon, state_file, tmp_path, isolated=["192.168.10.40", "192.168.10.99"])
+    assert addon.check_live() == [d.context.client.id] and addon.live_conns == {}
+
+
+def test_blocked_connection_not_tracked_as_live(addon):
+    _send_sni(addon, "192.168.10.21", "claude.ai")
+    assert addon.live_conns == {}
+
+
+def test_live_close_uses_existing_mitmproxy_api():
+    """hooks_live closes via Proxyserver.connections[client.id].close_connection(handler.client)."""
+    import inspect
+
+    from mitmproxy.addons.proxyserver import Proxyserver
+    from mitmproxy.proxy import mode_servers, server
+
+    assert Proxyserver().connections == {}
+    assert "register_connection(handler.layer.context.client.id" in inspect.getsource(mode_servers)
+    assert "self.client = context.client" in inspect.getsource(server.ConnectionHandler.__init__)
+    assert list(inspect.signature(server.ConnectionHandler.close_connection).parameters)[:2] == ["self", "connection"]

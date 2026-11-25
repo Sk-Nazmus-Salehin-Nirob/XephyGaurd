@@ -18,6 +18,7 @@ class TlsHooks:
     cache: PolicyCache | None
     events: EventShipper | None
     blocked_conns: set[str]
+    live_conns: dict[str, tuple[str | None, str | None, str]]
 
     # ---------------------------------------------------------------- TLS (no decryption needed)
     def tls_clienthello(self, data: tls.ClientHelloData) -> None:
@@ -53,6 +54,8 @@ class TlsHooks:
                 elif self.cache.state.log_urls.get("enabled") and self.events.should_emit_allowed(ip, sni):
                     self.events.emit(client_ip=ip, host=sni, layer="sni", action="allowed")
         # "inspect": let mitmproxy intercept with the lab CA
+        if d.action in ("pass", "inspect"):
+            self.live_conns[client.id] = (ip, sni, d.action)   # rechecked on a policy change (I-PROXY-22)
 
     async def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
         if data.client.id in self.blocked_conns:
@@ -96,3 +99,4 @@ class TlsHooks:
 
     def client_disconnected(self, client) -> None:
         self.blocked_conns.discard(client.id)
+        self.live_conns.pop(client.id, None)
