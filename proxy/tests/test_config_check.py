@@ -56,7 +56,7 @@ def _run_checker(cmd):
 def test_nft_accepts_ruleset_with_generated_sets(state_dict, tmp_path):
     out = _generated(state_dict, tmp_path)
     combined = tmp_path / "xephyguard-with-sets.nft"
-    combined.write_text(_ruleset(state_dict) + "\n" + (out / "sets.nft").read_text())
+    combined.write_text(_ruleset(state_dict) + "\n" + (out / "sets.nft").read_text() + (out / "resolver-sets.nft").read_text())
     code, msg = _run_checker(["nft", "-c", "-f", str(combined)])
     assert code == 0, msg
 

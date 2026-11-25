@@ -1,7 +1,7 @@
 #!/usr/sbin/nft -f
 # XephyGuard gateway ruleset (gateway mode). Rendered by ccc-deploy/install.sh which replaces
 # @LAN_IF@, @WAN_IF@, @CCC_IP@, @LAB_SUBNET@, @PROXY_PORT@ and @AGENT_PORT@.
-# Set *elements* are updated at runtime by xg_netpolicy (sets.nft); the rules below are static.
+# Set *elements* are updated at runtime by xg_netpolicy (sets.nft, resolver-sets.nft); the rules below are static.
 #
 # Layers (cheapest first):
 #   1. all lab DNS is forced to the CCC resolver (Unbound with per-client views)

@@ -174,7 +174,8 @@ def test_generate_outputs(state_file, tmp_path):
     assert "githubcopilot.com" not in block_ai_view
     nft = (out / "sets.nft").read_text()
     assert "add element inet xephyguard test_clients { 192.168.10.21 }" in nft
-    assert "resolver_ips6 { 2001:4860:4860::8888 }" in nft
+    assert "resolver_ips" not in nft                              # own transaction (Step 23 follow-up)
+    assert "resolver_ips6 { 2001:4860:4860::8888 }" in (out / "resolver-sets.nft").read_text()
     proxy = json.loads((out / "proxy.json").read_text())
     assert proxy["version"] == 5
     # unchanged input -> nothing rewritten
@@ -1050,7 +1051,7 @@ def test_unbound_config_is_checked_before_it_replaces_the_old_one(state_file, st
     assert generate.generate(state_file, out)["unbound"] is True
     good = (out / "unbound-xephyguard.conf").read_text()
     assert calls == [["/usr/sbin/unbound-checkconf", str(out / "unbound-xephyguard.conf.check.main")]]
-    assert sorted(f.name for f in out.iterdir()) == ["proxy.json", "sets.nft", "unbound-xephyguard.conf"]
+    assert sorted(f.name for f in out.iterdir()) == ["proxy.json", "resolver-sets.nft", "sets.nft", "unbound-xephyguard.conf"]
 
     # a rejected config keeps the old file, is not reloaded, and the nft/proxy files still update
     verdict["code"] = 1
@@ -1059,7 +1060,7 @@ def test_unbound_config_is_checked_before_it_replaces_the_old_one(state_file, st
         changed = generate.generate(state_file, out)
     assert changed == {"unbound": False, "nft": True, "proxy": True}
     assert (out / "unbound-xephyguard.conf").read_text() == good
-    assert sorted(f.name for f in out.iterdir()) == ["proxy.json", "sets.nft", "unbound-xephyguard.conf"]
+    assert sorted(f.name for f in out.iterdir()) == ["proxy.json", "resolver-sets.nft", "sets.nft", "unbound-xephyguard.conf"]
     assert "unbound-checkconf rejected the generated config, keeping the previous one: syntax error line 3" in caplog.text
     calls.clear()
     generate.apply(out, changed, network_mode="proxy_only")
@@ -1085,11 +1086,43 @@ def test_unbound_check_skipped_with_one_warning_without_binary(state_file, state
 
 # -- Step 23 (I-PROXY-14): doh_ips collapsed; a failed nft -f is a health flag, not only a log line --
 
+def test_failing_resolver_sets_do_not_keep_group_sets_old(state_file, tmp_path, monkeypatch):
+    """Step 23 follow-up (I-PROXY-14): resolver_ips/resolver_ips6 load in their own nft -f after
+    sets.nft, so nft rejecting the resolver list leaves the group sets updated, the conntrack flush
+    still runs, and health.json names the failing file."""
+    out = tmp_path / "net"
+    changed = generate.generate(state_file, out)
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        if cmd[:2] == ["nft", "-f"] and cmd[2].endswith("resolver-sets.nft"):
+            return _Res(1, "", "Error: Could not process rule: File exists")
+        return _Res(0)
+
+    monkeypatch.setattr(generate, "_nft_table_present", lambda: True)
+    monkeypatch.setattr(generate.subprocess, "run", fake_run)
+    generate.apply(out, changed, network_mode="gateway", flush_ips={"192.168.10.21"})
+    nft = [c for c in calls if c[:2] == ["nft", "-f"]]
+    assert nft == [["nft", "-f", str(out / "sets.nft")], ["nft", "-f", str(out / "resolver-sets.nft")]]   # groups first
+    assert ["conntrack", "-D", "-s", "192.168.10.21"] in calls      # group sets are in place
+    h = json.loads((out / "health.json").read_text())
+    assert h["nft_ok"] is False and h["nft_error"] == "resolver-sets.nft: Error: Could not process rule: File exists"
+    assert "resolver_ips" not in (out / "sets.nft").read_text()
+    assert "test_clients" not in (out / "resolver-sets.nft").read_text()
+    # a doh_ips-only change rewrites resolver-sets.nft alone and still reports a change to apply
+    doc = json.loads(state_file.read_text())
+    state_file.write_text(json.dumps(dict(doc, doh_ips=["9.9.9.9"])))
+    before = (out / "sets.nft").read_text()
+    assert generate.generate(state_file, out)["nft"] is True
+    assert (out / "sets.nft").read_text() == before and "9.9.9.9" in (out / "resolver-sets.nft").read_text()
+
+
 def test_sets_nft_collapses_overlapping_resolver_ips(state_dict):
     doc = dict(state_dict, doh_ips=["45.90.28.0/24", "45.90.28.1", "8.8.8.8", "8.8.8.8", "8.8.4.0/25", "8.8.4.128/25",
                                     "2001:4860:4860::8888", "2001:4860:4860::/48", "1.1.1.1"])
     s = State.from_dict(doc)
-    nft = generate.nft_sets(s)
+    nft = generate.nft_resolver_sets(s)
     assert "add element inet xephyguard resolver_ips { 1.1.1.1, 8.8.4.0/24, 8.8.8.8, 45.90.28.0/24 }" in nft
     assert "add element inet xephyguard resolver_ips6 { 2001:4860:4860::/48 }" in nft
     # the resync check compares the same collapsed elements, so it does not re-apply forever
@@ -1113,8 +1146,9 @@ def test_apply_writes_nft_health_flag(state_file, tmp_path, monkeypatch, caplog)
 
     with caplog.at_level("ERROR", logger="xg-netpolicy"):
         generate.apply(out, changed, network_mode="gateway")
-    assert "nft failed: Error: interval overlaps" in caplog.text  # still logged
-    assert health() == {"nft_ok": False, "nft_error": "Error: interval overlaps", "nft_skipped": None,
+    assert "nft failed: Error: interval overlaps (sets.nft)" in caplog.text  # still logged, with the file
+    assert health() == {"nft_ok": False, "nft_skipped": None,
+                        "nft_error": "sets.nft: Error: interval overlaps; resolver-sets.nft: Error: interval overlaps",
                         "nft_failed_since": "2026-11-25T10:00:00Z", "nft_checked_at": "2026-11-25T10:00:00Z"}
     generate.apply(out, {"nft": True}, network_mode="gateway")  # e.g. the resync re-apply fails again
     assert health()["nft_failed_since"] == "2026-11-25T10:00:00Z"
