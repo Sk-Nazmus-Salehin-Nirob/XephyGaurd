@@ -63,12 +63,16 @@ class State:
     session_clients: list[str] | None = None
     # entries dropped by validate() as "<where>: <entry> (<reason>)"; not read from the document
     skipped: list[str] = field(default_factory=list)
+    # lookup tables for category_of/path_rules_for_group/path_rule_match (I-PROXY-20), built by
+    # build_index() (PolicyCache.reload, or on first use) and dropped by validate(); never read
+    # from the document
+    _index: "_Index | None" = field(default=None, repr=False, compare=False)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "State":
         s = cls()
         for k, v in d.items():
-            if hasattr(s, k):
+            if hasattr(s, k) and not k.startswith("_"):
                 setattr(s, k, v)
         s.validate()
         for g in GROUPS:
@@ -86,6 +90,7 @@ class State:
         one odd PC never stops a session from being enforced for all the others; so is a bad
         doh_ips entry. Every field is type-checked first (I-PROXY-19): an integer ccc_ip or
         lab_subnet would pass ipaddress and be rendered as e.g. 3232238085/32."""
+        self._index = None
         self._check_types()
         if self.network_mode is not None and not isinstance(self.network_mode, str):
             raise ValueError(f"network_mode must be a string, not {_type_name(self.network_mode)}")
@@ -274,26 +279,56 @@ class State:
             doms += self.categories.get(c, [])
         return DomainSet.of(doms)
 
+    def build_index(self) -> "_Index":
+        """Normalise the category domain lists and path rules once (I-PROXY-20): before, every
+        blocked request re-normalised every list (41 ms per category_of call with 5,000 domains)."""
+        cat_of: dict[str, str] = {}
+        for c, doms in self.categories.items():
+            for d in DomainSet.of(doms).domains:
+                cat_of.setdefault(d, c)   # first category in document order, as before
+        cat_rules = {c: PathRules.of(r) for c, r in self.path_rules.items()}
+        group_rules: dict[str, PathRules] = {}
+        for g, cats in self.group_categories.items():
+            rules: list[str] = []
+            for c in cats:
+                rules += self.path_rules.get(c, [])
+            group_rules[g] = PathRules.of(rules)
+        order = {c: i for i, c in enumerate(self.categories)}
+        self._index = _Index(cat_of, order, cat_rules, group_rules)
+        return self._index
+
+    def _idx(self) -> "_Index":
+        return self._index if self._index is not None else self.build_index()
+
     def path_rules_for_group(self, group: str | None) -> PathRules:
         if not group or group == "exempt":
             return PathRules()
-        rules: list[str] = []
-        for c in self.group_categories.get(group, []):
-            rules += self.path_rules.get(c, [])
-        return PathRules.of(rules)
+        return self._idx().group_rules.get(group) or PathRules()
 
     def path_rule_match(self, group: str | None, host: str, path: str) -> tuple[str, str] | None:
         """(matched_rule, category) for the first of the group's categories whose path rules match
         host+path (I-PROXY-24: an IDE rule is labelled "ide", not "ai"), or None."""
         if not group or group == "exempt":
             return None
+        rules = self._idx().cat_rules
         for c in self.group_categories.get(group, []):
-            if rule := PathRules.of(self.path_rules.get(c, [])).matches(host, path):
+            if c in rules and (rule := rules[c].matches(host, path)):
                 return rule, c
         return None
 
     def category_of(self, domain: str) -> str | None:
-        for c, doms in self.categories.items():
-            if DomainSet.of(doms).matches(domain):
-                return c
-        return None
+        """First category (document order) listing the domain or one of its parents."""
+        if not domain:
+            return None
+        idx = self._idx()
+        parts = domain.lower().rstrip(".").split(".")
+        found = [idx.cat_of[s] for s in (".".join(parts[i:]) for i in range(len(parts) - 1)) if s in idx.cat_of]
+        return min(found, key=idx.order.__getitem__) if found else None
+
+
+@dataclass
+class _Index:
+    cat_of: dict[str, str]              # normalised domain -> first category listing it
+    order: dict[str, int]               # category -> position in State.categories
+    cat_rules: dict[str, PathRules]     # category -> its path rules
+    group_rules: dict[str, PathRules]   # group -> path rules of all its categories

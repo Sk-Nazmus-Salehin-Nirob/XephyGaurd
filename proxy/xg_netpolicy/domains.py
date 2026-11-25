@@ -159,6 +159,14 @@ class PathRules:
     """'huggingface.co/chat' blocks https://huggingface.co/chat and below (and subdomains of the host)."""
 
     rules: list[tuple[str, str]] = field(default_factory=list)
+    # rule host -> [(position in rules, rule path)], so matches() looks up the host's suffixes
+    # instead of scanning every rule (I-PROXY-20); the first matching rule in `rules` order wins
+    _by_host: dict[str, list[tuple[int, str]]] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        self._by_host = {}
+        for i, (rh, rp) in enumerate(self.rules):
+            self._by_host.setdefault(rh, []).append((i, rp))
 
     @classmethod
     def of(cls, items: Iterable[str]) -> "PathRules":
@@ -174,7 +182,12 @@ class PathRules:
             return None
         h = host.lower().rstrip(".")
         p = normalize_path(path)   # /%63hat, //chat, /chat;x, /x/../chat all read as /chat
-        for rh, rp in self.rules:
-            if (h == rh or h.endswith("." + rh)) and (p == rp or p.startswith(rp.rstrip("/") + "/")):
-                return f"{rh}{rp}"
-        return None
+        parts = h.split(".")
+        best: tuple[int, str] | None = None
+        for i in range(len(parts)):   # the host itself, then each parent (rule host or subdomain)
+            rh = ".".join(parts[i:])
+            for pos, rp in self._by_host.get(rh, ()):
+                if (best is None or pos < best[0]) and (p == rp or p.startswith(rp.rstrip("/") + "/")):
+                    best = (pos, f"{rh}{rp}")
+                    break   # later entries of this host come after pos
+        return best[1] if best else None

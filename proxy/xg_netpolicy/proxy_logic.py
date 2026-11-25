@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .domains import DomainSet, InspectHosts, PathRules
-from .state import State
+from .state import GROUPS, State
 
 log = logging.getLogger("xg-proxy")
 
@@ -181,7 +181,9 @@ class PolicyCache:
             derived = (InspectHosts.of(state.inspect_hosts),
                        DomainSet.of(state.categories.get("ai", [])), DomainSet.of(state.categories.get("ide", [])),
                        PathRules.of(state.path_rules.get("ai", [])), PathRules.of(state.path_rules.get("ide", [])),
-                       search_ai_signatures(state.google))
+                       search_ai_signatures(state.google),
+                       state.build_index(),   # category_of / path rules precomputed (I-PROXY-20)
+                       {g: state.blocked_domains_for_group(g) for g in (None, *GROUPS)})
         except Exception as e:  # ValueError, TypeError, AttributeError, KeyError, RecursionError, ...
             if m != self._failed_mtime:
                 log.error("proxy policy %s invalid, keeping %s: %s: %s", self.path,
@@ -191,8 +193,7 @@ class PolicyCache:
             return
         self.state = state
         (self._inspect, self._ai_doms, self._ide_doms, self._ai_paths, self._ide_paths,
-         self.search_ai) = derived
-        self._blocked = {}
+         self.search_ai, _, self._blocked) = derived
         self._mtime = m
         self._failed_mtime = None
         self.loaded = True

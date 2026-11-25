@@ -1,5 +1,6 @@
 import json
 import pathlib
+import time
 
 import pytest
 
@@ -1195,3 +1196,76 @@ def test_session_clients_validated_and_copied_to_proxy_json(state_dict, tmp_path
     p.write_text(json.dumps({**state_dict, "session_clients": ["192.168.10.99"]}))
     generate.generate(p, tmp_path / "net")
     assert json.loads((tmp_path / "net" / "proxy.json").read_text())["session_clients"] == ["192.168.10.99"]
+
+
+# -- I-PROXY-20: per-request lookups stay cheap with large imported lists --------------------------
+def _big_policy(state_dict, n=5000):
+    """5,000 domains spread over five categories and 5,000 path rules (ai and ide)."""
+    cats = ["ai", "ide", "marketplace", "vpn", "doh"]
+    state_dict["categories"] = {c: [f"host{i}.{c}-list.example" for i in range(k, n, len(cats))]
+                                for k, c in enumerate(cats)}
+    state_dict["path_rules"] = {"ai": [f"site{i}.example/chat{i}" for i in range(0, n, 2)],
+                                "ide": [f"site{i}.example/q{i}" for i in range(1, n, 2)]}
+    return state_dict
+
+
+def _best_of(fn, runs=3):
+    best = float("inf")
+    for _ in range(runs):
+        t = time.perf_counter()
+        fn()
+        best = min(best, time.perf_counter() - t)
+    return best
+
+
+def test_lookups_on_5000_domains_fit_timing_budget(state_file, state_dict, tmp_path):
+    """category_of, path_rules_for_group and path_rule_match run on every blocked or inspected request
+    inside mitmproxy's event loop. Budget: 2,000 lookups each in 0.25 s (precomputed at reload they
+    take a few ms; rebuilding the lists per call took seconds)."""
+    state_file.write_text(json.dumps(_big_policy(state_dict)))
+    generate.generate(state_file, tmp_path / "net")
+    c = PolicyCache(tmp_path / "net" / "proxy.json")
+    s = c.state
+    hosts = [f"www.host{i}.vpn-list.example" for i in range(3, 5000, 5)][:1000] + [f"miss{i}.example" for i in range(1000)]
+    assert s.category_of("www.host3.vpn-list.example") == "vpn" and s.category_of("miss.example") is None
+
+    def cats():
+        for h in hosts:
+            s.category_of(h)
+
+    def group_rules():
+        for i in range(2000):
+            s.path_rules_for_group("test" if i % 2 else "block_ai")
+
+    def rule_match():
+        for i in range(2000):
+            s.path_rule_match("test", f"site{i}.example", f"/chat{i}/x" if i % 2 == 0 else f"/q{i}")
+
+    assert s.path_rule_match("test", "a.site7.example", "/q7/x") == ("site7.example/q7", "ide")
+    assert s.path_rule_match("block_ai", "site7.example", "/q7") is None
+    for name, fn in (("category_of", cats), ("path_rules_for_group", group_rules), ("path_rule_match", rule_match)):
+        took = _best_of(fn)
+        assert took < 0.25, f"{name}: 2,000 calls took {took:.3f} s"
+
+
+def test_precomputed_lookups_keep_first_match_order():
+    """The indexes from Step 35 return what the old linear scans returned: the first category in
+    document order listing the domain or a parent, and the first matching path rule in list order."""
+    s = State.from_dict({"categories": {"ai": ["Example.com", "x.org"], "ide": ["a.example.com", "x.org"]},
+                         "path_rules": {"ai": ["b.x.com/a"], "ide": ["x.com/a"]},
+                         "group_categories": {"test": ["ide", "ai"], "block_ai": ["ai"]}})
+    assert s.category_of("a.example.com") == "ai" and s.category_of("X.ORG.") == "ai"
+    assert s.category_of("z.a.example.com") == "ai" and s.category_of("example.net") is None
+    assert s.category_of("") is None
+    assert s.path_rule_match("test", "b.x.com", "/a/1") == ("x.com/a", "ide")     # group order: ide first
+    assert s.path_rule_match("block_ai", "b.x.com", "/a") == ("b.x.com/a", "ai")
+    assert s.path_rule_match("block_ai", "x.com", "/a") is None
+    assert PathRules.of(["x.com/a", "b.x.com/a"]).matches("b.x.com", "/a") == "x.com/a"
+    assert PathRules.of(["b.x.com/a", "x.com/a"]).matches("B.X.com.", "/A/") == "b.x.com/a"
+    assert s.path_rules_for_group("test").matches("b.x.com", "/a") == "x.com/a"
+    assert s.path_rules_for_group("exempt").rules == [] and s.path_rules_for_group("nope").rules == []
+    # a document key named like the private index is ignored, and validate() drops a stale index
+    assert State.from_dict({"_index": "x"})._index is None
+    s.categories = {"vpn": ["example.com"]}
+    s.validate()
+    assert s.category_of("example.com") == "vpn"
