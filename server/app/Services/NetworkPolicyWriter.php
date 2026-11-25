@@ -102,6 +102,8 @@ class NetworkPolicyWriter
             // the proxy records `observed` AI/IDE events only for these PCs (and only with log_urls on); isolated PCs are not listed
             'session_clients' => array_values(array_unique($sessionClients)),
             'log_urls' => $logUrls,
+            // the admin's raw-event retention, so the proxy's spill file never outlives the CCC's purge (S-64)
+            'retention_days_raw' => max(7, min(1095, (int) Setting::get('retention_days_raw', config('xephyguard.retention_days_raw')))),
             // no events_token: the proxy reads env XG_INTERNAL_TOKEN (proxy Step 13, I-PROXY-13; S-60)
             'events_url' => rtrim(config('xephyguard.internal_url'), '/').'/api/internal/net-events',
         ];

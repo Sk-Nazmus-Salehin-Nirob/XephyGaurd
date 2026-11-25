@@ -118,6 +118,7 @@ def proxy_json(s: State) -> str:
         "inspect_hosts": s.inspect_hosts,
         "log_urls": s.log_urls,
         "session_clients": s.session_clients,
+        "retention_days_raw": s.retention_days_raw,
         "events_url": s.events_url,
         "ccc_ip": s.ccc_ip,
         "lab_subnet": s.lab_subnet,

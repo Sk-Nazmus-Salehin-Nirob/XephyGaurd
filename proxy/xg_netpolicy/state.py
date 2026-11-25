@@ -61,6 +61,9 @@ class State:
     # PCs in a running session (I-PROXY-10); None = the document has no list, so a PC counts as in
     # a session when it is in test, block_ai or exempt (the server lists only those PCs today)
     session_clients: list[str] | None = None
+    # the CCC's raw-event retention in days (`retention_days_raw` setting, server S-64); the spill
+    # purge uses it over env XG_RETENTION_RAW_DAYS. None = not in the document (older CCC) or unusable
+    retention_days_raw: int | None = None
     # entries dropped by validate() as "<where>: <entry> (<reason>)"; not read from the document
     skipped: list[str] = field(default_factory=list)
     # lookup tables for category_of/path_rules_for_group/path_rule_match (I-PROXY-20), built by
@@ -112,6 +115,11 @@ class State:
                 raise ValueError(f"udm14_clients must be a list, not {type(udm).__name__}")
             self.google = {**self.google, "udm14_clients": self._pc_ips("udm14_clients", udm, net)}
         self.vpn_ports = self._vpn_ports(self.vpn_ports)
+        r = self.retention_days_raw
+        if r is not None and (not isinstance(r, int) or isinstance(r, bool)):
+            self.skipped.append(f"retention_days_raw: {r!r} (not an integer)")
+            log.warning("retention_days_raw is not an integer (%s), using env XG_RETENTION_RAW_DAYS", _type_name(r))
+            self.retention_days_raw = None
         if self.session_clients is not None:
             if not isinstance(self.session_clients, list):
                 raise ValueError(f"session_clients must be a list, not {_type_name(self.session_clients)}")

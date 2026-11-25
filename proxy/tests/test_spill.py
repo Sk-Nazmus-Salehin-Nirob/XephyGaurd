@@ -260,3 +260,40 @@ def test_stop_writes_stats(tmp_path):
     s = EventShipper(PolicyCache(p), fallback=str(tmp_path / "log" / "ev.jsonl"))
     s.stop()
     assert json.loads((tmp_path / "log" / "proxy-stats.json").read_text())["queue_full"] == 0
+
+
+def test_policy_retention_from_ccc_wins_over_env(tmp_path, monkeypatch, state_dict):
+    """Server S-64: state.json `retention_days_raw` (the admin's current setting) reaches proxy.json and
+    drives the purge; env XG_RETENTION_RAW_DAYS is only the fallback (older CCC, unusable value)."""
+    from xg_netpolicy import generate
+    from xg_netpolicy.state import State
+
+    monkeypatch.setenv("XG_RETENTION_RAW_DAYS", "30")
+    monkeypatch.setenv("XG_INTERNAL_TOKEN", "t" * 20)
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({**state_dict, "events_url": URL, "retention_days_raw": 10}))
+    generate.generate(state, tmp_path / "net")
+    proxy_json = tmp_path / "net" / "proxy.json"
+    assert json.loads(proxy_json.read_text())["retention_days_raw"] == 10
+    s = EventShipper(PolicyCache(proxy_json), fallback=str(tmp_path / "log" / "ev.jsonl"))
+    s.stop()
+    s._post = lambda batch: None   # CCC down: everything spills
+    assert s.retention_days() == 10
+    s._ship([_ev(1, ts=_now_ms() - 11 * DAY_MS), _ev(2, ts=_now_ms() - 9 * DAY_MS)])
+    assert s.purge_spill() == 1                                   # 11 days old: past the CCC's 10, inside env's 30
+    assert [e["host"] for e in _lines(s.fallback)] == ["h2.example"]
+
+    assert proxy_logic.retention_days(3) == 7 and proxy_logic.retention_days(5000) == 1095   # clamped like the server
+    for bad in ("10", True, 1.5):
+        st = State.from_dict({**state_dict, "retention_days_raw": bad})
+        assert st.retention_days_raw is None and any(x.startswith("retention_days_raw") for x in st.skipped)
+    assert State.from_dict(state_dict).retention_days_raw is None   # older CCC: no field
+    assert _env_retention_without_field(tmp_path, state_dict) == 30
+
+
+def _env_retention_without_field(tmp_path, state_dict):
+    p = tmp_path / "old.json"
+    p.write_text(json.dumps({**state_dict, "events_url": URL}))
+    s = EventShipper(PolicyCache(p), fallback=str(tmp_path / "log2" / "ev.jsonl"))
+    s.stop()
+    return s.retention_days()

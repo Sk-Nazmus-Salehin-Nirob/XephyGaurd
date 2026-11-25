@@ -133,6 +133,28 @@ class NetworkPolicyWriterTest extends TestCase
         $this->assertSame(['/not-a-setting'], Setting::get('google_ai_paths'));
     }
 
+    /** S-64 (proxy Step 25): the admin's raw-event retention reaches the proxy, so its spill purge follows /settings. */
+    public function test_state_json_carries_the_raw_retention_setting(): void
+    {
+        $this->bootLab();
+        $writer = app(NetworkPolicyWriter::class);
+        Setting::forget('retention_days_raw');
+        config(['xephyguard.retention_days_raw' => 140]);
+        $this->assertSame(140, $writer->build()['retention_days_raw']);   // no setting yet: the env/config default
+        Setting::put('retention_days_raw', 30);
+        $this->assertSame(30, $writer->build()['retention_days_raw']);
+        Setting::put('retention_days_raw', '2');                           // clamped like /settings validates
+        $this->assertSame(7, $writer->build()['retention_days_raw']);
+
+        $payload = ['lab_name' => 'Lab', 'network_mode' => 'gateway', 'lab_subnet' => '192.168.10.0/24', 'ccc_ip' => '192.168.10.2',
+            'retention_days_raw' => 45, 'retention_days_reports' => 730, 'paste_alert_chars' => 800,
+            'title_capture_always_on' => 'off', 'title_capture_practice' => 'app_only', 'title_capture_test' => 'app_only',
+            'notice_text' => 'Monitored.'];
+        $this->actingAs($this->user('admin'))->post('/settings', $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $written = json_decode((string) file_get_contents(config('xephyguard.net_state_path')), true);
+        $this->assertSame(45, $written['retention_days_raw']);              // saving /settings rewrites state.json
+    }
+
     /** Proxy Step 13 (I-PROXY-13): the proxy's bearer comes from env XG_INTERNAL_TOKEN, never from state.json. */
     public function test_state_json_holds_no_events_token(): void
     {

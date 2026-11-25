@@ -475,8 +475,9 @@ EVENT_BATCH_MAX = 500  # events per POST, live and replayed (NetEventsController
 # Spill file for batches the CCC did not take (I-PROXY-12). It holds raw network events (client IP,
 # host, path), so it follows the raw-event retention of docs/ETHICS.md "Retention and access":
 # "Raw events ... deleted after the configured period (default 140 days)". The server reads the
-# same default from env XG_RETENTION_RAW_DAYS (server/config/xephyguard.php); the proxy reads that
-# env too, clamped to the server's allowed 7..1095 days.
+# same default from env XG_RETENTION_RAW_DAYS (server/config/xephyguard.php). The CCC sends the
+# admin's current setting as `retention_days_raw` in the policy (server S-64), which wins; the env is
+# the fallback for an older CCC or before a policy has loaded. Both clamped to the server's 7..1095.
 RETENTION_ENV = "XG_RETENTION_RAW_DAYS"
 RETENTION_DEFAULT_DAYS = 140
 RETENTION_MIN_DAYS, RETENTION_MAX_DAYS = 7, 1095
@@ -494,7 +495,10 @@ DEDUP_MAX_KEYS = 8192    # per dedup table; older keys are pruned beyond this
 STATS_INTERVAL_S = 60.0  # proxy-stats.json next to the spill file is rewritten this often
 
 
-def retention_days() -> int:
+def retention_days(policy_days: int | None = None) -> int:
+    """Raw-event retention: the policy's `retention_days_raw` when it has one, else env."""
+    if policy_days is not None:
+        return min(max(policy_days, RETENTION_MIN_DAYS), RETENTION_MAX_DAYS)
     raw = os.environ.get(RETENTION_ENV, "").strip()
     if not raw:
         return RETENTION_DEFAULT_DAYS
@@ -742,8 +746,11 @@ class EventShipper:
             log.warning("cannot write %s (%s); %d events lost", live, e, len(batch))
             self.stats["spill_lost"] += len(batch)
 
+    def retention_days(self) -> int:
+        return retention_days(self.cache.state.retention_days_raw)
+
     def _cutoff_ms(self) -> int:
-        return int((time.time() - retention_days() * 86400) * 1000)
+        return int((time.time() - self.retention_days() * 86400) * 1000)
 
     def _read_spill(self, f: pathlib.Path, cutoff_ms: int) -> tuple[list[dict[str, Any]], int]:
         """The events in `f` still inside retention, and how many lines were dropped (expired,
@@ -794,7 +801,7 @@ class EventShipper:
             purged += n
         if purged:
             self.stats["purged"] += purged
-            log.info("purged %d spilled events older than %d days", purged, retention_days())
+            log.info("purged %d spilled events older than %d days", purged, self.retention_days())
         return purged
 
     def replay_spill(self, max_batches: int = REPLAY_MAX_BATCHES) -> int:
