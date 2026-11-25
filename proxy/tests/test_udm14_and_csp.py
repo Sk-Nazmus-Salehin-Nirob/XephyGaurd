@@ -204,3 +204,15 @@ def test_hide_css_keeps_seed_and_common_selectors():
         assert valid_selector(s), s
     out = hide_css(["#ok", "a}b{", " .x "])
     assert out == '<style id="xephyguard">#ok,.x{display:none!important}</style>'
+
+
+# -- Step 31 (I-PROXY-23): CSS hosts match the entry or a subdomain, not a look-alike --
+
+@pytest.mark.parametrize("host,wanted", [
+    ("bing.com", True), ("www.bing.com", True), ("WWW.Bing.COM", True), ("cn.bing.com", True),
+    ("notbing.com", False), ("evilbing.com", False), ("bing.com.evil.net", False), ("xbing.com", False),
+])
+def test_css_hosts_match_entry_or_subdomain_only(host, wanted):
+    from xg_netpolicy.proxy_logic import SearchAi
+
+    assert SearchAi().wants_css(host) is wanted

@@ -47,7 +47,8 @@ google_search_hosts:
 # Path prefixes on those hosts answered 204 (the AI Overview stream); the query string is ignored.
 google_ai_paths:
   - /async/folwr
-# Other inspected hosts whose pages get the google_hide_selectors CSS (host ends with the entry).
+# Other inspected hosts whose pages get the google_hide_selectors CSS (the entry itself or a subdomain of it,
+# so bing.com covers www.bing.com but not notbing.com).
 search_css_hosts:
   - bing.com
 

@@ -74,7 +74,7 @@ def refused_destination(host: str, port: int, own_ips: tuple[str, ...] = ()) -> 
 class SearchAi:
     """Where the Google/Bing AI suppression acts: search hosts (regexes on the lower-case host; udm=14
     rewrite, AI paths, CSS), AI paths on them answered 204 (prefixes, query ignored), and other hosts
-    that get the hide_selectors CSS (host ends with the entry)."""
+    that get the hide_selectors CSS (the entry or a subdomain of it)."""
     search_hosts: tuple[re.Pattern[str], ...] = (GOOGLE_HOST,)
     ai_paths: tuple[str, ...] = tuple(SEARCH_AI_DEFAULTS["ai_paths"])
     css_hosts: tuple[str, ...] = tuple(SEARCH_AI_DEFAULTS["css_hosts"])
@@ -89,7 +89,8 @@ class SearchAi:
 
     def wants_css(self, host: str | None) -> bool:
         h = (host or "").lower()
-        return self.is_search_host(h) or any(h.endswith(e) for e in self.css_hosts)
+        # the entry itself or a subdomain of it, never a look-alike such as notbing.com (I-PROXY-23)
+        return self.is_search_host(h) or any(h == e or h.endswith("." + e) for e in self.css_hosts)
 
 
 def search_ai_signatures(google: dict[str, Any]) -> SearchAi:
