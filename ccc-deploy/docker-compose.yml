@@ -79,6 +79,7 @@ services:
     environment:
       XG_NETWORK_MODE: ${XG_NETWORK_MODE:-gateway}
       XG_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}   # bearer for /api/internal/net-events; not in proxy.json (I-PROXY-13)
+      XG_RETENTION_RAW_DAYS: ${XG_RETENTION_RAW_DAYS:-140}   # purge age of the event spill file (ETHICS.md raw events)
     volumes:
       - /var/lib/xephyguard/net:/var/lib/xephyguard/net:ro
       - /var/lib/xephyguard/mitmproxy:/home/mitmproxy/.mitmproxy      # owned by uid 1500 (install.sh)

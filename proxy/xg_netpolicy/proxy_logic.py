@@ -10,6 +10,7 @@ import queue
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
@@ -389,6 +390,35 @@ TOKEN_ENV = "XG_INTERNAL_TOKEN"
 
 EVENT_HOST_MAX = 255  # NetEventsController: events.*.host max:255
 EVENT_PATH_MAX = 512  # events.*.path max:512
+EVENT_BATCH_MAX = 500  # events per POST, live and replayed (NetEventsController allows max:1000)
+
+# Spill file for batches the CCC did not take (I-PROXY-12). It holds raw network events (client IP,
+# host, path), so it follows the raw-event retention of docs/ETHICS.md "Retention and access":
+# "Raw events ... deleted after the configured period (default 140 days)". The server reads the
+# same default from env XG_RETENTION_RAW_DAYS (server/config/xephyguard.php); the proxy reads that
+# env too, clamped to the server's allowed 7..1095 days.
+RETENTION_ENV = "XG_RETENTION_RAW_DAYS"
+RETENTION_DEFAULT_DAYS = 140
+RETENTION_MIN_DAYS, RETENTION_MAX_DAYS = 7, 1095
+SPILL_MAX_BYTES = 8 * 1024 * 1024  # live file rotated to .1 at this size
+SPILL_KEEP = 3                      # rotated files kept (.1 newest .. .3 oldest); total <= 4 x 8 MiB
+REPLAY_MAX_BATCHES = 20             # replayed per successful POST, so live events are not held up
+PURGE_INTERVAL_S = 3600.0
+# a batch the CCC refuses as invalid is never accepted later: it is split to find the bad events,
+# which are dropped, instead of being spilled and replayed forever
+REJECTED_STATUS = frozenset({400, 413, 422})
+
+
+def retention_days() -> int:
+    raw = os.environ.get(RETENTION_ENV, "").strip()
+    if not raw:
+        return RETENTION_DEFAULT_DAYS
+    try:
+        days = int(raw)
+    except ValueError:
+        log.warning("%s=%r is not a number; using %d days", RETENTION_ENV, raw, RETENTION_DEFAULT_DAYS)
+        return RETENTION_DEFAULT_DAYS
+    return min(max(days, RETENTION_MIN_DAYS), RETENTION_MAX_DAYS)
 
 
 def event_text(value: Any, limit: int) -> Any:
@@ -414,6 +444,9 @@ class EventShipper:
         self._seen_observed: dict[tuple[str | None, str], float] = {}
         self._stop = threading.Event()
         self._warned_token = False
+        # spilled: kept for replay; replayed: delivered later; rejected: refused by the CCC as
+        # invalid and dropped; purged: past retention; spill_lost: could not be kept
+        self.stats: dict[str, int] = {"spilled": 0, "replayed": 0, "rejected": 0, "purged": 0, "spill_lost": 0}
         self._t = threading.Thread(target=self._run, daemon=True)
         self._t.start()
 
@@ -451,11 +484,15 @@ class EventShipper:
         self._t.join(timeout=3)
 
     def _run(self) -> None:
+        next_purge = 0.0
         while not self._stop.is_set():
+            if time.monotonic() >= next_purge:
+                self.purge_spill()
+                next_purge = time.monotonic() + PURGE_INTERVAL_S
             batch: list[dict[str, Any]] = []
             try:
                 batch.append(self.q.get(timeout=1.0))
-                while len(batch) < 500:
+                while len(batch) < EVENT_BATCH_MAX:
                     batch.append(self.q.get_nowait())
             except queue.Empty:
                 pass
@@ -475,22 +512,181 @@ class EventShipper:
                 log.warning("%s is not set; event shipping will be refused by the CCC", TOKEN_ENV)
         return legacy if isinstance(legacy, str) else ""
 
-    def _ship(self, batch: list[dict[str, Any]]) -> None:
+    def _post(self, batch: list[dict[str, Any]]) -> int | None:
+        """POSTs one batch; the HTTP status, or None when the CCC could not be reached."""
         url, token = self.cache.state.events_url, self.token()
-        if url:
-            try:
-                req = urllib.request.Request(url, data=json.dumps({"events": batch}).encode(), method="POST",
-                                             headers={"Content-Type": "application/json",
-                                                      "Authorization": f"Bearer {token}"})
-                with urllib.request.urlopen(req, timeout=5) as r:
-                    if 200 <= r.status < 300:
-                        return
-            except Exception as e:  # noqa: BLE001 - network errors must never break the proxy
-                log.warning("event shipping failed (%s); writing to %s", e, self.fallback)
+        if not url:
+            return None
+        req = urllib.request.Request(url, data=json.dumps({"events": batch}).encode(), method="POST",
+                                     headers={"Content-Type": "application/json",
+                                              "Authorization": f"Bearer {token}"})
         try:
-            os.makedirs(os.path.dirname(self.fallback), exist_ok=True)
-            with open(self.fallback, "a") as f:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return int(r.status)
+        except urllib.error.HTTPError as e:
+            return int(e.code)
+        except Exception as e:  # noqa: BLE001 - network errors must never break the proxy
+            log.warning("event shipping failed (%s)", e)
+            return None
+
+    def _send(self, batch: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Sends `batch`; returns the events still to keep (the CCC unreachable or failing). A batch
+        refused as invalid (REJECTED_STATUS) is halved until the bad events are found; those are
+        dropped and counted, the others are sent."""
+        if not batch:
+            return []
+        status = self._post(batch)
+        if status is not None and 200 <= status < 300:
+            return []
+        if status in REJECTED_STATUS:
+            if len(batch) == 1:
+                self.stats["rejected"] += 1
+                # layer/action only: the log is not covered by the retention purge
+                log.warning("CCC refused a %s/%s event (HTTP %s); dropped", batch[0].get("layer"),
+                            batch[0].get("action"), status)
+                return []
+            mid = len(batch) // 2
+            return self._send(batch[:mid]) + self._send(batch[mid:])
+        if status is not None:
+            log.warning("event shipping failed (HTTP %s)", status)
+        return batch
+
+    def _ship(self, batch: list[dict[str, Any]]) -> None:
+        unsent = self._send(batch)
+        if unsent:
+            self._spill(unsent)
+        elif self.cache.state.events_url:
+            self.replay_spill()
+
+    # spill file: only the shipper thread reads or writes it, so no lock is needed
+
+    def _spill_files(self) -> list[pathlib.Path]:
+        """Existing spill files, oldest first (.3, .2, .1, then the live file)."""
+        live = pathlib.Path(self.fallback)
+        names = [live.with_name(f"{live.name}.{i}") for i in range(SPILL_KEEP, 0, -1)] + [live]
+        return [f for f in names if f.exists()]
+
+    def _rotate(self) -> None:
+        live = pathlib.Path(self.fallback)
+        oldest = live.with_name(f"{live.name}.{SPILL_KEEP}")
+        if oldest.exists():
+            with oldest.open("rb") as fh:
+                lost = sum(1 for _ in fh)
+            self.stats["spill_lost"] += lost
+            log.warning("spill files full; dropping %s (%d events)", oldest, lost)
+            oldest.unlink()
+        for i in range(SPILL_KEEP - 1, 0, -1):
+            f = live.with_name(f"{live.name}.{i}")
+            if f.exists():
+                f.replace(live.with_name(f"{live.name}.{i + 1}"))
+        live.replace(live.with_name(f"{live.name}.1"))
+
+    def _spill(self, batch: list[dict[str, Any]]) -> None:
+        live = pathlib.Path(self.fallback)
+        log.warning("%d events kept in %s for replay", len(batch), live)
+        try:
+            live.parent.mkdir(parents=True, exist_ok=True)
+            if live.exists() and live.stat().st_size >= SPILL_MAX_BYTES:
+                self._rotate()
+            with live.open("a", encoding="utf-8") as f:
                 for ev in batch:
                     f.write(json.dumps(ev) + "\n")
-        except OSError:
-            pass
+            self.stats["spilled"] += len(batch)
+        except OSError as e:
+            log.warning("cannot write %s (%s); %d events lost", live, e, len(batch))
+            self.stats["spill_lost"] += len(batch)
+
+    def _cutoff_ms(self) -> int:
+        return int((time.time() - retention_days() * 86400) * 1000)
+
+    def _read_spill(self, f: pathlib.Path, cutoff_ms: int) -> tuple[list[dict[str, Any]], int]:
+        """The events in `f` still inside retention, and how many lines were dropped (expired,
+        not JSON, or without an integer ts)."""
+        keep: list[dict[str, Any]] = []
+        dropped = 0
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                dropped += 1
+                continue
+            ts = ev.get("ts") if isinstance(ev, dict) else None
+            if not isinstance(ts, int) or isinstance(ts, bool) or ts < cutoff_ms:
+                dropped += 1
+                continue
+            keep.append(ev)
+        return keep, dropped
+
+    def _rewrite(self, f: pathlib.Path, events: list[dict[str, Any]]) -> None:
+        if not events:
+            f.unlink(missing_ok=True)
+            return
+        tmp = f.with_name(f.name + ".tmp")
+        tmp.write_text("".join(json.dumps(ev) + "\n" for ev in events), encoding="utf-8")
+        tmp.replace(f)
+
+    def purge_spill(self) -> int:
+        """Deletes spilled events older than the retention period, also while the CCC stays
+        unreachable (they would escape the CCC's retention purge otherwise). Returns how many."""
+        cutoff_ms = self._cutoff_ms()
+        purged = 0
+        for f in self._spill_files():
+            try:
+                if f.stat().st_mtime * 1000 < cutoff_ms:  # last written before the cutoff: all expired
+                    with f.open("rb") as fh:
+                        n = sum(1 for _ in fh)
+                    f.unlink()
+                else:
+                    keep, n = self._read_spill(f, cutoff_ms)
+                    if n:
+                        self._rewrite(f, keep)
+            except OSError as e:
+                log.warning("cannot purge %s (%s)", f, e)
+                continue
+            purged += n
+        if purged:
+            self.stats["purged"] += purged
+            log.info("purged %d spilled events older than %d days", purged, retention_days())
+        return purged
+
+    def replay_spill(self, max_batches: int = REPLAY_MAX_BATCHES) -> int:
+        """Re-sends spilled events, oldest file and oldest event first, in batches of at most
+        EVENT_BATCH_MAX. Stops at the first batch the CCC does not take (it stays in the file, the
+        next successful POST tries again) or after `max_batches`. Expired lines are dropped on the
+        way. Returns how many events were delivered."""
+        cutoff_ms = self._cutoff_ms()
+        sent = 0
+        batches = 0
+        for f in self._spill_files():
+            try:
+                events, expired = self._read_spill(f, cutoff_ms)
+            except OSError as e:
+                log.warning("cannot read %s (%s)", f, e)
+                return sent
+            self.stats["purged"] += expired
+            i = 0
+            while i < len(events):
+                if batches >= max_batches:
+                    self._rewrite_quiet(f, events[i:])
+                    return sent
+                chunk = events[i:i + EVENT_BATCH_MAX]
+                batches += 1
+                unsent = self._send(chunk)
+                if unsent:
+                    self._rewrite_quiet(f, unsent + events[i + len(chunk):])
+                    return sent
+                sent += len(chunk)
+                self.stats["replayed"] += len(chunk)
+                i += len(chunk)
+            self._rewrite_quiet(f, [])
+        if sent:
+            log.info("replayed %d spilled events", sent)
+        return sent
+
+    def _rewrite_quiet(self, f: pathlib.Path, events: list[dict[str, Any]]) -> None:
+        try:
+            self._rewrite(f, events)
+        except OSError as e:
+            log.warning("cannot rewrite %s (%s)", f, e)
