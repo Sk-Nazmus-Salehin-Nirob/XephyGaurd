@@ -202,6 +202,38 @@ class AgentApiTest extends TestCase
         $this->assertStringContainsString('ssh:198.51.100.7:22', $tunnel->title);
     }
 
+    /** S-67: a batch the agent kept offline goes to the session running at each event's time, not the one active now. */
+    public function test_replayed_agent_batch_goes_to_the_session_running_at_each_event(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        [$pc, $token, $cert] = $this->enrolledPc();
+        $sm = app(SessionManager::class);
+        $at = fn (int $minutesAgo) => now()->subMinutes($minutesAgo)->getTimestampMs();
+        $this->travel(-180)->minutes();
+        $earlier = $sm->start($lab, $this->profile('Test: AI blocked'), 'CS101');
+        $this->travel(60)->minutes();
+        $sm->stop($earlier);
+        $this->travelBack();
+        $current = $sm->start($lab, $this->profile('Test: AI blocked'), 'CS102');
+
+        $tamper = fn (int $seq, int $ts, string $kind) => ['seq' => $seq, 'ts' => $ts, 'type' => 'tamper', 'data' => ['kind' => $kind]];
+        $batch = ['v' => 1, 'pc_id' => (string) $pc->id, 'heartbeat' => ['mode' => 'test', 'user' => 'alice', 'agent_version' => '0.1.0',
+            'local_time_ms' => now()->getTimestampMs(), 'capabilities' => ['keys' => true]], 'events' => [
+                $tamper(1, $at(150), 'clock_change'),        // during the earlier session
+                $tamper(2, $at(90), 'config_changed'),       // between the sessions
+                $tamper(3, $at(0), 'ca_changed'),            // now
+            ]];
+        $this->withHeaders($this->agentHeaders($token, $cert))->postJson('/api/agent/v1/events', $batch)->assertOk()->assertJson(['ack_seq' => 3]);
+
+        $this->assertSame([$earlier->id, null, $current->id], Event::orderBy('seq')->pluck('lab_session_id')->all());
+        $sid = fn (string $rule) => Alert::where('rule_id', $rule)->value('lab_session_id');
+        $this->assertSame($earlier->id, $sid('tamper.clock_change'));   // not raised in the current session
+        $this->assertNull($sid('tamper.config_changed'));
+        $this->assertSame($current->id, $sid('tamper.ca_changed'));
+        $this->assertSame(1, Alert::where('lab_session_id', $current->id)->count());
+    }
+
     public function test_broadcast_auth_only_for_own_channel(): void
     {
         $this->bootLab();

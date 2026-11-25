@@ -74,12 +74,14 @@ class EventIngestor
             $this->applyHeartbeat($agent, $pc, $hb, $ip, $session);
 
             $events = collect($batch['events'] ?? [])->filter(fn ($e) => $e['seq'] > $agent->last_seq)->sortBy('seq');
+            $ats = $events->mapWithKeys(fn ($e, $k) => [$k => CarbonImmutable::createFromTimestampMs($e['ts'] + $offset, config('app.timezone'))]);
+            $sessionAt = $this->sessionsByTime($pc, $ats->values()->all());
             $rows = [];
-            foreach ($events as $e) {
-                $at = CarbonImmutable::createFromTimestampMs($e['ts'] + $offset, config('app.timezone'));
+            foreach ($events as $k => $e) {
+                $at = $ats[$k];
                 $user = is_string($e['data']['user'] ?? null) ? mb_substr($e['data']['user'], 0, 64) : null;
                 $rows[] = [
-                    'pc_id' => $pc->id, 'agent_id' => $agent->id, 'seq' => $e['seq'], 'lab_session_id' => $session?->id,
+                    'pc_id' => $pc->id, 'agent_id' => $agent->id, 'seq' => $e['seq'], 'lab_session_id' => $sessionAt($at)?->id,
                     'type' => $e['type'], 'occurred_at' => $at, 'received_at' => now(), 'user' => $user,
                     'data' => json_encode($e['data'], JSON_UNESCAPED_SLASHES),
                 ];
@@ -87,9 +89,9 @@ class EventIngestor
             foreach (array_chunk($rows, 200) as $chunk) {
                 Event::query()->insertOrIgnore($chunk);
             }
-            foreach ($events as $e) {
-                $at = CarbonImmutable::createFromTimestampMs($e['ts'] + $offset, config('app.timezone'));
-                if ($a = $this->derive($pc, $session, $e['type'], $e['data'], $at)) {
+            foreach ($events as $k => $e) {
+                $at = $ats[$k];
+                if ($a = $this->derive($pc, $sessionAt($at), $e['type'], $e['data'], $at)) {
                     $alerts[] = $a;
                 }
             }
@@ -181,6 +183,27 @@ class EventIngestor
     }
 
     /** Creates derived rows; returns an Alert when one was raised. */
+    /**
+     * The session each event belongs to (S-67): the one running at the event's (clock-corrected) time with this PC on
+     * its roster, not the one active when the batch arrives, so a batch the agent kept offline and sends after an
+     * earlier session ended stays in that session and raises its alerts there. Two queries per batch.
+     *
+     * @param  list<CarbonImmutable>  $ats
+     * @return \Closure(CarbonImmutable): ?LabSession
+     */
+    private function sessionsByTime(Pc $pc, array $ats): \Closure
+    {
+        if ($ats === []) {
+            return fn () => null;
+        }
+        $candidates = LabSession::runningBetween($pc->lab_id, min($ats), max($ats));
+        $onRoster = $candidates->isEmpty() ? [] : SessionPc::query()->where('pc_id', $pc->id)
+            ->whereIn('lab_session_id', $candidates->modelKeys())->pluck('lab_session_id')->flip()->all();
+        $candidates = $candidates->filter(fn (LabSession $s) => isset($onRoster[$s->id]))->values();
+
+        return fn (CarbonImmutable $at): ?LabSession => $candidates->first(fn (LabSession $s) => $s->ranAt($at));
+    }
+
     private function derive(Pc $pc, ?LabSession $session, string $type, array $d, CarbonImmutable $at): ?Alert
     {
         $sid = $session?->id;
