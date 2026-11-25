@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Models\Concerns\InvalidatesPolicies;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -64,5 +66,29 @@ class LabSession extends Model
     public static function activeFor(int $labId): ?self
     {
         return static::query()->where('lab_id', $labId)->active()->latest('started_at')->first();
+    }
+
+    /**
+     * Sessions of the lab that were running at some moment in [$from, $to]: started by $to and either still
+     * active or ended after $from. Latest start first, so the first one ranAt() a moment is the one shown then.
+     *
+     * @return Collection<int, self>
+     */
+    public static function runningBetween(int $labId, CarbonInterface $from, CarbonInterface $to): Collection
+    {
+        return static::query()->where('lab_id', $labId)->whereNotNull('started_at')->where('started_at', '<=', $to)
+            ->where(fn (Builder $q) => $q->where(fn (Builder $q) => $q->whereNull('ended_at')->active())
+                ->orWhere('ended_at', '>', $from))
+            ->orderByDesc('started_at')->orderByDesc('id')->get();
+    }
+
+    /** True when the session was running at $at (started at or before it, not yet ended). */
+    public function ranAt(CarbonInterface $at): bool
+    {
+        if ($this->started_at === null || $this->started_at->greaterThan($at)) {
+            return false;
+        }
+
+        return $this->ended_at === null ? $this->status === 'active' : $this->ended_at->greaterThan($at);
     }
 }

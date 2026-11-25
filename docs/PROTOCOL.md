@@ -268,6 +268,8 @@ The proxy sends (a test keeps this list, the addon and `NetEventsController` equ
 
 `reason` (the block page text) is sent with `blocked` events but not stored: the CCC keeps only the fields listed above.
 Limits: ≤ 1000 events, `host` ≤ 255, `path` ≤ 512, `layer` ≤ 16, `category` ≤ 24, `matched` ≤ 255 chars, `ts` in ms.
+The CCC files each event (and its alert) under the lab session that was running at its `ts`, not the one running when it
+arrives, so a replayed spill event from an earlier session stays there; an event from between sessions has none (server S-61).
 `observed` = a passed (not blocked) connection or request to a known AI (`category: ai`) or IDE-AI backend
 (`category: ide`) domain or path; the proxy sends it only with `log_urls.enabled` and for a PC in a session (listed in
 `session_clients`, which the CCC fills with every non-isolated PC in a running session, or, without that list, in the `test`, `block_ai` or `exempt` group), with only the first path segment

@@ -207,6 +207,40 @@ class SessionNetworkTest extends TestCase
             ->assertJsonPath('network.0.action', 'observed');
     }
 
+    /** S-61 (proxy Step 25): a replayed event belongs to the session running at its ts, not the one active now. */
+    public function test_replayed_net_event_goes_to_the_session_running_at_its_ts(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        [$pc] = $this->enrolledPc('192.168.10.21', 'PC-01');
+        $pc->update(['last_seen_at' => now(), 'status' => 'clean']);
+        $sm = app(SessionManager::class);
+
+        Carbon::setTestNow(now()->subHours(3));
+        $earlier = $sm->start($lab, $this->profile('Practice: AI allowed, logged'), 'CS101');
+        $inEarlier = now()->addMinutes(20)->getTimestampMs();
+        Carbon::setTestNow(now()->addHour());
+        $sm->stop($earlier);
+        $between = now()->addMinutes(30)->getTimestampMs();   // no session ran then
+        Carbon::setTestNow();
+        $current = $sm->start($lab, $this->profile('Practice: AI allowed, logged'), 'CS102');
+
+        $event = fn (int $ts, string $host) => ['client_ip' => '192.168.10.21', 'host' => $host, 'layer' => 'sni',
+            'action' => 'observed', 'category' => 'ai', 'matched' => $host, 'ts' => $ts];
+        $this->withToken('test-internal-token')->postJson('/api/internal/net-events', ['events' => [
+            $event($inEarlier, 'chatgpt.com'), $event($between, 'claude.ai'), $event(now()->getTimestampMs(), 'gemini.google.com'),
+        ]])->assertOk()->assertJson(['stored' => 3]);
+
+        $sid = fn (string $host) => NetEvent::where('host', $host)->value('lab_session_id');
+        $this->assertSame($earlier->id, $sid('chatgpt.com'));
+        $this->assertNull($sid('claude.ai'));
+        $this->assertSame($current->id, $sid('gemini.google.com'));
+        $alertSid = fn (string $host) => Alert::where('pc_id', $pc->id)->where('title', 'like', "%{$host}%")->value('lab_session_id');
+        $this->assertSame($earlier->id, $alertSid('chatgpt.com'));   // raised in the earlier session, not the current one
+        $this->assertSame($current->id, $alertSid('gemini.google.com'));
+        $this->assertSame(1, Alert::where('lab_session_id', $current->id)->count());
+    }
+
     public function test_report_show_and_pdf_render_when_blocked_net_events_exist(): void
     {
         Queue::fake();

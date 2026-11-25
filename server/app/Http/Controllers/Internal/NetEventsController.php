@@ -34,23 +34,31 @@ class NetEventsController extends Controller
         $normIp = fn (string $ip): string => str_starts_with($ip, '::ffff:') ? substr($ip, 7) : $ip;
         $ips = collect($data['events'])->map(fn ($e) => $normIp($e['client_ip']))->unique();
         $pcs = Pc::query()->active()->whereIn('ip', $ips)->get()->keyBy('ip');
-        $sessions = [];
+        $now = now()->toImmutable();
+        $ats = array_map(fn ($e) => isset($e['ts'])
+            ? CarbonImmutable::createFromTimestampMs($e['ts'], config('app.timezone')) : $now, $data['events']);
+        $from = min([$now, ...$ats]);
+        $to = max([$now, ...$ats]);
+        // An event belongs to the session that was running at its ts, not to the one active when it arrives:
+        // the proxy replays spilled events after an outage, possibly from an earlier session (proxy Step 25, S-61).
+        $candidates = [];
         $rows = [];
         $dirtyPcs = [];
         $alerts = [];
         $seenAlertKeys = [];
         $pcsNeedingScore = [];
-        foreach ($data['events'] as $e) {
+        $active = [];
+        foreach ($data['events'] as $i => $e) {
             $clientIp = $normIp($e['client_ip']);
             $pc = $pcs[$clientIp] ?? null;
+            $at = $ats[$i];
             $session = null;
             $sid = null;
             if ($pc) {
-                $sessions[$pc->lab_id] ??= LabSession::activeFor($pc->lab_id);
-                $session = $sessions[$pc->lab_id];
+                $candidates[$pc->lab_id] ??= LabSession::runningBetween($pc->lab_id, $from, $to);
+                $session = $candidates[$pc->lab_id]->first(fn (LabSession $s) => $s->ranAt($at));
                 $sid = $session?->id;
             }
-            $at = isset($e['ts']) ? CarbonImmutable::createFromTimestampMs($e['ts'], config('app.timezone')) : now()->toImmutable();
             $rows[] = [
                 'pc_id' => $pc?->id, 'lab_session_id' => $sid, 'client_ip' => $clientIp,
                 'host' => $e['host'] ?? '', 'path' => $e['path'] ?? null, 'layer' => $e['layer'], 'action' => $e['action'],
@@ -95,7 +103,7 @@ class NetEventsController extends Controller
                         ]);
                         $alert->setRelation('pc', $pc);
                         $alerts[] = $alert;
-                        $pcsNeedingScore[$pc->id] = $session;
+                        $pcsNeedingScore[$pc->id] = true;
                     }
                 }
             }
@@ -104,8 +112,10 @@ class NetEventsController extends Controller
             NetEvent::query()->insert($chunk);
         }
         foreach ($dirtyPcs as $pcId => $pc) {
-            if (array_key_exists($pcId, $pcsNeedingScore)) {
-                $sess = $pcsNeedingScore[$pcId];
+            if (isset($pcsNeedingScore[$pcId])) {
+                // the live score is about now: the session active now, whatever session the alert went to
+                $active[$pc->lab_id] ??= LabSession::activeFor($pc->lab_id) ?? false;
+                $sess = $active[$pc->lab_id] ?: null;
                 $inSess = $sess && SessionPc::query()->where('lab_session_id', $sess->id)->where('pc_id', $pc->id)->exists();
                 $ingestor->refreshLiveScore($pc, $inSess ? $sess : null);
             }
