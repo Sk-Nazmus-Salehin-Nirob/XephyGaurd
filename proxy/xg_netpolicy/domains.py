@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import ipaddress
+import posixpath
 import re
 from dataclasses import dataclass, field
 from typing import Iterable
+from urllib.parse import unquote
 
 _LABEL = re.compile(r"^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$")
 
@@ -134,6 +136,24 @@ class InspectHosts:
 _NEVER = DomainSet(set(NEVER_INSPECT))
 
 
+def normalize_path(path: str) -> str:
+    """Request path as an origin is likely to read it, for path-rule matching (I-PROXY-16): no query
+    or fragment, percent-decoded (repeated until stable, at most 3 times, so `%2563` is caught too),
+    a backslash read as `/`, `;params` dropped from every segment, `//` collapsed, `.`/`..` resolved,
+    lower-case, always starting with `/`. Only for matching; events still ship `loggable_path`."""
+    p = path.split("#", 1)[0].split("?", 1)[0]
+    for _ in range(3):
+        d = unquote(p, errors="replace")
+        if d == p:
+            break
+        p = d
+    p = p.split("?", 1)[0].split("#", 1)[0].replace("\\", "/")
+    p = "/".join(seg.split(";", 1)[0] for seg in p.split("/"))
+    p = re.sub(r"/{2,}", "/", "/" + p)
+    p = posixpath.normpath(p)
+    return p.lower() if p != "." else "/"
+
+
 @dataclass
 class PathRules:
     """'huggingface.co/chat' blocks https://huggingface.co/chat and below (and subdomains of the host)."""
@@ -146,14 +166,14 @@ class PathRules:
         for it in items:
             host, _, path = it.lower().partition("/")
             if host:
-                out.append((host, "/" + path.strip("/")))
+                out.append((host, normalize_path(path)))
         return cls(out)
 
     def matches(self, host: str | None, path: str) -> str | None:
         if not host:
             return None
         h = host.lower().rstrip(".")
-        p = path.split("?", 1)[0].lower() or "/"
+        p = normalize_path(path)   # /%63hat, //chat, /chat;x, /x/../chat all read as /chat
         for rh, rp in self.rules:
             if (h == rh or h.endswith("." + rh)) and (p == rp or p.startswith(rp.rstrip("/") + "/")):
                 return f"{rh}{rp}"

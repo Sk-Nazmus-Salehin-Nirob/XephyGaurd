@@ -66,6 +66,14 @@ def test_path_rule_blocked(addon):
     assert f.response.status_code == 403
 
 
+@pytest.mark.parametrize("path", ["/%63hat", "//chat", "/chat;x", "/x/../chat/new"])
+def test_path_rule_blocks_disguised_paths(addon, path):
+    """I-PROXY-16: the 403 also applies to encoded/duplicated/;param forms of the rule path."""
+    f = _flow("192.168.10.21", "huggingface.co", path)
+    addon.request(f)
+    assert f.response is not None and f.response.status_code == 403
+
+
 def test_tls_clienthello_blocks_without_decryption(addon):
     from mitmproxy import tls
     from mitmproxy.proxy import context

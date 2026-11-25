@@ -36,6 +36,31 @@ def test_path_rules():
     assert not pr.matches("huggingface.co", "/chatterbox")
 
 
+@pytest.mark.parametrize("path", [
+    "/%63hat", "/%63%68%61%74/x", "//chat", "/chat;jsessionid=1", "/chat;x/conversation", "/x/../chat",
+    "/./chat", "\\chat", "/CHAT", "/%2563hat", "/%2Fchat", "///chat//new", "/chat/", "/chat#frag", "/%63hat?q=1",
+])
+def test_path_rules_match_normalised_paths(path):
+    """I-PROXY-16: percent-encoding, duplicate slashes, ;params, dot segments and case no longer
+    get past a path rule."""
+    assert PathRules.of(["huggingface.co/chat"]).matches("huggingface.co", path) == "huggingface.co/chat"
+
+
+@pytest.mark.parametrize("path", ["/chatterbox", "/%63hatterbox", "/models;chat", "/models/chat", "/chat/../models", "/"])
+def test_path_rules_normalising_does_not_widen_rules(path):
+    assert PathRules.of(["huggingface.co/chat"]).matches("huggingface.co", path) is None
+
+
+def test_normalize_path():
+    from xg_netpolicy.domains import normalize_path
+
+    assert normalize_path("") == "/" and normalize_path("?q=1") == "/" and normalize_path("/") == "/"
+    assert normalize_path("//a//b;p=1/./c/../D?x#y") == "/a/b/d"
+    assert normalize_path("/../../etc") == "/etc"
+    assert normalize_path("/%zz") == "/%zz"                     # invalid escapes kept as they are
+    assert PathRules.of(["huggingface.co//Chat/"]).rules == [("huggingface.co", "/chat")]
+
+
 def test_state_groups(state_dict):
     s = State.from_dict(state_dict)
     assert s.group_of("192.168.10.21") == "test"
