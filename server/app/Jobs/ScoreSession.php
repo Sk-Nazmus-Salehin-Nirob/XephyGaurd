@@ -10,14 +10,17 @@ use App\Models\NetEvent;
 use App\Models\Report;
 use App\Services\AnalysisClient;
 use App\Services\AnalysisFailed;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use RuntimeException;
 
 /** After a session ends: compute integrity scores (analysis service) and create the session report.
  * Transient analysis errors (down, timeout, 5xx, 429) are retried after 30 s, 2 min and 10 min;
- * a refused request (bad token, unknown session) fails at once and the report shows the reason. */
-class ScoreSession implements ShouldQueue
+ * a refused request (bad token, unknown session) fails at once and the report shows the reason.
+ * Unique per session (S-65): while one is queued, waiting for a retry or running, another dispatch for the same
+ * session (stop + rescore) is dropped, so two never score one session at once; the lock goes when it finishes or fails. */
+class ScoreSession implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -29,7 +32,15 @@ class ScoreSession implements ShouldQueue
     /** Above AnalysisClient::TIMEOUT_S, below the queue's `retry_after` (90 s) so no attempt runs twice. */
     public int $timeout = 85;
 
+    /** Seconds the unique lock may outlive a crashed worker: every attempt plus every backoff, rounded up. */
+    public int $uniqueFor = 1200;
+
     public function __construct(public int $sessionId) {}
+
+    public function uniqueId(): string
+    {
+        return (string) $this->sessionId;
+    }
 
     public function handle(AnalysisClient $analysis): void
     {

@@ -14,6 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\BuildsLab;
 use Tests\TestCase;
 
@@ -110,6 +111,35 @@ class ScoreSessionRetryTest extends TestCase
         $this->assertSame(count($job->backoff) + 1, $job->tries);
         $this->assertGreaterThan(AnalysisClient::TIMEOUT_S, $job->timeout);
         $this->assertLessThan((int) config('queue.connections.database.retry_after'), $job->timeout);
+        // the unique lock outlives every attempt and backoff, so a slow retry cannot let a second run in
+        $this->assertGreaterThanOrEqual($job->tries * $job->timeout + array_sum($job->backoff), $job->uniqueFor);
+    }
+
+    /** S-65: stop + rescore for one session queue one ScoreSession; other sessions are not held back. */
+    public function test_two_dispatches_for_one_session_queue_one_job(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        $session = app(SessionManager::class)->start($lab, $this->profile('Test: AI blocked'), 'CS101');
+        app(SessionManager::class)->stop($session);   // dispatches the first
+        $this->actingAs($this->user('instructor'))->post("/reports/{$session->id}/rescore")->assertRedirect();
+        ScoreSession::dispatch($session->id);
+        ScoreSession::dispatch($session->id + 1000);  // another session
+        Queue::assertPushed(ScoreSession::class, 2);
+        Queue::assertPushed(ScoreSession::class, fn (ScoreSession $j) => $j->sessionId === $session->id);
+        $this->assertSame((string) $session->id, (new ScoreSession($session->id))->uniqueId());
+    }
+
+    /** S-65: once a run finishes, the lock is gone and a later rescore queues again. */
+    public function test_a_finished_run_releases_the_lock(): void
+    {
+        Http::fake(['analysis.test/score' => Http::response(['scored' => 1, 'flagged' => []])]);
+        $lab = $this->bootLab();
+        $session = app(SessionManager::class)->start($lab, $this->profile('Test: AI blocked'), 'CS101');
+        app(SessionManager::class)->stop($session);   // sync queue: scored and released here
+        Queue::fake();
+        ScoreSession::dispatch($session->id);
+        Queue::assertPushed(ScoreSession::class, 1);
     }
 
     public function test_the_analysis_token_does_not_open_the_internal_api(): void

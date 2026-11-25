@@ -58,7 +58,7 @@ class ReportController extends Controller
         ScoreSession::dispatch($session->id);
         Audit::log('report.rescore', $session);
 
-        return back()->with('status', 'Re-scoring queued.');
+        return back()->with('status', 'Re-scoring queued (a scoring run already queued for this session counts).');
     }
 
     public function pdf(LabSession $session)
