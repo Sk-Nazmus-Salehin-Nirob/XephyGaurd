@@ -24,7 +24,8 @@ class State:
     wan_if: str = "wan0"
     proxy_port: int = 8080
     agent_port: int = 8443
-    network_mode: str = "gateway"
+    # None = the document has no (or a null) network_mode; generate then uses env XG_NETWORK_MODE
+    network_mode: str | None = None
     groups: dict[str, list[str]] = field(default_factory=lambda: {g: [] for g in GROUPS})
     categories: dict[str, list[str]] = field(default_factory=dict)
     path_rules: dict[str, list[str]] = field(default_factory=dict)
@@ -59,6 +60,8 @@ class State:
         and reject the document. A single bad PC entry in a group or in google.udm14_clients
         (not a string, not an IPv4 address, outside lab_subnet) is dropped with a warning, so
         one odd PC never stops a session from being enforced for all the others."""
+        if self.network_mode is not None and not isinstance(self.network_mode, str):
+            raise ValueError(f"network_mode must be a string, not {type(self.network_mode).__name__}")
         ipaddress.ip_address(self.ccc_ip)
         net = ipaddress.ip_network(self.lab_subnet, strict=False)
         if not isinstance(self.groups, dict):

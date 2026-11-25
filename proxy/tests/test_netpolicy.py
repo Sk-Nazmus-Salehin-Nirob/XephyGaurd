@@ -701,3 +701,46 @@ def test_compose_passes_internal_token_to_proxy():
     compose = (pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy" / "docker-compose.yml").read_text()
     proxy = re.search(r"\n  proxy:.*?(?=\n  \w)", compose, re.S).group(0)
     assert "XG_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}" in proxy
+
+
+# -- Step 17 (I-PROXY-29): network_mode comes from the parsed State, the document is read once per digest --
+
+@pytest.mark.parametrize("doc_mode,expected", [("proxy_only", "proxy_only"), ("gateway", "gateway"),
+                                               (None, None), ("missing", None)])
+def test_watch_reads_state_once_and_uses_its_network_mode(state_file, state_dict, tmp_path, monkeypatch,
+                                                          doc_mode, expected):
+    doc = dict(state_dict)
+    doc.pop("network_mode", None)
+    if doc_mode != "missing":
+        doc["network_mode"] = doc_mode
+    state_file.write_text(json.dumps(doc))
+    modes = []
+    monkeypatch.setattr(generate, "apply", lambda out, changed, network_mode=None, flush_ips=frozenset():
+                        modes.append(network_mode))
+    reads = []
+    real_bytes, real_text = pathlib.Path.read_bytes, pathlib.Path.read_text
+
+    def count_bytes(self):
+        if self == state_file:
+            reads.append("bytes")
+        return real_bytes(self)
+
+    def count_text(self, *a, **k):
+        if self == state_file:
+            reads.append("text")
+        return real_text(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_bytes", count_bytes)
+    monkeypatch.setattr(pathlib.Path, "read_text", count_text)
+    assert generate.main(["--state", str(state_file), "--out", str(tmp_path / "net"), "--apply"]) == 0
+    assert reads == ["bytes"]   # hashed and parsed from one read (was three: digest, State.load, mode)
+    assert modes == [expected]  # None: apply falls back to env XG_NETWORK_MODE, as before
+
+
+def test_state_network_mode_default_and_type_check(state_dict):
+    doc = dict(state_dict)
+    doc.pop("network_mode", None)
+    assert State.from_dict(doc).network_mode is None
+    assert State.from_dict({**doc, "network_mode": "proxy_only"}).network_mode == "proxy_only"
+    with pytest.raises(ValueError, match="network_mode"):
+        State.from_dict({**doc, "network_mode": 3})

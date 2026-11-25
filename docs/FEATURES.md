@@ -668,6 +668,7 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
   proxy reached by PAC (proxy_only).
 - **Trigger:** setting `network_mode` (F104), `XG_NETWORK_MODE`; installer question.
 - **Code:** `NetworkPolicyWriter`, `proxy/xg_netpolicy/generate.py`, `ccc-deploy/docker/proxy-entrypoint.sh`.
+  The watcher reads the state document once per change and takes the generated files and the applied `network_mode` from that one read (`State.network_mode`); when the document has no or a null `network_mode`, `XG_NETWORK_MODE` decides (`watch_reads_state_once_and_uses_its_network_mode`).
 - **Status:** partly working (tests pass; gateway mode never run on a real two-NIC host).
 - **Test:** 1. Set proxy_only. 2. `curl --cacert ca.crt https://<ccc>/proxy.pac` returns a PAC pointing at the CCC.
 

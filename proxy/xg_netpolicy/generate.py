@@ -250,17 +250,12 @@ class InvalidState(Exception):
     """The state document can't be used (bad JSON, wrong types, failed validation)."""
 
 
-def _load(path: pathlib.Path) -> tuple[State, str | None]:
-    """Parse the state document and its raw network_mode. Any parse/validation error becomes
-    InvalidState; OSError (file replaced or unreadable just now) is passed through for a retry."""
+def _load(data: bytes) -> State:
+    """Parse the state document from the bytes that were hashed, so the files and the applied
+    network_mode come from one read of the file (I-PROXY-29). Any parse/validation error becomes
+    InvalidState."""
     try:
-        s = State.load(path)
-        raw_mode = json.loads(path.read_text()).get("network_mode")
-        if raw_mode is not None and not isinstance(raw_mode, str):
-            raise TypeError(f"network_mode must be a string, not {type(raw_mode).__name__}")
-        return s, raw_mode
-    except OSError:
-        raise
+        return State.from_dict(json.loads(data))
     except Exception as e:  # ValueError, KeyError, TypeError, AttributeError from from_dict/validate
         raise InvalidState(f"{type(e).__name__}: {e}") from e
 
@@ -286,16 +281,17 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     last = None
     restricted: set[str] | None = None  # None until the first apply: then every restricted IP is flushed
-    applied: tuple[State, str | None] | None = None  # last applied state and its network_mode
+    applied: State | None = None  # last applied state
     next_check = 0.0
     redo = False  # an earlier attempt for this digest failed half-way: rewrite/re-apply everything
     failures = consecutive = 0
     while True:
         digest = None
         try:
-            digest = hashlib.sha256(a.state.read_bytes()).hexdigest() if a.state.exists() else None
-            if digest and digest != last:
-                s, raw_mode = _load(a.state)
+            data = a.state.read_bytes() if a.state.exists() else None
+            digest = hashlib.sha256(data).hexdigest() if data is not None else None
+            if data is not None and digest != last:
+                s = _load(data)
                 changed = generate_state(s, a.out)
                 log.info("state %s -> %s", digest[:12], {k: v for k, v in changed.items() if v} or "no changes")
                 if redo:
@@ -307,22 +303,22 @@ def main(argv: list[str] | None = None) -> int:
                         # first pass: the files may predate this process (netpolicy-run.sh pre-generates
                         # them, or a reboot emptied the sets), so unchanged content proves nothing
                         changed["nft"] = True
-                    apply(a.out, changed, network_mode=raw_mode,
+                    apply(a.out, changed, network_mode=s.network_mode,
                           flush_ips=now if restricted is None else now - restricted)
                     restricted = now
-                    applied = (s, raw_mode)
+                    applied = s
                     next_check = time.monotonic() + a.resync
                 last = digest
                 redo = False
             elif applied and time.monotonic() >= next_check:
                 next_check = time.monotonic() + a.resync
-                s, raw_mode = applied
-                mode = (raw_mode or os.environ.get("XG_NETWORK_MODE", "")).strip()
+                s = applied
+                mode = (s.network_mode or os.environ.get("XG_NETWORK_MODE", "")).strip()
                 if mode != "proxy_only" and sets_out_of_sync(s):
                     # table reloaded (xephyguard.nft deletes it) or sets edited by hand: flows opened
                     # meanwhile were unrestricted, so flush them all once the sets are back
                     log.warning("live nft sets differ from sets.nft, re-applying")
-                    apply(a.out, {"nft": True}, network_mode=raw_mode, flush_ips=restricted_ips(s))
+                    apply(a.out, {"nft": True}, network_mode=s.network_mode, flush_ips=restricted_ips(s))
         except InvalidState as e:
             failures += 1
             consecutive += 1
