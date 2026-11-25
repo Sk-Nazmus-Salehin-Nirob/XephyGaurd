@@ -121,6 +121,11 @@ class NetworkPolicyWriterTest extends TestCase
         $this->assertSame($seed['google_ai_paths'], $google['ai_paths']);
         $this->assertSame($seed['search_css_hosts'], $google['css_hosts']);
         $this->assertSame(['/async/folwr'], $google['ai_paths']);
+        Setting::put('vpn_ports', ['9999/tcp']);   // proxy Step 18: vpn_ports is a signature too, top-level
+        $vpn = app(NetworkPolicyWriter::class)->build()['vpn_ports'];
+        $this->assertSame($seed['vpn_ports'], $vpn);
+        $this->assertContains('51820/udp', $vpn);
+        $this->assertNotContains('9999/tcp', $vpn);
         foreach (NetworkSeed::SIGNATURE_KEYS as $key) {
             $this->assertNotContains($key, NetworkSeed::KEYS);
         }

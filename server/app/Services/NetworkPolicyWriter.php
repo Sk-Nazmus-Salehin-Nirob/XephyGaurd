@@ -97,6 +97,8 @@ class NetworkPolicyWriter
                 'css_hosts' => NetworkSeed::defaults('search_css_hosts'),
             ],
             'inspect_hosts' => NetworkSeed::get('inspect_hosts'),
+            // "port/proto" strings block_ai PCs may not reach through the gateway, from data/ (proxy Step 18, I-PROXY-18)
+            'vpn_ports' => NetworkSeed::defaults('vpn_ports'),
             // the proxy records `observed` AI/IDE events only for these PCs (and only with log_urls on); isolated PCs are not listed
             'session_clients' => array_values(array_unique($sessionClients)),
             'log_urls' => $logUrls,

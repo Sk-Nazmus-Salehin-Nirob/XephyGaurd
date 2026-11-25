@@ -18,8 +18,8 @@ final class NetworkSeed
 {
     public const KEYS = ['inspect_hosts', 'google_hide_selectors'];
 
-    /** Signatures sent unchanged in state.json `google` (not admin settings, not in KEYS). */
-    public const SIGNATURE_KEYS = ['google_search_hosts', 'google_ai_paths', 'search_css_hosts'];
+    /** Signatures sent unchanged in state.json `google` and `vpn_ports` (proxy Step 18) (not admin settings, not in KEYS). */
+    public const SIGNATURE_KEYS = ['google_search_hosts', 'google_ai_paths', 'search_css_hosts', 'vpn_ports'];
 
     /** @var array<string, array<string, list<string>>> parsed seed per file path */
     private static array $cache = [];

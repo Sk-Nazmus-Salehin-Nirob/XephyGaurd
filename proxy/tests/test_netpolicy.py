@@ -1328,3 +1328,30 @@ def test_path_rule_hosts_are_inspected_for_their_group(state_file, state_dict, t
     for host in ("cdn.hf.co", "console.aws.amazon.com", "amazon.com", "accounts.google.com", "hf.co.evil.net"):
         assert c.decide_tls(test, host).action == "pass", host
     assert c.decide_tls(test, "huggingface.co").reason == "selective inspection host"   # already listed
+
+
+def test_server_shaped_document_with_vpn_ports(tmp_path):
+    """I-PROXY-18 CROSS (server S-59): NetworkPolicyWriter::build sends data/network/proxy.yaml
+    `vpn_ports` top-level as "port/proto" strings; the gateway uses that list, not the built-in one."""
+    doc = {
+        "version": 13, "network_mode": "gateway", "ccc_ip": "192.168.10.2", "lab_subnet": "192.168.10.0/24",
+        "lan_if": "enp2s0", "wan_if": "enp1s0", "proxy_port": 3128, "agent_port": 8443,
+        "groups": {"test": [], "block_ai": ["192.168.10.30"], "isolated": [], "exempt": []},
+        "categories": {"ai": ["chatgpt.com"]}, "path_rules": [], "group_categories": {"test": [], "block_ai": ["ai"]},
+        "always_block": ["doh"], "doh_ips": [], "google": {"force_udm14": False, "udm14_clients": []},
+        "inspect_hosts": [], "vpn_ports": ["51820/udp", "22/tcp", "8443/tcp"], "session_clients": ["192.168.10.30"],
+        "log_urls": {"enabled": False}, "events_url": "http://127.0.0.1:8080/api/internal/net-events",
+    }
+    s = State.from_dict(doc)
+    assert s.vpn_ports == ["51820/udp", "22/tcp", "8443/tcp"] and not s.skipped
+    p = tmp_path / "state.json"
+    p.write_text(json.dumps(doc))
+    generate.generate(p, tmp_path / "net")
+    nft = (tmp_path / "net" / "sets.nft").read_text()
+    assert "add element inet xephyguard vpn_tcp_ports { 22, 8443 }" in nft
+    assert "add element inet xephyguard vpn_udp_ports { 51820 }" in nft
+    # the list the server sends is the seed itself, so a server-shaped document equals the defaults
+    yaml_text = (pathlib.Path(__file__).resolve().parents[2] / "data/network/proxy.yaml").read_text()
+    block = yaml_text.split("\nvpn_ports:\n", 1)[1].split("\n\n", 1)[0]
+    seed = [ln.split("#")[0].strip()[2:].strip() for ln in block.splitlines() if ln.strip().startswith("- ")]
+    assert State.from_dict({**doc, "vpn_ports": seed}).vpn_ports == seed

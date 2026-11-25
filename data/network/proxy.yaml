@@ -55,7 +55,7 @@ search_css_hosts:
 
 # VPN/tunnel ports that PCs in the block_ai group may not reach through the gateway (proxy Step 18,
 # I-PROXY-18; nftables forward chain, sets vpn_tcp_ports / vpn_udp_ports). Not a setting: the CCC sends the
-# list unchanged in state.json as top-level `vpn_ports`. Until it does, xg_netpolicy uses the same values
+# list unchanged in state.json as top-level `vpn_ports` (server S-59). If it is missing, xg_netpolicy uses the same values
 # built in (proxy/xg_netpolicy/state.py VPN_PORTS_DEFAULTS; a test keeps both equal). Each entry is
 # "port/tcp" or "port/udp". Gateway mode only; Test-mode PCs already get no forwarded traffic at all.
 vpn_ports:
