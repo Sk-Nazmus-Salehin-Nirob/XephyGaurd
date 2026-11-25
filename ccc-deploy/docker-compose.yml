@@ -44,7 +44,7 @@ services:
       - /var/lib/xephyguard/ca:/var/lib/xephyguard/ca
       - /var/lib/xephyguard/net:/var/lib/xephyguard/net
       - /var/lib/xephyguard/storage:/var/www/html/storage/app
-      - /var/log/xephyguard:/var/www/html/storage/logs
+      - /var/log/xephyguard:/var/www/html/storage/logs   # incl. proxy/proxy-stats.json for /health (S-63)
       - ./nginx/xephyguard.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/xg-php.conf:/etc/nginx/xg-php.conf:ro
 

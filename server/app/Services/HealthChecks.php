@@ -85,6 +85,42 @@ class HealthChecks
             return [$ok, $ok ? 'Resolver answers on port 53' : 'Resolver not reachable on port 53'];
         });
 
+        $add('Gateway firewall sets', 'docker compose logs netpolicy; check the gateway ruleset with: nft list table inet xephyguard', 'error', function () {
+            $h = $this->readJson($this->netHealthPath());
+            if ($h === null) {
+                return [false, 'No health.json from netpolicy yet', 'docker compose logs netpolicy', 'warning'];
+            }
+            $at = is_string($h['nft_checked_at'] ?? null) ? ' (checked '.$h['nft_checked_at'].')' : '';
+            if (($h['nft_ok'] ?? null) === false) {
+                $since = is_string($h['nft_failed_since'] ?? null) ? ' since '.$h['nft_failed_since'] : '';
+
+                return [false, "Loading the firewall sets fails{$since}: ".Str::limit((string) ($h['nft_error'] ?? 'no message'), 200)];
+            }
+            if (($h['nft_ok'] ?? null) === true) {
+                return [true, 'Firewall sets loaded'.$at];
+            }
+
+            return [true, 'Not used: '.Str::limit((string) ($h['nft_skipped'] ?? 'not loaded'), 100).$at];
+        });
+
+        $add('Proxy event delivery', 'docker compose logs proxy; check the CCC answers on /api/internal/net-events', 'warning', function () {
+            $s = $this->readJson($this->proxyStatsPath());
+            if ($s === null) {
+                return [false, 'No proxy-stats.json from the proxy yet'];
+            }
+            $n = fn (string $k): int => is_int($s[$k] ?? null) ? $s[$k] : 0;
+            $lost = $n('queue_full') + $n('spill_lost');
+            $waiting = max(0, $n('spilled') - $n('replayed') - $n('purged'));
+            $age = is_int($s['updated_at'] ?? null) ? now()->getTimestamp() - $s['updated_at'] : null;
+            $detail = sprintf('%d queued, %d waiting for replay, %d replayed, %d refused, %d lost, %d repeats skipped',
+                $n('queued'), $waiting, $n('replayed'), $n('rejected'), $lost, $n('deduped_allowed') + $n('deduped_observed'));
+            if ($age === null || $age > 300) {
+                return [false, 'Proxy counters not updated for '.($age === null ? 'an unknown time' : intdiv($age, 60).' minutes').": $detail"];
+            }
+
+            return [$lost === 0 && $n('rejected') === 0, $detail];   // counters since the proxy started
+        });
+
         $add('Disk space', 'Free disk space or shorten raw-event retention in Settings', 'warning', function () {
             $gb = self::gb($this->disk()['free']);
 
@@ -143,6 +179,29 @@ class HealthChecks
     public static function gb(?float $bytes): float
     {
         return $bytes ? round($bytes / 1073741824, 1) : 0.0;
+    }
+
+    /** netpolicy's health.json (result of the last `nft -f`, proxy Step 23), next to state.json. */
+    public function netHealthPath(): string
+    {
+        return (string) (config('xephyguard.net_health_path') ?: dirname((string) config('xephyguard.net_state_path')).'/health.json');
+    }
+
+    /** The proxy's proxy-stats.json (event shipper counters, proxy Step 26): counts only, no hosts or IPs. */
+    public function proxyStatsPath(): string
+    {
+        return (string) config('xephyguard.proxy_stats_path');
+    }
+
+    /** @return array<string, mixed>|null the decoded JSON object, or null when missing, unreadable or not an object */
+    private function readJson(string $path): ?array
+    {
+        if ($path === '' || ! is_file($path) || ($text = @file_get_contents($path)) === false) {
+            return null;
+        }
+        $doc = json_decode($text, true);
+
+        return is_array($doc) && ! array_is_list($doc) ? $doc : null;
     }
 
     private function tcp(mixed $host, int $port): bool

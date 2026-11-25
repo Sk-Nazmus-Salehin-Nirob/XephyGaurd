@@ -21,6 +21,9 @@ return [
 
     // Shared data with the network side (Unbound / nftables / mitmproxy sidecars).
     'net_state_path' => env('XG_NET_STATE', storage_path('app/net/state.json')),
+    // read-only status files of the sidecars, shown on /health and by xephyguard:doctor (S-63)
+    'net_health_path' => env('XG_NET_HEALTH'),   // default: health.json next to net_state_path
+    'proxy_stats_path' => env('XG_PROXY_STATS', storage_path('logs/proxy/proxy-stats.json')),   // host /var/log/xephyguard/proxy
     'data_dir' => env('XG_DATA_DIR', base_path('../data')),
     'internal_token' => env('XG_INTERNAL_TOKEN'),            // proxy -> CCC net event shipping
     'internal_url' => env('XG_INTERNAL_URL', 'http://app'),
