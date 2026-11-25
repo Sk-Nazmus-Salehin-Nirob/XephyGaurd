@@ -53,7 +53,7 @@ class State:
     doh_ips: list[str] = field(default_factory=list)
     google: dict[str, Any] = field(default_factory=lambda: {"force_udm14": True, "udm14_clients": [], "hide_selectors": [], "strip_markers": []})
     inspect_hosts: list[str] = field(default_factory=list)
-    log_urls: dict[str, Any] = field(default_factory=lambda: {"enabled": False, "query": False})
+    log_urls: dict[str, Any] = field(default_factory=lambda: {"enabled": False})  # no `query` since server S-62
     events_url: str = ""
     events_token: str = ""
     # "port/proto" (tcp|udp); validate() replaces a missing or unusable list with VPN_PORTS_DEFAULTS

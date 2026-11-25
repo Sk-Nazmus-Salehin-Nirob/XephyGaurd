@@ -61,7 +61,7 @@ class NetEventsController extends Controller
             }
             $rows[] = [
                 'pc_id' => $pc?->id, 'lab_session_id' => $sid, 'client_ip' => $clientIp,
-                'host' => $e['host'] ?? '', 'path' => $e['path'] ?? null, 'layer' => $e['layer'], 'action' => $e['action'],
+                'host' => $e['host'] ?? '', 'path' => self::withoutQuery($e['path'] ?? null), 'layer' => $e['layer'], 'action' => $e['action'],
                 'category' => $e['category'] ?? null, 'matched' => $e['matched'] ?? null,
                 'occurred_at' => $at,
             ];
@@ -127,5 +127,19 @@ class NetEventsController extends Controller
         }
 
         return response()->json(['stored' => count($rows)]);
+    }
+
+    /**
+     * The path without query string or fragment (S-62, proxy Step 9): search terms are never stored, even when an
+     * older or misconfigured proxy sends them. An empty result is `/`, as the proxy's loggable_path writes it.
+     */
+    private static function withoutQuery(?string $path): ?string
+    {
+        if ($path === null) {
+            return null;
+        }
+        $cut = strcspn($path, '?#');
+
+        return $cut === 0 ? '/' : substr($path, 0, $cut);
     }
 }

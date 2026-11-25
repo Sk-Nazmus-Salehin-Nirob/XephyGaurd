@@ -72,7 +72,7 @@ class AdminController extends Controller
             'notice_text' => 'required|string|max:2000', 'paste_alert_chars' => 'required|integer|min:50|max:100000',
             'timezone' => 'nullable|timezone|max:64', 'google_search_url' => ['nullable', 'string', 'max:500', 'regex:#^https?://\S+$#i'],
             'title_capture_always_on' => 'required|in:off,app_only,full', 'title_capture_practice' => 'required|in:off,app_only,full',
-            'title_capture_test' => 'required|in:off,app_only,full', 'log_urls' => 'nullable|boolean', 'log_queries' => 'nullable|boolean',
+            'title_capture_test' => 'required|in:off,app_only,full', 'log_urls' => 'nullable|boolean',
             'inspect_hosts' => 'nullable|string|max:5000', 'google_hide_selectors' => 'nullable|string|max:5000',
             'screen_cpu_budget_pct' => 'nullable|integer|min:1|max:100',
         ]);
@@ -87,8 +87,7 @@ class AdminController extends Controller
         foreach (['always_on', 'practice', 'test'] as $m) {
             Setting::put("privacy.title_capture.$m", $d["title_capture_$m"]);
         }
-        $logEnabled = (bool) ($d['log_urls'] ?? false);
-        Setting::put('privacy.log_urls', ['enabled' => $logEnabled, 'query' => $logEnabled && (bool) ($d['log_queries'] ?? false)]);
+        Setting::put('privacy.log_urls', ['enabled' => (bool) ($d['log_urls'] ?? false)]);   // never query strings (S-62)
         $lines = fn ($s) => array_values(array_filter(array_map('trim', preg_split('/\R/', (string) $s))));
         foreach (NetworkSeed::KEYS as $k) {
             NetworkSeed::save($k, $lines($d[$k] ?? ''));   // empty or unchanged = keep following the seed

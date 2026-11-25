@@ -10,7 +10,6 @@
   $tPractice = $tPracticeRaw === 'app_only' ? 'app' : $tPracticeRaw;
   $tTest = $tTestRaw === 'app_only' ? 'app' : $tTestRaw;
   $logHosts = (bool) ($v['log_urls']['enabled'] ?? false);
-  $logQueries = $logHosts && (bool) ($v['log_urls']['query'] ?? false);
 @endphp
 <script type="application/json" id="xg-page-data">{!! json_encode([
   'mode' => $netMode,
@@ -19,7 +18,6 @@
   'tPractice' => $tPractice,
   'tTest' => $tTest,
   'hosts' => $logHosts,
-  'queries' => $logQueries,
 ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 <div class="doc" x-data="settingsPage"><div class="optbar"><span class="otitle">Settings</span><span class="osub">Network, privacy and the notice students see.</span><span class="grow"></span></div><div class="canvas ">
   @if ($errors->any())
@@ -61,7 +59,7 @@
         <div class="panel-body stack" style="max-width:760px;--gap:18px">
           <label class="field"><span>Screen view CPU budget (% of one core)</span><input name="screen_cpu_budget_pct" type="number" min="1" max="100" class="input mono" value="{{ $v['screen_cpu_budget_pct'] ?? 8 }}"><p class="help">Live screen view on a lab PC lowers its frame rate (not below 2 fps), then quality, to stay under this. Default 8.</p></label>
           <label class="field"><span>Search engine override URL (udm=14)</span><input name="google_search_url" class="input mono" value="{{ $v['google_search_url'] ?? 'https://www.google.com/search?q={searchTerms}&udm=14' }}"><p class="help">Forces web-only search results without generative AI overviews when enabled in a profile.</p></label>
-          <label class="field"><span>Search sites to inspect</span><textarea name="inspect_hosts" class="textarea mono" rows="3">{{ $v['inspect_hosts'] ?? '' }}</textarea><p class="help">Only these sites are opened up so AI summary boxes can be hidden. One exact host per line (www.google.com and google.com are separate); *.example.com covers its subdomains. Sign-in, mail and document hosts are never opened. Default list: data/network/proxy.yaml (leave empty to use it).</p></label>
+          <label class="field"><span>Search sites to inspect</span><textarea name="inspect_hosts" class="textarea mono" rows="3">{{ $v['inspect_hosts'] ?? '' }}</textarea><p class="help">Only these sites are opened up so AI summary boxes can be hidden (plus, in Test and AI-blocked classes, the exact host of a blocked-path rule such as hf.co/chat). One exact host per line (www.google.com and google.com are separate); *.example.com covers its subdomains. Sign-in, mail and document hosts are never opened. Default list: data/network/proxy.yaml (leave empty to use it).</p></label>
           <label class="field"><span>Selectors that hide AI summaries</span><textarea name="google_hide_selectors" class="textarea mono" rows="2">{{ $v['google_hide_selectors'] ?? '' }}</textarea><p class="help">One per line. Default list: data/network/proxy.yaml (leave empty to use it).</p></label>
           <label class="field" style="max-width:260px"><span>Alert on pastes over (characters)</span><input name="paste_alert_chars" class="input" type="number" x-model.number="pasteAt" required></label>
         </div></section>
@@ -73,7 +71,7 @@
               <tr><td>Outside class</td><td class="right"><div class="seg"><button type="button" :aria-pressed="tAlways === 'off'" @click="tAlways = 'off'">Off</button><button type="button" :aria-pressed="tAlways === 'app'" @click="tAlways = 'app'">Program</button><button type="button" :aria-pressed="tAlways === 'full'" @click="tAlways = 'full'">Full</button></div></td></tr>
               <tr><td>Practice class</td><td class="right"><div class="seg"><button type="button" :aria-pressed="tPractice === 'off'" @click="tPractice = 'off'">Off</button><button type="button" :aria-pressed="tPractice === 'app'" @click="tPractice = 'app'">Program</button><button type="button" :aria-pressed="tPractice === 'full'" @click="tPractice = 'full'">Full</button></div></td></tr>
               <tr><td>Test or exam</td><td class="right"><div class="seg"><button type="button" :aria-pressed="tTest === 'off'" @click="tTest = 'off'">Off</button><button type="button" :aria-pressed="tTest === 'app'" @click="tTest = 'app'">Program</button><button type="button" :aria-pressed="tTest === 'full'" @click="tTest = 'full'">Full</button></div></td></tr></tbody></table></div>
-          <div class="stack" style="--gap:12px"><label class="check"><span class="switch"><input type="checkbox" name="log_urls" value="1" x-model="hosts"><i></i></span> Log which allowed sites are visited</label><label class="check" x-show="hosts"><span class="switch"><input type="checkbox" name="log_queries" value="1" x-model="queries"><i></i></span> <span>Include search terms <span class="muted">(off by default)</span></span></label></div>
+          <div class="stack" style="--gap:12px"><label class="check"><span class="switch"><input type="checkbox" name="log_urls" value="1" x-model="hosts"><i></i></span> Log which allowed sites are visited</label><p class="help">Host and path only, never the query string, so never search terms.</p></div>
         </div></section>
       <section class="section" id="notice"><div class="panel-head"><h2 class="h2">Student notice</h2><a class="small" href="{{ route('notice') }}">Preview</a></div>
         <div class="panel-body" style="max-width:760px"><textarea name="notice_text" class="textarea" rows="4" required>{{ $v['notice_text'] }}</textarea><p class="help">Shown on the agent’s indicator and on the public notice page. Added automatically from the enabled features: “{{ $v['notice_generated'] }}”</p></div></section>

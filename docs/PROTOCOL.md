@@ -264,7 +264,7 @@ The proxy sends (a test keeps this list, the addon and `NetEventsController` equ
 | `blocked` | `search-ai` | Google AI path (`google_ai_paths`, answered 204); `category: search_ai` |
 | `rewritten` | `search-ai` | Google search forced to `udm=14`; `path: /search`, `category: search_ai` |
 | `observed` | `sni` / `http` / `path` | only with `log_urls.enabled` and for a PC in a session; `path` is the first segment only; see below |
-| `allowed` | `sni` / `http` | only with `log_urls.enabled`, not for AI/IDE hosts; `path` without query string or fragment |
+| `allowed` | `sni` / `http` | only with `log_urls.enabled`, not for AI/IDE hosts; `path` without query string or fragment (the CCC strips them again on arrival, for every action) |
 
 `reason` (the block page text) is sent with `blocked` events but not stored: the CCC keeps only the fields listed above.
 Limits: ≤ 1000 events, `host` ≤ 255, `path` ≤ 512, `layer` ≤ 16, `category` ≤ 24, `matched` ≤ 255 chars, `ts` in ms.

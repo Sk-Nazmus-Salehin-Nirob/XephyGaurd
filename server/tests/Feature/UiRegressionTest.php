@@ -8,6 +8,7 @@ use App\Models\Alert;
 use App\Models\Lab;
 use App\Models\Pc;
 use App\Models\Setting;
+use App\Services\NetworkPolicyWriter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\BuildsLab;
@@ -17,7 +18,7 @@ class UiRegressionTest extends TestCase
 {
     use BuildsLab, RefreshDatabase;
 
-    public function test_save_settings_accepts_search_template_url_and_gates_log_queries(): void
+    public function test_save_settings_accepts_search_template_url_and_never_logs_queries(): void
     {
         $this->bootLab();
         $admin = $this->user('admin');
@@ -47,17 +48,15 @@ class UiRegressionTest extends TestCase
 
         $this->assertSame('Lab Updated 51', Lab::current()->name);
         $this->assertSame('https://www.google.com/search?q={searchTerms}&udm=14', Setting::get('google_search_url'));
-        $logUrls = Setting::get('privacy.log_urls');
-        $this->assertTrue((bool) ($logUrls['enabled'] ?? false));
-        $this->assertTrue((bool) ($logUrls['query'] ?? false));
+        // S-62 (proxy Step 9): there is no query switch; a posted `log_queries` is ignored, nothing stores `query`
+        $this->assertSame(['enabled' => true], Setting::get('privacy.log_urls'));
+        $this->assertSame(['enabled' => true], app(NetworkPolicyWriter::class)->build()['log_urls']);
+        $page = $this->actingAs($admin)->get('/settings')->assertOk();
+        $page->assertSee('name="log_urls"', false)->assertDontSee('log_queries')->assertDontSee('Include search terms');
 
-        // When URL logging is disabled, query logging must automatically turn off as well.
         $payload['log_urls'] = false;
-        $payload['log_queries'] = true;
         $this->actingAs($admin)->post('/settings', $payload)->assertRedirect()->assertSessionHasNoErrors();
-        $logUrls2 = Setting::get('privacy.log_urls');
-        $this->assertFalse((bool) ($logUrls2['enabled'] ?? false));
-        $this->assertFalse((bool) ($logUrls2['query'] ?? false));
+        $this->assertSame(['enabled' => false], Setting::get('privacy.log_urls'));
     }
 
     public function test_dashboard_includes_all_52_unacknowledged_alerts_including_retired_pcs(): void

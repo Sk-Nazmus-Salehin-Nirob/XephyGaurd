@@ -995,11 +995,11 @@ No login needed for any of these.
 
 ### F104. Settings
 - **What:** lab name, network mode, CCC IP, retention (raw 7–1095 days, reports 30–3650 days),
-  notice text, paste alert size, timezone, title capture per mode, `log_urls`, `log_queries`,
+  notice text, paste alert size, timezone, title capture per mode, `log_urls` (host + path, never queries; no `log_queries` since S-62),
   inspect hosts, Google hide selectors, search template URL.
 - **Trigger:** `GET /settings` (+ aliases), `POST /settings`. Admin only.
 - **Code:** `AdminController::settings`, `saveSettings`; writes `settings`; rewrites net state; audit.
-- **Status:** working (`save_settings_accepts_search_template_url_and_gates_log_queries`).
+- **Status:** working (`save_settings_accepts_search_template_url_and_never_logs_queries`).
 - **Test:** 1. Change the lab name. 2. The header shows the new name.
 
 ### F105. Audit log
@@ -1213,7 +1213,7 @@ agent IPC); reads `DISPLAY`, `XDG_SESSION_TYPE`, `DBUS_SESSION_BUS_ADDRESS`, `NO
 ### CCC settings (`settings` table, edited on `/settings`)
 `lab_name`, `network_mode`, `ccc_ip`, `retention_days_raw`, `retention_days_reports`, `notice_text`,
 `paste_alert_chars`, `timezone`, `title_capture_always_on`, `title_capture_practice`,
-`title_capture_test`, `log_urls`, `log_queries`, `inspect_hosts`, `google_hide_selectors` (both stored only
+`title_capture_test`, `log_urls`, `inspect_hosts`, `google_hide_selectors` (both stored only
 when they differ from `data/network/proxy.yaml`), search
 template URL; plus internal keys `shared_clipboard`, `shared_clipboard_at`, `shared_clipboard_history`,
 pseudonymisation flag.

@@ -24,9 +24,9 @@ class PrivacySettingsTest extends TestCase
         $this->assertSame('off', PrivacySettings::titleCaptureSetting('unknown_mode'));
         Setting::put('privacy.title_capture.test', 'everything');
         $this->assertSame('off', PrivacySettings::titleCaptureSetting('test'));
-        $this->assertSame(['enabled' => false, 'query' => false], PrivacySettings::logUrls());
-        Setting::put('privacy.log_urls', ['enabled' => false, 'query' => true]);
-        $this->assertFalse(PrivacySettings::logUrls()['query']);              // queries only with URLs on
+        $this->assertSame(['enabled' => false], PrivacySettings::logUrls());
+        Setting::put('privacy.log_urls', ['enabled' => true, 'query' => true]);   // stored before S-62
+        $this->assertSame(['enabled' => true], PrivacySettings::logUrls());     // no query switch any more
     }
 
     public function test_effective_title_capture_is_the_stricter_of_profile_and_setting(): void

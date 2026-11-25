@@ -299,7 +299,7 @@ class PolicyCache:
 
 def loggable_path(path: str, limit: int = 512) -> str:
     """Path of a request as shipped in events: never the query string or fragment, which hold typed
-    text such as search terms (I-PROXY-9, PRIVACY). The `log_urls.query` setting no longer widens this."""
+    text such as search terms (I-PROXY-9, PRIVACY). The CCC has no `log_urls.query` switch any more (server S-62); an older document's is ignored."""
     return path.split("?", 1)[0].split("#", 1)[0][:limit] or "/"
 
 

@@ -207,6 +207,28 @@ class SessionNetworkTest extends TestCase
             ->assertJsonPath('network.0.action', 'observed');
     }
 
+    /** S-62 (proxy Step 9): query strings and fragments are stripped on arrival, so search terms are never stored. */
+    public function test_net_event_paths_lose_query_string_on_arrival(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        $this->enrolledPc('192.168.10.21', 'PC-01');
+        app(SessionManager::class)->start($lab, $this->profile('Practice: AI allowed, logged'), 'CS101');
+        $ts = now()->getTimestampMs();
+        $paths = ['/search?q=answer+to+q3' => '/search', '/a/b#frag?x=1' => '/a/b', '?q=x' => '/', '/plain' => '/plain'];
+        $events = [];
+        foreach (array_keys($paths) as $i => $p) {
+            $events[] = ['client_ip' => '192.168.10.21', 'host' => "h$i.example", 'path' => $p, 'layer' => 'http', 'action' => 'allowed', 'ts' => $ts];
+        }
+        $events[] = ['client_ip' => '192.168.10.21', 'host' => 'nopath.example', 'layer' => 'sni', 'action' => 'allowed', 'ts' => $ts];
+        $this->withToken('test-internal-token')->postJson('/api/internal/net-events', ['events' => $events])->assertOk()->assertJson(['stored' => 5]);
+        foreach (array_values($paths) as $i => $want) {
+            $this->assertSame($want, NetEvent::where('host', "h$i.example")->value('path'));
+        }
+        $this->assertNull(NetEvent::where('host', 'nopath.example')->value('path'));
+        $this->assertSame(0, NetEvent::where('path', 'like', '%q=%')->count());
+    }
+
     /** S-61 (proxy Step 25): a replayed event belongs to the session running at its ts, not the one active now. */
     public function test_replayed_net_event_goes_to_the_session_running_at_its_ts(): void
     {

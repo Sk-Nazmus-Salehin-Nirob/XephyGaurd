@@ -56,7 +56,7 @@ class HttpHooks:
                              layer="http" if flow.request.scheme == "http" else "path",
                              action="observed", category=ai_match[1], matched=ai_match[0])
         if self.cache.state.log_urls.get("enabled") and not ai_match:
-            # host + path only; the query (search terms) is never shipped, even with log_urls.query
+            # host + path only; the query (search terms) is never shipped (an old document's log_urls.query is ignored)
             self.events.emit(client_ip=ip, host=host, path=loggable_path(flow.request.path), layer="http",
                              action="allowed")
 

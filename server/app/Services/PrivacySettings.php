@@ -52,12 +52,16 @@ final class PrivacySettings
         return self::isTitleLevel($profileValue) ? self::stricter($profileValue, $setting) : 'off';
     }
 
-    /** @return array{enabled: bool, query: bool} URL logging in the proxy; query strings only with URLs on. */
+    /**
+     * URL logging in the proxy: host and path only. Query strings (search terms) are never logged, so there is
+     * no `query` switch any more (proxy Step 9, S-62); an old stored `query` is ignored.
+     *
+     * @return array{enabled: bool}
+     */
     public static function logUrls(): array
     {
         $v = Setting::get('privacy.log_urls', []);
-        $enabled = is_array($v) && (bool) ($v['enabled'] ?? false);
 
-        return ['enabled' => $enabled, 'query' => $enabled && (bool) ($v['query'] ?? false)];
+        return ['enabled' => is_array($v) && (bool) ($v['enabled'] ?? false)];
     }
 }

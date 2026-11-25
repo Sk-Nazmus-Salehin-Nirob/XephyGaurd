@@ -1254,10 +1254,6 @@ document.addEventListener('alpine:init', () => {
       tPractice: d.tPractice || 'app',
       tTest: d.tTest || 'full',
       hosts: !!d.hosts,
-      queries: !!d.queries,
-      init() {
-        this.$watch('hosts', v => { if (!v) this.queries = false; });
-      },
       go(id) {
         this.cur = id;
         document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
