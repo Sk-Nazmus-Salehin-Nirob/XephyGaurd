@@ -254,7 +254,19 @@ no network connection for the screen.
 
 ## Proxy → CCC (internal)
 `POST http://127.0.0.1:8000/api/internal/net-events` with `Authorization: Bearer $XG_INTERNAL_TOKEN`,
-`{events:[{client_ip, host, path?, layer: sni|http|path|search-ai, action: blocked|allowed|rewritten|observed, category?, matched?, ts}]}`.
+`{events:[{client_ip, host, path?, layer: sni|http|path|search-ai, action: blocked|allowed|rewritten|observed, category?, matched?, reason?, ts}]}`.
+The proxy sends (a test keeps this list, the addon and `NetEventsController` equal):
+
+| action | layer | when |
+|---|---|---|
+| `blocked` | `sni` | TLS ClientHello to a blocked host (no decryption); `category`, `matched`, `reason` |
+| `blocked` | `http` / `path` | plain-HTTP request to a blocked host, or an inspected HTTPS request matching a path rule (403); `category`, `matched`, `reason` |
+| `blocked` | `search-ai` | Google AI path (`google_ai_paths`, answered 204); `category: search_ai` |
+| `rewritten` | `search-ai` | Google search forced to `udm=14`; `path: /search`, `category: search_ai` |
+| `observed` | `sni` / `http` / `path` | see below |
+| `allowed` | `sni` / `http` | only with `log_urls.enabled`, not for AI/IDE hosts; `path` without query string or fragment |
+
+`reason` (the block page text) is sent with `blocked` events but not stored: the CCC keeps only the fields listed above.
 Limits: ≤ 1000 events, `host` ≤ 255, `path` ≤ 512, `layer` ≤ 16, `category` ≤ 24, `matched` ≤ 255 chars, `ts` in ms.
 `observed` = a passed (not blocked) connection or request to a known AI (`category: ai`) or IDE-AI backend
 (`category: ide`) domain or path; the proxy sends it at most once per (client IP, matched domain) per 30 s. For a known

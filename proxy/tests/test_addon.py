@@ -1,10 +1,14 @@
 """Exercises the mitmproxy addon with mitmproxy's own test helpers (recorded-style flows)."""
+import pathlib
+
 import pytest
 
 mitmproxy = pytest.importorskip("mitmproxy")
 from mitmproxy.test import taddons, tflow, tutils  # noqa: E402
 
 from xg_netpolicy import generate  # noqa: E402
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
@@ -235,3 +239,38 @@ def test_addon_hooks_split_into_modules_and_load_as_script():
     for hook, module in where.items():
         assert getattr(type(a), hook).__module__ == module, hook
     assert a.cache is None and a.events is None and a.blocked_conns == set()
+
+
+# -- Step 19 (I-PROXY-31): docs/PROTOCOL.md lists every action/layer the addon emits --
+
+def _emitted_pairs():
+    """(action, layer) of every events.emit(...) in the hook modules; a conditional layer gives both."""
+    import ast
+
+    pairs = set()
+    for name in ("hooks_http.py", "hooks_tls.py", "hooks_shipper.py"):
+        tree = ast.parse((ROOT / "proxy/addons" / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "emit":
+                kw = {k.arg: k.value for k in node.keywords}
+                layers = [kw["layer"].body, kw["layer"].orelse] if isinstance(kw["layer"], ast.IfExp) else [kw["layer"]]
+                for layer in layers:
+                    pairs.add((kw["action"].value, layer.value))
+    return pairs
+
+
+def test_protocol_lists_every_emitted_action_and_layer():
+    import re
+
+    proto = (ROOT / "docs/PROTOCOL.md").read_text(encoding="utf-8")
+    section = proto.split("## Proxy → CCC (internal)", 1)[1].split("\n## ", 1)[0]
+    head = re.search(r"layer: ([\w|-]+), action: ([\w|]+)", section)
+    doc_layers, doc_actions = set(head[1].split("|")), set(head[2].split("|"))
+    table = set()
+    for action, layers in re.findall(r"^\| `(\w+)` \| ([^|]+) \|", section, re.M):
+        table |= {(action, la) for la in re.findall(r"`([\w-]+)`", layers)}
+    emitted = _emitted_pairs()
+    assert emitted and table == emitted
+    assert {a for a, _ in emitted} == doc_actions and {la for _, la in emitted} == doc_layers
+    ctrl = (ROOT / "server/app/Http/Controllers/Internal/NetEventsController.php").read_text(encoding="utf-8")
+    assert set(re.search(r"'events\.\*\.action' => 'required\|in:([\w,]+)'", ctrl)[1].split(",")) == doc_actions
