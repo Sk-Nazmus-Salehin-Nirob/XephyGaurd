@@ -488,6 +488,14 @@ class EventShipper:
         self._t = threading.Thread(target=self._run, daemon=True)
         self._t.start()
 
+    def use_policy(self, cache: PolicyCache) -> None:
+        """Ships with `cache` from now on (the addon's `xg_policy` option changed, I-PROXY-25): the
+        next batch uses its events_url and events_token. Queued and spilled events, dedup tables and
+        counters are kept; the missing-token warning may be logged again for the new file."""
+        if cache is not self.cache:
+            self.cache = cache
+            self._warned_token = False
+
     def _first_in_window(self, seen: dict[tuple[str | None, str], float], counter: str,
                          client_ip: str | None, name: str, window_s: float) -> bool:
         """True for the first (client_ip, name) within window_s (and records it); a repeat is

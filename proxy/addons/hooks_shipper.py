@@ -19,6 +19,10 @@ class ShipperHooks:
             self.cache = PolicyCache(ctx.options.xg_policy)
             if self.events is None:
                 self.events = EventShipper(self.cache, ctx.options.xg_events_fallback)
+            else:
+                # the running shipper reads events_url/events_token from the new policy; its queue,
+                # dedup tables and counters are kept (I-PROXY-25)
+                self.events.use_policy(self.cache)
 
     def done(self) -> None:
         if hasattr(self, "stop_live"):

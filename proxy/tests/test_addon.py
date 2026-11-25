@@ -347,6 +347,45 @@ def test_tls_clienthello_blocks_before_any_policy_loaded(addon, tmp_path):
     assert data.ignore_connection is True and client.id in addon.blocked_conns
 
 
+def test_xg_policy_change_moves_event_shipper_to_new_policy(addon, state_file, state_dict, tmp_path, monkeypatch):
+    """I-PROXY-25: after xg_policy changes, events go to the new policy's events_url and token, and
+    the shipper (its queue and counters) is the same one."""
+    import json
+
+    from mitmproxy import ctx
+
+    monkeypatch.delenv("XG_INTERNAL_TOKEN", raising=False)
+    state_dict.update(events_url="http://new.example/api/internal/net-events")
+    state_file.write_text(json.dumps(state_dict))
+    generate.generate(state_file, tmp_path / "net2")
+    pj = tmp_path / "net2" / "proxy.json"   # legacy token (older generator), read when the env var is unset
+    pj.write_text(json.dumps(dict(json.loads(pj.read_text()), events_token="new-token")))
+    shipper, old_cache = addon.events, addon.cache
+    shipper.stats["spilled"] = 3
+    ctx.options.xg_policy = str(tmp_path / "net2" / "proxy.json")
+    addon.configure({"xg_policy"})
+    assert addon.cache is not old_cache and addon.events is shipper
+    assert shipper.cache is addon.cache and shipper.stats["spilled"] == 3
+    seen = {}
+
+    class _Resp:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=5):
+        seen.update(url=req.full_url, auth=req.get_header("Authorization"))
+        return _Resp()
+
+    monkeypatch.setattr("xg_netpolicy.proxy_logic.urllib.request.urlopen", fake_urlopen)
+    assert shipper._post([{"layer": "proxy", "action": "blocked"}]) == 200
+    assert seen == {"url": "http://new.example/api/internal/net-events", "auth": "Bearer new-token"}
+
+
 def test_tls_clienthello_dedups_allowed_sni_per_client_host_per_minute(addon, monkeypatch):
     from mitmproxy import tls
     from mitmproxy.proxy import context
