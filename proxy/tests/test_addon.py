@@ -217,3 +217,21 @@ def test_server_connect_pins_resolved_name(addon, monkeypatch):
     bad = _server_data("192.168.10.99", ("evil.example", 443))
     asyncio.run(addon.server_connect(bad))
     assert "loopback" in bad.server.error
+
+
+def test_addon_hooks_split_into_modules_and_load_as_script():
+    """Step 16: the hooks live in hooks_shipper/hooks_tls/hooks_http; mitmproxy -s still loads one file."""
+    import pathlib
+
+    from mitmproxy.addons import script
+
+    path = pathlib.Path(__file__).resolve().parent.parent / "addons" / "xephyguard_addon.py"
+    mod = script.load_script(str(path))
+    assert mod is not None and len(mod.addons) == 1
+    a = mod.addons[0]
+    where = {"load": "hooks_shipper", "configure": "hooks_shipper", "done": "hooks_shipper",
+             "tls_clienthello": "hooks_tls", "server_connect": "hooks_tls", "client_disconnected": "hooks_tls",
+             "request": "hooks_http", "response": "hooks_http"}
+    for hook, module in where.items():
+        assert getattr(type(a), hook).__module__ == module, hook
+    assert a.cache is None and a.events is None and a.blocked_conns == set()

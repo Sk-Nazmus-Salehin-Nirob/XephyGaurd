@@ -695,7 +695,7 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 ### F68. Path rules and selective inspection
 - **What:** for chosen hosts (`inspect_hosts`, seeded from `data/network/proxy.yaml`, editable on `/settings`)
   the proxy decrypts and blocks specific paths.
-- **Code:** addon `request`, `proxy_logic.py`.
+- **Code:** addon `request` (`proxy/addons/hooks_http.py`), `proxy_logic.py`.
 - **Status:** working (`path_rule_blocked`, `plain_http_blocked_domain`).
 - **Test:** 1. Add a host/path rule. 2. That path is blocked, the rest of the site works.
 
@@ -713,7 +713,7 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 ### F70. Observe allowed AI/IDE traffic ⚠PRIV
 - **What:** when AI is allowed, the proxy still records host + path of AI/IDE requests and raises
   alerts.
-- **Code:** addon `tls_clienthello`, `request`; `S/Http/Controllers/Internal/NetEventsController.php`.
+- **Code:** addon `tls_clienthello` (`hooks_tls.py`), `request` (`hooks_http.py`), event shipper set up in `hooks_shipper.py`; `S/Http/Controllers/Internal/NetEventsController.php`.
 - **Side effects:** `POST /api/internal/net-events` (internal token from the proxy container's env `XG_INTERNAL_TOKEN`; `proxy.json` no longer holds it, I-PROXY-13) → `net_events`, `alerts`.
 - **Status:** working (`tls_clienthello_observes_allowed_ai_and_ide_traffic`,
   `observed_ai_and_ide_net_events_raise_alert_and_surface_in_dashboard`). Logs even when `log_urls`
