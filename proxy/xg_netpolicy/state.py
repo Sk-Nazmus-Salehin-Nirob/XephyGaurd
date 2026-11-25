@@ -282,6 +282,16 @@ class State:
             rules += self.path_rules.get(c, [])
         return PathRules.of(rules)
 
+    def path_rule_match(self, group: str | None, host: str, path: str) -> tuple[str, str] | None:
+        """(matched_rule, category) for the first of the group's categories whose path rules match
+        host+path (I-PROXY-24: an IDE rule is labelled "ide", not "ai"), or None."""
+        if not group or group == "exempt":
+            return None
+        for c in self.group_categories.get(group, []):
+            if rule := PathRules.of(self.path_rules.get(c, [])).matches(host, path):
+                return rule, c
+        return None
+
     def category_of(self, domain: str) -> str | None:
         for c, doms in self.categories.items():
             if DomainSet.of(doms).matches(domain):

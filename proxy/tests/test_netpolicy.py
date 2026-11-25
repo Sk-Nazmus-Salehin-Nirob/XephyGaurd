@@ -196,6 +196,22 @@ def test_tls_decisions(state_file, tmp_path):
     assert c.decide_http("192.168.10.21", "huggingface.co", "/datasets").action == "pass"
 
 
+def test_path_rule_block_has_category_of_matched_rule(state_file, state_dict, tmp_path):
+    """I-PROXY-24: a path-rule block names the category whose rule list matched, not always "ai"."""
+    state_dict["path_rules"] = {"ai": ["huggingface.co/chat"], "ide": ["aws.amazon.com/q"]}
+    state_file.write_text(json.dumps(state_dict))
+    generate.generate(state_file, tmp_path / "net")
+    c = PolicyCache(tmp_path / "net" / "proxy.json")
+    d = c.decide_http("192.168.10.21", "aws.amazon.com", "/q/chat")
+    assert (d.action, d.category, d.matched, d.reason) == ("block", "ide", "aws.amazon.com/q", "path rule")
+    d = c.decide_http("192.168.10.21", "huggingface.co", "/chat")
+    assert (d.action, d.category, d.matched) == ("block", "ai", "huggingface.co/chat")
+    # block_ai blocks only "ai": the IDE rule does not apply there, the AI one does
+    assert c.decide_http("192.168.10.30", "aws.amazon.com", "/q").action == "pass"
+    assert c.decide_http("192.168.10.30", "huggingface.co", "/chat").category == "ai"
+    assert c.decide_http("192.168.10.22", "aws.amazon.com", "/q").action == "pass"  # exempt
+
+
 def test_inspect_hosts_match_exactly_with_opt_in_wildcard():
     h = InspectHosts.of(["Google.com", "www.google.com.", "*.example.org", "*.google.com", "bad host", 7])
     assert h.matches("google.com") and h.matches("WWW.Google.com") and h.matches("www.google.com.")

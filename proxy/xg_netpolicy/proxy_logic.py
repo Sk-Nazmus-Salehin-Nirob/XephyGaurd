@@ -255,9 +255,8 @@ class PolicyCache:
         hit = self.blocked(group).matches(host)
         if hit:
             return TlsDecision("block", self.state.category_of(hit), hit, "domain blocklist")
-        rule = self.state.path_rules_for_group(group).matches(host, path)
-        if rule:
-            return TlsDecision("block", "ai", rule, "path rule")
+        if m := self.state.path_rule_match(group, host, path):
+            return TlsDecision("block", m[1], m[0], "path rule")  # category of the matched rule (I-PROXY-24)
         return TlsDecision("pass")
 
     def recheck_live(self, live: dict[str, tuple[str | None, str | None, str]]) -> list[str]:
