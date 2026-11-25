@@ -1135,3 +1135,22 @@ def test_gateway_dns_and_proxy_agree_on_an_ip_in_two_groups(state_dict, tmp_path
     for ip in ("192.168.10.22", "192.168.10.31"):
         assert c.decide_tls(ip, "chatgpt.com").action == "pass"
     assert c.decide_tls("192.168.10.21", "chatgpt.com").action == "block"
+
+
+def test_session_clients_validated_and_copied_to_proxy_json(state_dict, tmp_path):
+    """I-PROXY-10: optional session_clients list; bad PCs dropped like a group entry, a non-list
+    rejects the document, None falls back to test/block_ai/exempt, and proxy.json carries it."""
+    s = State.from_dict(state_dict)
+    assert s.session_clients is None
+    assert s.in_session("::ffff:192.168.10.30") and s.in_session("192.168.10.22") and s.in_session("192.168.10.21")
+    assert not s.in_session("192.168.10.99") and not s.in_session("192.168.10.40") and not s.in_session(None)
+    s = State.from_dict({**state_dict, "session_clients": ["192.168.10.99", 7, "10.0.0.1"]})
+    assert s.session_clients == ["192.168.10.99"]
+    assert any(x.startswith("session_clients: 7") for x in s.skipped)
+    assert s.in_session("192.168.10.99") and not s.in_session("192.168.10.30")
+    with pytest.raises(ValueError, match="session_clients"):
+        State.from_dict({**state_dict, "session_clients": "192.168.10.99"})
+    p = tmp_path / "state.json"
+    p.write_text(json.dumps({**state_dict, "session_clients": ["192.168.10.99"]}))
+    generate.generate(p, tmp_path / "net")
+    assert json.loads((tmp_path / "net" / "proxy.json").read_text())["session_clients"] == ["192.168.10.99"]

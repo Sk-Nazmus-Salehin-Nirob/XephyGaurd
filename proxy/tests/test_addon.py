@@ -89,50 +89,67 @@ def test_response_css_injection(addon):
     assert b'id="xephyguard"' in f.response.content
 
 
-def test_tls_clienthello_observes_allowed_ai_and_ide_traffic(addon):
+def _capture(addon, log_urls=None, session_clients=None):
+    emitted = []
+    addon.events.emit = lambda **kw: emitted.append(kw)
+    addon.cache.reload(force=True)
+    if log_urls is not None:
+        addon.cache.state.log_urls = log_urls
+    if session_clients is not None:
+        addon.cache.state.session_clients = session_clients
+    return emitted
+
+
+def _send_sni(addon, ip, sni):
     from mitmproxy import tls
     from mitmproxy.proxy import context
 
-    # Drain queue synchronously by reading emitted events after draining worker or inspecting queue before flush
-    emitted = []
-    orig_emit = addon.events.emit
-    addon.events.emit = lambda **kw: emitted.append(kw) or orig_emit(**kw)
+    client = tutils.tclient_conn() if hasattr(tutils, "tclient_conn") else tflow.tclient_conn()
+    client.peername = (ip, 40000)
+    ctx = context.Context(client, None)
+    data = tls.ClientHelloData(ctx, tls.ClientHello(_client_hello_bytes(sni)))
+    addon.tls_clienthello(data)
+    return data
 
-    def send_sni(ip, sni):
-        client = tutils.tclient_conn() if hasattr(tutils, "tclient_conn") else tflow.tclient_conn()
-        client.peername = (ip, 40000)
-        ctx = context.Context(client, None)
-        ch = tls.ClientHello(_client_hello_bytes(sni))
-        data = tls.ClientHelloData(ctx, ch)
-        addon.tls_clienthello(data)
-        return data
 
-    # 192.168.10.30 is in block_ai (blocks "ai", allows "ide"): Copilot backend passes but is observed!
-    d1 = send_sni("::ffff:192.168.10.30", "api.individual.githubcopilot.com")
+def test_tls_clienthello_observes_allowed_ai_and_ide_traffic(addon):
+    emitted = _capture(addon, log_urls={"enabled": True})
+    # 192.168.10.30 is in block_ai (blocks "ai", allows "ide"): Copilot backend passes but is observed
+    d1 = _send_sni(addon, "::ffff:192.168.10.30", "api.individual.githubcopilot.com")
     assert d1.ignore_connection is True
-    # Second hit within window is deduplicated for the same (client_ip, matched)
-    send_sni("192.168.10.30", "api.individual.githubcopilot.com")
-    # Unrelated non-AI domain produces nothing when log_urls.enabled is False
-    send_sni("192.168.10.30", "github.com")
-    # Practice / no-session PC reaching ChatGPT is also observed
-    send_sni("192.168.10.99", "chat.openai.com")
+    # second hit within the window is deduplicated for the same (client_ip, matched)
+    _send_sni(addon, "192.168.10.30", "api.individual.githubcopilot.com")
+    # exempt PC (accommodation, in a session) reaching ChatGPT is observed too
+    _send_sni(addon, "192.168.10.22", "chat.openai.com")
+    observed = [e for e in emitted if e["action"] == "observed"]
+    assert [(e["client_ip"].removeprefix("::ffff:"), e["category"], e["matched"]) for e in observed] == [
+        ("192.168.10.30", "ide", "githubcopilot.com"),
+        ("192.168.10.22", "ai", "openai.com"),
+    ]
 
-    assert len(emitted) == 2
-    assert emitted[0]["action"] == "observed"
-    assert emitted[0]["category"] == "ide"
-    assert emitted[0]["matched"] == "githubcopilot.com"
-    assert emitted[1]["action"] == "observed"
-    assert emitted[1]["category"] == "ai"
-    assert emitted[1]["matched"] == "openai.com"
+
+def test_observed_events_need_log_urls_and_a_session(addon):
+    """I-PROXY-10: no `observed` event with log_urls off, nor for a PC outside a session."""
+    emitted = _capture(addon)                                  # log_urls off (conftest)
+    _send_sni(addon, "192.168.10.30", "api.githubcopilot.com")  # block_ai, in a session
+    addon.request(_flow("192.168.10.22", "duckduckgo.com", "/aichat"))
+    assert emitted == []
+    assert addon.events.stats["deduped_observed"] == 0
+    emitted = _capture(addon, log_urls={"enabled": True})
+    _send_sni(addon, "192.168.10.99", "chat.openai.com")       # in no group: no session
+    addon.request(_flow("192.168.10.99", "duckduckgo.com", "/aichat?q=hi"))
+    assert emitted == []
+    # with a session_clients list from the server, that list decides
+    emitted = _capture(addon, log_urls={"enabled": True}, session_clients=["192.168.10.99"])
+    _send_sni(addon, "192.168.10.99", "chat.openai.com")
+    _send_sni(addon, "192.168.10.30", "api.githubcopilot.com")  # in block_ai but not listed
+    assert [(e["client_ip"], e["matched"]) for e in emitted] == [("192.168.10.99", "openai.com")]
 
 
 def test_http_request_observes_allowed_ai_path(addon):
-    emitted = []
-    orig_emit = addon.events.emit
-    addon.events.emit = lambda **kw: emitted.append(kw) or orig_emit(**kw)
-
-    # Exempt / non-session PC browsing duckduckgo AI chat via inspected/HTTP proxy
-    f = _flow("192.168.10.99", "duckduckgo.com", "/aichat?q=hi")
+    emitted = _capture(addon, log_urls={"enabled": True})
+    # exempt PC (in a session) using duckduckgo AI chat over plain HTTP / inspected HTTPS
+    f = _flow("192.168.10.22", "duckduckgo.com", "/aichat?q=hi")
     addon.request(f)
     assert f.response is None
     assert len(emitted) == 1
@@ -141,14 +158,22 @@ def test_http_request_observes_allowed_ai_path(addon):
     assert emitted[0]["matched"] == "duckduckgo.com/aichat"
 
 
+def test_observed_path_keeps_only_the_first_segment(addon):
+    from xg_netpolicy.proxy_logic import observed_path
+
+    assert observed_path("/search/how-do-i-write-quicksort-AbC?q=x#f") == "/search"
+    assert observed_path("/aichat?q=hi") == "/aichat"
+    assert observed_path("/") == "/" and observed_path("?q=only") == "/" and observed_path("") == "/"
+    emitted = _capture(addon, log_urls={"enabled": True})
+    addon.request(_flow("192.168.10.22", "huggingface.co", "/chat/conversation/my-exam-question"))
+    assert [(e["action"], e["path"]) for e in emitted] == [("observed", "/chat")]
+
+
 @pytest.mark.parametrize("log_urls", [{"enabled": True, "query": False}, {"enabled": True, "query": True}])
 def test_allowed_and_observed_events_never_carry_the_query(addon, log_urls):
-    emitted = []
-    addon.events.emit = lambda **kw: emitted.append(kw)
-    addon.cache.reload(force=True)
-    addon.cache.state.log_urls = log_urls
+    emitted = _capture(addon, log_urls=log_urls)
     addon.request(_flow("192.168.10.99", "example.com", "/docs/page?q=my+exam+answer&x=1#frag"))
-    addon.request(_flow("192.168.10.99", "duckduckgo.com", "/aichat?q=write+my+essay"))
+    addon.request(_flow("192.168.10.22", "duckduckgo.com", "/aichat?q=write+my+essay"))
     addon.request(_flow("192.168.10.99", "example.org", "?q=only"))
     assert [(e["action"], e["host"], e["path"]) for e in emitted] == [
         ("allowed", "example.com", "/docs/page"),

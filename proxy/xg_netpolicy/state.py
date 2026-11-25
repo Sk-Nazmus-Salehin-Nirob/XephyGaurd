@@ -58,6 +58,9 @@ class State:
     events_token: str = ""
     # "port/proto" (tcp|udp); validate() replaces a missing or unusable list with VPN_PORTS_DEFAULTS
     vpn_ports: list[str] | None = None
+    # PCs in a running session (I-PROXY-10); None = the document has no list, so a PC counts as in
+    # a session when it is in test, block_ai or exempt (the server lists only those PCs today)
+    session_clients: list[str] | None = None
     # entries dropped by validate() as "<where>: <entry> (<reason>)"; not read from the document
     skipped: list[str] = field(default_factory=list)
 
@@ -104,6 +107,10 @@ class State:
                 raise ValueError(f"udm14_clients must be a list, not {type(udm).__name__}")
             self.google = {**self.google, "udm14_clients": self._pc_ips("udm14_clients", udm, net)}
         self.vpn_ports = self._vpn_ports(self.vpn_ports)
+        if self.session_clients is not None:
+            if not isinstance(self.session_clients, list):
+                raise ValueError(f"session_clients must be a list, not {_type_name(self.session_clients)}")
+            self.session_clients = self._pc_ips("session_clients", self.session_clients, net)
         for name in self.lan_if, self.wan_if:
             if not isinstance(name, str) or not name.replace("-", "").replace("_", "").replace(".", "").isalnum():
                 raise ValueError(f"bad interface name {name!r}")
@@ -246,6 +253,17 @@ class State:
             if ip in self.groups.get(g, []):
                 return g
         return None
+
+    def in_session(self, ip: str | None) -> bool:
+        """True when the PC is in a running session: listed in `session_clients`, or, when the
+        document has no such list, in test, block_ai or exempt (a session PC whose profile blocks
+        nothing is in no group, so it counts as not in a session until the server sends the list)."""
+        if not ip:
+            return False
+        ip = ip.removeprefix("::ffff:")
+        if self.session_clients is not None:
+            return ip in self.session_clients
+        return self.group_of(ip) in ("test", "block_ai", "exempt")
 
     def blocked_domains_for_group(self, group: str | None) -> DomainSet:
         cats = list(self.always_block)

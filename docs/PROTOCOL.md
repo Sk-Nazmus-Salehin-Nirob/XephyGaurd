@@ -263,12 +263,14 @@ The proxy sends (a test keeps this list, the addon and `NetEventsController` equ
 | `blocked` | `http` / `path` | plain-HTTP request to a blocked host, or an inspected HTTPS request matching a path rule (403); `category`, `matched`, `reason` |
 | `blocked` | `search-ai` | Google AI path (`google_ai_paths`, answered 204); `category: search_ai` |
 | `rewritten` | `search-ai` | Google search forced to `udm=14`; `path: /search`, `category: search_ai` |
-| `observed` | `sni` / `http` / `path` | see below |
+| `observed` | `sni` / `http` / `path` | only with `log_urls.enabled` and for a PC in a session; `path` is the first segment only; see below |
 | `allowed` | `sni` / `http` | only with `log_urls.enabled`, not for AI/IDE hosts; `path` without query string or fragment |
 
 `reason` (the block page text) is sent with `blocked` events but not stored: the CCC keeps only the fields listed above.
 Limits: ≤ 1000 events, `host` ≤ 255, `path` ≤ 512, `layer` ≤ 16, `category` ≤ 24, `matched` ≤ 255 chars, `ts` in ms.
 `observed` = a passed (not blocked) connection or request to a known AI (`category: ai`) or IDE-AI backend
-(`category: ide`) domain or path; the proxy sends it at most once per (client IP, matched domain) per 30 s. For a known
+(`category: ide`) domain or path; the proxy sends it only with `log_urls.enabled` and for a PC in a session (listed in
+`session_clients`, or, without that list, in the `test`, `block_ai` or `exempt` group), with only the first path segment
+(`/search/<query-slug>` is sent as `/search`), at most once per (client IP, matched domain) per 30 s. For a known
 PC the CCC raises a `proxy.ai_observed` / `proxy.ide_ai_observed` alert (high, at most one per PC, session and title per
 30 min); other categories and unknown IPs are only stored in `net_events`.

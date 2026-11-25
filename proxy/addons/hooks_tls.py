@@ -46,7 +46,8 @@ class TlsHooks:
             if sni:
                 ai_match = self.cache.match_ai_domain(sni)
                 if ai_match:
-                    if self.events.should_emit_observed(ip, ai_match[0]):
+                    # only with log_urls on and in a session (I-PROXY-10)
+                    if self.cache.records_observed(ip) and self.events.should_emit_observed(ip, ai_match[0]):
                         self.events.emit(client_ip=ip, host=sni, layer="sni", action="observed",
                                          category=ai_match[1], matched=ai_match[0])
                 elif self.cache.state.log_urls.get("enabled") and self.events.should_emit_allowed(ip, sni):

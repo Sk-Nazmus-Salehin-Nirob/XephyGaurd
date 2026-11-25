@@ -5,7 +5,7 @@
 - **Source:** [docs/FEATURES.md](../../FEATURES.md) (status legend, roles, `S/` = `server/app/`, `A/` = `agent/`)
 
 - **What:** when AI is allowed, the proxy still records host + path of AI/IDE requests and raises
-  alerts.
+  alerts, but only with `log_urls` on (`/settings`, off by default) and for a PC in a session (I-PROXY-10, ETHICS.md "Visited hosts/paths of allowed sites"). "In a session" is the optional `session_clients` list in state.json; without it (the server does not send it yet) a PC in `test`, `block_ai` or `exempt` counts, so a session PC whose profile blocks nothing (in no group) is not observed. An `observed` event carries only the first path segment (`proxy_logic.observed_path`: `/search/<query-slug>` → `/search`), since some AI sites put the prompt in the path (`test_observed_events_need_log_urls_and_a_session`, `test_observed_path_keeps_only_the_first_segment`).
   Events carry the path without the query string or fragment (`proxy_logic.loggable_path`), so typed search terms are never shipped; this also holds for `log_urls` "allowed" events, whatever `log_urls.query` (`/settings` "Include search terms") says (`allowed_and_observed_events_never_carry_the_query`, `loggable_path_drops_query_and_fragment`).
 - **Code:** addon `tls_clienthello` (`hooks_tls.py`), `request` (`hooks_http.py`), event shipper set up in `hooks_shipper.py`; `S/Http/Controllers/Internal/NetEventsController.php`.
   The event format (actions `blocked|allowed|rewritten|observed`, which layer sends which) is in [PROTOCOL.md](../../PROTOCOL.md#proxy--ccc-internal); `protocol_lists_every_emitted_action_and_layer` keeps that list, the addon's `emit` calls and `NetEventsController`'s accepted actions equal.
@@ -14,6 +14,6 @@
   De-duplication and drop metric (I-PROXY-30): with `log_urls` on, an `allowed` SNI event is sent once per (client IP, host, case-insensitive) per minute, not once per TLS connection (`observed` stays per (client, matched domain) per 30 s). Repeats suppressed this way (`deduped_allowed`, `deduped_observed`), events dropped because the 50,000-event queue was full (`queue_full`, also logged as a warning once a minute while it happens) and the spill counters are written every minute and at shutdown to `proxy-stats.json` next to the spill file (host `/var/log/xephyguard/proxy/proxy-stats.json`; counts only, no hosts or IPs) (`tls_clienthello_dedups_allowed_sni_per_client_host_per_minute`, `full_queue_drops_are_counted_logged_and_written_to_stats`).
 - **Side effects:** `POST /api/internal/net-events` (internal token from the proxy container's env `XG_INTERNAL_TOKEN`; `proxy.json` no longer holds it, I-PROXY-13) → `net_events`, `alerts`.
 - **Status:** working (`tls_clienthello_observes_allowed_ai_and_ide_traffic`,
-  `observed_ai_and_ide_net_events_raise_alert_and_surface_in_dashboard`). Logs even when `log_urls`
-  is off, and raises high-severity alerts while AI is allowed.
-- **Test:** 1. Practice: AI allowed. 2. Open chatgpt.com on a PC. 3. A net event shows in the inspector.
+  `observed_ai_and_ide_net_events_raise_alert_and_surface_in_dashboard`). Records only with `log_urls`
+  on and during a session (before Step 27 it logged with `log_urls` off and with no session), and raises high-severity alerts while AI is allowed.
+- **Test:** 1. `/settings`: turn on visited-URL logging. 2. Practice session whose profile blocks a category, with an IDE or AI site allowed (or an accommodated PC). 3. Open that site on a PC. 4. A net event shows in the inspector, path cut to its first segment. 5. Outside a session or with logging off: nothing.

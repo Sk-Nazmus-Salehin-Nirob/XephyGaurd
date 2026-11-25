@@ -10,6 +10,7 @@ from xg_netpolicy.proxy_logic import (
     google_search_rewrite,
     inject_css,
     loggable_path,
+    observed_path,
     relax_style_csp,
 )
 
@@ -47,8 +48,9 @@ class HttpHooks:
                 self.events.emit(client_ip=ip, host=host, path="/search", layer="search-ai", action="rewritten",
                                  category="search_ai")
         ai_match = self.cache.match_ai_domain(host) or self.cache.match_ai_path(host, path)
-        if ai_match and self.events.should_emit_observed(ip, ai_match[0]):
-            self.events.emit(client_ip=ip, host=host, path=loggable_path(path, 256),
+        if ai_match and self.cache.records_observed(ip) and self.events.should_emit_observed(ip, ai_match[0]):
+            # log_urls on and in a session only; first path segment only (I-PROXY-10)
+            self.events.emit(client_ip=ip, host=host, path=observed_path(path),
                              layer="http" if flow.request.scheme == "http" else "path",
                              action="observed", category=ai_match[1], matched=ai_match[0])
         if self.cache.state.log_urls.get("enabled") and not ai_match:

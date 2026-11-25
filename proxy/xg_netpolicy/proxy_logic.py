@@ -255,6 +255,11 @@ class PolicyCache:
             return TlsDecision("block", "ai", rule, "path rule")
         return TlsDecision("pass")
 
+    def records_observed(self, client_ip: str | None) -> bool:
+        """`observed` AI/IDE events are recorded only with `log_urls` on and for a PC in a running
+        session (I-PROXY-10, ETHICS.md "Visited hosts/paths of allowed sites")."""
+        return bool(self.state.log_urls.get("enabled")) and self.state.in_session(client_ip)
+
     def wants_google_rewrite(self, client_ip: str | None) -> bool:
         if not client_ip:
             return False
@@ -273,6 +278,13 @@ def loggable_path(path: str, limit: int = 512) -> str:
     """Path of a request as shipped in events: never the query string or fragment, which hold typed
     text such as search terms (I-PROXY-9, PRIVACY). The `log_urls.query` setting no longer widens this."""
     return path.split("?", 1)[0].split("#", 1)[0][:limit] or "/"
+
+
+def observed_path(path: str) -> str:
+    """Path of an `observed` event: only the first segment (`/search/<query-slug>` -> `/search`),
+    since some AI sites put the prompt text in the path (I-PROXY-10); never the query or fragment."""
+    first = loggable_path(path).lstrip("/").split("/", 1)[0]
+    return "/" + first[:255]
 
 
 def google_search_rewrite(host: str, path: str, query: list[tuple[str, str]],
