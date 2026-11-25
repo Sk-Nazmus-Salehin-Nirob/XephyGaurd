@@ -9,6 +9,7 @@ from xg_netpolicy.proxy_logic import (
     extract_nonce,
     google_search_rewrite,
     hide_css,
+    hide_css_text,
     inject_css,
     relax_style_csp,
 )
@@ -75,10 +76,47 @@ def test_csp_nonce_and_style_relaxation():
     assert 'nonce="n0nc3=="' in out
     assert hide_css(selectors, nonce=nonce).startswith('<style id="xephyguard" nonce="n0nc3==">')
 
-    csp = "default-src 'self'; script-src 'nonce-abc'; style-src 'self' 'nonce-xyz'"
-    relaxed = relax_style_csp(csp)
-    assert "'unsafe-inline'" in relaxed
-    assert "'nonce-xyz'" not in relaxed
+
+
+@pytest.mark.parametrize("csp,expected", [
+    # the hash goes to the directive governing <style> elements; site nonces/hashes stay, no 'unsafe-inline'
+    ("default-src 'self'; script-src 'nonce-abc'; style-src 'self' 'nonce-xyz'",
+     "default-src 'self'; script-src 'nonce-abc'; style-src 'self' 'nonce-xyz' {h}"),
+    ("style-src 'self' 'sha256-AAAA'; style-src-elem 'self' 'nonce-xyz'",
+     "style-src 'self' 'sha256-AAAA'; style-src-elem 'self' 'nonce-xyz' {h}"),
+    # default-src only: default-src kept, a style-src-elem with its sources plus the hash added
+    ("default-src 'self' https://cdn.example; img-src *",
+     "default-src 'self' https://cdn.example; img-src *; style-src-elem 'self' https://cdn.example {h}"),
+    ("style-src 'none'", "style-src {h}"),
+    # 'unsafe-inline' with a nonce is already ignored by browsers: the hash is needed
+    ("style-src 'unsafe-inline' 'nonce-xyz'", "style-src 'unsafe-inline' 'nonce-xyz' {h}"),
+    # each comma-separated policy
+    ("style-src 'self', default-src 'none'", "style-src 'self' {h}, default-src 'none'; style-src-elem {h}"),
+])
+def test_csp_keeps_site_policy_and_adds_only_the_style_hash(csp, expected):
+    """I-PROXY-27: the site's CSP is kept; only the injected style's sha256 is added where needed."""
+    import base64
+    import hashlib
+
+    text = hide_css_text(["#xg-ai-overview"])
+    assert text == "#xg-ai-overview{display:none!important}"
+    h = "'sha256-" + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode() + "'"
+    out = relax_style_csp(csp, text)
+    assert out == expected.format(h=h)
+    assert "'unsafe-inline'" not in out or "'unsafe-inline'" in csp
+    assert relax_style_csp(out, text) == out  # idempotent
+
+
+@pytest.mark.parametrize("csp", [
+    "script-src 'self'; img-src *",                  # nothing governs <style>
+    "style-src 'self' 'unsafe-inline'",              # inline styles already allowed
+    "default-src * 'unsafe-inline'",
+    "style-src 'self' 'nonce-n0nc3=='",              # the page nonce we reuse is listed
+])
+def test_csp_unchanged_when_style_already_allowed(csp):
+    text = hide_css_text(["#xg-ai-overview"])
+    assert relax_style_csp(csp, text, nonce="n0nc3==") == csp
+    assert relax_style_csp(csp, "") == csp
 
 
 def test_addon_blocks_folwr_and_relaxes_csp(tmp_path, state_dict):
@@ -132,8 +170,14 @@ def test_addon_blocks_folwr_and_relaxes_csp(tmp_path, state_dict):
         )
         addon.response(f2)
         csp = f2.response.headers.get("Content-Security-Policy", "")
-        assert "'unsafe-inline'" in csp and "'nonce-xyz'" not in csp
+        assert "'unsafe-inline'" not in csp and csp.startswith("style-src 'self' 'nonce-xyz' 'sha256-")
         assert b'id="xephyguard"' in f2.response.content
+        # the header's new hash is the one of the <style> text actually in the page
+        import base64
+        import hashlib
+        import re
+        body = re.search(r'<style id="xephyguard"[^>]*>(.*?)</style>', f2.response.get_text()).group(1)
+        assert csp.endswith("'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'")
     finally:
         addon.events.stop()
 

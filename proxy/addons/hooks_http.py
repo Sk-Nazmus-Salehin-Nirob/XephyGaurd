@@ -7,7 +7,9 @@ from xg_netpolicy.proxy_logic import (
     EventShipper,
     PolicyCache,
     block_page,
+    extract_nonce,
     google_search_rewrite,
+    hide_css_text,
     inject_css,
     loggable_path,
     observed_path,
@@ -70,11 +72,14 @@ class HttpHooks:
         host = flow.request.pretty_host.lower()
         if selectors and self.cache.search_ai.wants_css(host):
             html = flow.response.get_text(strict=False) or ""
-            new = inject_css(html, selectors)
+            nonce = extract_nonce(html)
+            new = inject_css(html, selectors, nonce=nonce)
             if new:
                 flow.response.set_text(new)
+                # only the injected style's hash is added; the site's own CSP otherwise stays (I-PROXY-27)
+                text = hide_css_text(selectors)
                 for hname in ("content-security-policy", "content-security-policy-report-only"):
-                    if hname in flow.response.headers:
-                        flow.response.headers[hname] = relax_style_csp(flow.response.headers[hname])
+                    if vals := flow.response.headers.get_all(hname):  # every header is enforced
+                        flow.response.headers.set_all(hname, [relax_style_csp(v, text, nonce) for v in vals])
                 if flow.metadata.get("xg_rewritten"):
                     flow.response.headers["Cache-Control"] = "no-store, private"

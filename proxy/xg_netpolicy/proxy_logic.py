@@ -1,6 +1,8 @@
 """Pure decision logic for the XephyGuard proxy addon (no mitmproxy imports, fully unit-testable)."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import ipaddress
 import itertools
 import json
@@ -360,14 +362,24 @@ def valid_selector(s: object) -> bool:
     return not any(depth.values())
 
 
+def hide_css_text(selectors: list[str]) -> str:
+    """Text of the injected <style> element (what its CSP hash covers); "" when no selector is valid."""
+    sel = ",".join(s.strip() for s in selectors if valid_selector(s))
+    return f"{sel}{{display:none!important}}" if sel else ""
+
+
+def safe_nonce(nonce: str) -> str:
+    return re.sub(r"[^A-Za-z0-9+/=_-]", "", nonce or "")
+
+
 def hide_css(selectors: list[str], nonce: str = "") -> str:
     """Selectors that fail valid_selector are left out; nothing is injected when none is left."""
-    sel = ",".join(s.strip() for s in selectors if valid_selector(s))
-    if not sel:
+    text = hide_css_text(selectors)
+    if not text:
         return ""
-    safe_nonce = re.sub(r"[^A-Za-z0-9+/=_-]", "", nonce or "")
-    nonce_attr = f' nonce="{safe_nonce}"' if safe_nonce else ""
-    return f'<style id="xephyguard"{nonce_attr}>{sel}{{display:none!important}}</style>'
+    n = safe_nonce(nonce)
+    nonce_attr = f' nonce="{n}"' if n else ""
+    return f'<style id="xephyguard"{nonce_attr}>{text}</style>'
 
 
 def inject_css(html: str, selectors: list[str], nonce: str = "") -> str | None:
@@ -381,21 +393,56 @@ def inject_css(html: str, selectors: list[str], nonce: str = "") -> str | None:
     return html[:idx] + css + html[idx:]
 
 
-def relax_style_csp(csp_value: str) -> str:
-    """Allows injected inline fallback <style> under strict style-src CSP headers."""
-    parts = [p.strip() for p in csp_value.split(";") if p.strip()]
-    out = []
-    for p in parts:
-        tokens = p.split()
-        directive = tokens[0].lower() if tokens else ""
-        if directive in ("style-src", "style-src-elem"):
-            # CSP ignores 'unsafe-inline' whenever any 'nonce-*' or 'sha*-*' token remains.
-            kept = [t for t in tokens if not re.match(r"^'(?:nonce|sha256|sha384|sha512)-[^']+'$", t, re.I)]
-            if "'unsafe-inline'" not in [t.lower() for t in kept]:
-                kept.append("'unsafe-inline'")
-            p = " ".join(kept)
-        out.append(p)
-    return "; ".join(out)
+def style_hash(text: str) -> str:
+    """CSP source expression for an inline element whose text is `text`."""
+    return "'sha256-" + base64.b64encode(hashlib.sha256(text.encode("utf-8")).digest()).decode() + "'"
+
+
+_CSP_NONCE_OR_HASH = re.compile(r"^'(?:nonce|sha256|sha384|sha512)-[^']+'$", re.I)
+
+
+def _style_allowed(sources: list[str], nonce: str) -> bool:
+    """True when a source list already lets our <style> through: the nonce we put on it, or plain
+    'unsafe-inline' (browsers ignore it once a nonce or hash is listed)."""
+    if nonce and f"'nonce-{nonce}'" in sources:
+        return True
+    return ("'unsafe-inline'" in [t.lower() for t in sources]
+            and not any(_CSP_NONCE_OR_HASH.match(t) for t in sources))
+
+
+def _allow_style_in_policy(policy: str, h: str, nonce: str) -> str:
+    parts = [p.strip() for p in policy.split(";") if p.strip()]
+    names = [p.split()[0].lower() for p in parts]
+    want = next((d for d in ("style-src-elem", "style-src", "default-src") if d in names), None)
+    if want is None:
+        return policy  # no directive covers <style> elements: nothing to do
+    i = names.index(want)
+    tokens = parts[i].split()
+    sources = tokens[1:]
+    if h in sources or _style_allowed(sources, nonce):
+        return policy
+    sources = [t for t in sources if t.lower() != "'none'"] + [h]
+    if want == "default-src":
+        # a new style-src-elem holding default-src's sources plus the hash: default-src (scripts,
+        # images, ...) is left as it is and <style> elements keep the same list otherwise
+        parts.append(" ".join(["style-src-elem", *sources]))
+    else:
+        parts[i] = " ".join([tokens[0], *sources])
+    return "; ".join(parts)
+
+
+def relax_style_csp(csp_value: str, style_text: str, nonce: str = "") -> str:
+    """Lets the injected <style> (text `style_text`, carrying `nonce` if any) through a CSP header by
+    adding only its sha256 hash to the directive that governs <style> elements (style-src-elem, else
+    style-src, else a new style-src-elem copied from default-src). Every other directive and token is
+    kept, so the site's nonces, hashes and sources still apply and no 'unsafe-inline' is added
+    (I-PROXY-27). Unchanged when the style is already allowed. Each comma-separated policy is handled."""
+    if not style_text:
+        return csp_value
+    h, n = style_hash(style_text), safe_nonce(nonce)
+    policies = [p.strip() for p in csp_value.split(",") if p.strip()]
+    out = [_allow_style_in_policy(p, h, n) for p in policies]
+    return csp_value if out == policies else ", ".join(out)
 
 
 BLOCK_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Blocked by XephyGuard</title>
