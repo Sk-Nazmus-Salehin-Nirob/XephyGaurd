@@ -38,8 +38,9 @@ google_hide_selectors:
   - '#m-x-content'
   - g-ai-overview
 
-# AI-endpoint signatures the proxy acts on (proxy Step 14, I-PROXY-21). Not settings: the CCC sends them
-# unchanged in state.json `google` as search_hosts / ai_paths / css_hosts. Until it does, the proxy uses the
+# AI-endpoint signatures the proxy acts on (proxy Step 14, I-PROXY-21). Not settings (no Settings page, never
+# stored): the CCC sends them unchanged in state.json `google` as search_hosts / ai_paths / css_hosts
+# (server NetworkSeed::SIGNATURE_KEYS). A state.json without them (an older CCC) makes the proxy use the
 # same values built in (proxy/xg_netpolicy/proxy_logic.py SEARCH_AI_DEFAULTS; a test keeps both equal).
 # Google search hosts, as regexes on the lower-case host: udm=14 rewrite, the AI paths below, CSS hiding.
 google_search_hosts:

@@ -7,12 +7,15 @@ namespace Tests\Feature;
 use App\Models\Lab;
 use App\Models\LabSession;
 use App\Models\Pc;
+use App\Models\Setting;
 use App\Services\NetworkPolicyWriter;
+use App\Services\NetworkSeed;
 use App\Services\PolicyService;
 use App\Services\SessionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Concerns\BuildsLab;
 use Tests\TestCase;
 
@@ -84,6 +87,24 @@ class NetworkPolicyWriterTest extends TestCase
         }
         $this->assertSame(LabSession::activeFor($lab->id)->id, $many[$pc->id]['session']->id);
         $this->assertNotNull($many[$pc->id]['override']);
+    }
+
+    /** Proxy Step 14 (I-PROXY-21): AI-endpoint signatures come from data/network/proxy.yaml, never from settings. */
+    public function test_google_signatures_come_from_the_yaml_only(): void
+    {
+        $this->bootLab();
+        $seed = Yaml::parseFile(config('xephyguard.data_dir').'/network/proxy.yaml');
+        Setting::put('google_ai_paths', ['/not-a-setting']);   // a stray row must not override the file
+        $google = app(NetworkPolicyWriter::class)->build()['google'];
+        $this->assertSame($seed['google_search_hosts'], $google['search_hosts']);
+        $this->assertSame($seed['google_ai_paths'], $google['ai_paths']);
+        $this->assertSame($seed['search_css_hosts'], $google['css_hosts']);
+        $this->assertSame(['/async/folwr'], $google['ai_paths']);
+        foreach (NetworkSeed::SIGNATURE_KEYS as $key) {
+            $this->assertNotContains($key, NetworkSeed::KEYS);
+        }
+        NetworkSeed::importSeed();   // bootstrap leaves non-setting rows alone
+        $this->assertSame(['/not-a-setting'], Setting::get('google_ai_paths'));
     }
 
     public function test_write_is_atomic_and_mode_0640(): void

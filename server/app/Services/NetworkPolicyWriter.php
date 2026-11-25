@@ -89,6 +89,10 @@ class NetworkPolicyWriter
                 'force_udm14' => $forceUdm14,
                 'udm14_clients' => $udm14Clients,
                 'hide_selectors' => NetworkSeed::get('google_hide_selectors'),   // data/network/proxy.yaml (S-53)
+                // AI-endpoint signatures from data/network/proxy.yaml, not settings (proxy Step 14, I-PROXY-21)
+                'search_hosts' => NetworkSeed::defaults('google_search_hosts'),
+                'ai_paths' => NetworkSeed::defaults('google_ai_paths'),
+                'css_hosts' => NetworkSeed::defaults('search_css_hosts'),
             ],
             'inspect_hosts' => NetworkSeed::get('inspect_hosts'),
             'log_urls' => $logUrls,

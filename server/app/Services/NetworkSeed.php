@@ -11,10 +11,15 @@ use Symfony\Component\Yaml\Yaml;
  * Proxy lists seeded from data/network/proxy.yaml (S-53, I-SERVER-36): `inspect_hosts` and
  * `google_hide_selectors`. A setting overrides the seed only when an admin saved a different, non-empty
  * list; otherwise the file is the value, so shipped updates reach unedited CCCs (like unedited rules).
+ * The proxy's AI-endpoint signatures (`SIGNATURE_KEYS`, proxy Step 14, I-PROXY-21) are read from the same
+ * file with defaults() only: they are not settings, so get(), save() and importSeed() never touch them.
  */
 final class NetworkSeed
 {
     public const KEYS = ['inspect_hosts', 'google_hide_selectors'];
+
+    /** Signatures sent unchanged in state.json `google` (not admin settings, not in KEYS). */
+    public const SIGNATURE_KEYS = ['google_search_hosts', 'google_ai_paths', 'search_css_hosts'];
 
     /** @var array<string, array<string, list<string>>> parsed seed per file path */
     private static array $cache = [];
@@ -26,7 +31,7 @@ final class NetworkSeed
         if (! isset(self::$cache[$path])) {
             $doc = is_file($path) ? (Yaml::parseFile($path) ?? []) : [];
             self::$cache[$path] = [];
-            foreach (self::KEYS as $k) {
+            foreach ([...self::KEYS, ...self::SIGNATURE_KEYS] as $k) {
                 self::$cache[$path][$k] = self::clean($doc[$k] ?? []);
             }
         }
