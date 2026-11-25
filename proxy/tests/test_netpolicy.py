@@ -1030,3 +1030,62 @@ def test_unbound_check_skipped_with_one_warning_without_binary(state_file, state
         assert generate.generate(state_file, out)["unbound"] is True
     assert caplog.text.count("unbound-checkconf not installed") == 1
     assert not (out / "unbound-xephyguard.conf.check").exists()
+
+
+# -- Step 23 (I-PROXY-14): doh_ips collapsed; a failed nft -f is a health flag, not only a log line --
+
+def test_sets_nft_collapses_overlapping_resolver_ips(state_dict):
+    doc = dict(state_dict, doh_ips=["45.90.28.0/24", "45.90.28.1", "8.8.8.8", "8.8.8.8", "8.8.4.0/25", "8.8.4.128/25",
+                                    "2001:4860:4860::8888", "2001:4860:4860::/48", "1.1.1.1"])
+    s = State.from_dict(doc)
+    nft = generate.nft_sets(s)
+    assert "add element inet xephyguard resolver_ips { 1.1.1.1, 8.8.4.0/24, 8.8.8.8, 45.90.28.0/24 }" in nft
+    assert "add element inet xephyguard resolver_ips6 { 2001:4860:4860::/48 }" in nft
+    # the resync check compares the same collapsed elements, so it does not re-apply forever
+    want = generate.desired_sets(s)
+    assert [str(n) for n in want["resolver_ips"]] == ["1.1.1.1/32", "8.8.4.0/24", "8.8.8.8/32", "45.90.28.0/24"]
+    assert [str(n) for n in want["resolver_ips6"]] == ["2001:4860:4860::/48"]
+
+
+def test_apply_writes_nft_health_flag(state_file, tmp_path, monkeypatch, caplog):
+    out = tmp_path / "net"
+    changed = generate.generate(state_file, out)
+    result = {"code": 1}
+    clock = iter(["2026-11-25T10:00:00Z", "2026-11-25T10:00:10Z", "2026-11-25T10:00:20Z", "2026-11-25T10:00:30Z"])
+    monkeypatch.setattr(generate, "_now", lambda: next(clock))
+    monkeypatch.setattr(generate, "_nft_table_present", lambda: True)
+    monkeypatch.setattr(generate.subprocess, "run",
+                        lambda cmd, **kw: _Res(result["code"], "", "Error: interval overlaps" if result["code"] else ""))
+
+    def health():
+        return json.loads((out / "health.json").read_text())
+
+    with caplog.at_level("ERROR", logger="xg-netpolicy"):
+        generate.apply(out, changed, network_mode="gateway")
+    assert "nft failed: Error: interval overlaps" in caplog.text  # still logged
+    assert health() == {"nft_ok": False, "nft_error": "Error: interval overlaps", "nft_skipped": None,
+                        "nft_failed_since": "2026-11-25T10:00:00Z", "nft_checked_at": "2026-11-25T10:00:00Z"}
+    generate.apply(out, {"nft": True}, network_mode="gateway")  # e.g. the resync re-apply fails again
+    assert health()["nft_failed_since"] == "2026-11-25T10:00:00Z"
+    assert health()["nft_checked_at"] == "2026-11-25T10:00:10Z"
+    result["code"] = 0
+    generate.apply(out, {"nft": True}, network_mode="gateway")
+    assert health() == {"nft_ok": True, "nft_error": None, "nft_skipped": None, "nft_failed_since": None,
+                        "nft_checked_at": "2026-11-25T10:00:20Z"}
+    generate.apply(out, {"nft": True}, network_mode="proxy_only")
+    assert health()["nft_ok"] is None and health()["nft_skipped"] == "proxy_only mode"
+    # nothing to load (sets.nft unchanged): the last result stays
+    generate.apply(out, {"unbound": True}, network_mode="gateway")
+    assert health()["nft_checked_at"] == "2026-11-25T10:00:30Z"
+
+
+def test_conntrack_not_flushed_when_nft_fails(state_file, tmp_path, monkeypatch):
+    out = tmp_path / "net"
+    changed = generate.generate(state_file, out)
+    calls = []
+    monkeypatch.setattr(generate, "_nft_table_present", lambda: True)
+    monkeypatch.setattr(generate.subprocess, "run",
+                        lambda cmd, **kw: (calls.append(cmd) or _Res(1 if cmd[0] == "nft" else 0, "", "bad")))
+    generate.apply(out, changed, network_mode="gateway", flush_ips={"192.168.10.21"})
+    assert not any(c[0] == "conntrack" for c in calls)
+    assert json.loads((out / "health.json").read_text())["nft_ok"] is False
