@@ -7,7 +7,8 @@
 `conntrack -D -s <ip>` for PCs that newly joined test/isolated (all of them on start). sets.nft is
 always applied on the first pass, and again whenever the live table's sets differ from it (checked
 every --resync seconds, e.g. after a reboot or an nftables reload emptied them). Files are written
-atomically; a broken state document never replaces a working configuration. In --watch mode an
+atomically; a broken state document never replaces a working configuration, and a new
+unbound-xephyguard.conf replaces the old one only after `unbound-checkconf` accepted it. In --watch mode an
 error in one iteration (bad document, OSError, failed tool, bug) is logged and counted and the
 loop keeps running with the previous configuration.
 """
@@ -20,6 +21,7 @@ import json
 import logging
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import time
@@ -130,10 +132,60 @@ def generate(state_path: pathlib.Path, out: pathlib.Path) -> dict[str, bool]:
 def generate_state(s: State, out: pathlib.Path) -> dict[str, bool]:
     out.mkdir(parents=True, exist_ok=True)
     return {
-        "unbound": _write(out / "unbound-xephyguard.conf", unbound_conf(s)),
+        "unbound": _write_unbound(out / "unbound-xephyguard.conf", unbound_conf(s)),
         "nft": _write(out / "sets.nft", nft_sets(s)),
         "proxy": _write(out / "proxy.json", proxy_json(s)),
     }
+
+
+_checkconf_missing_warned = False
+
+
+def unbound_conf_ok(path: pathlib.Path) -> bool:
+    """`unbound-checkconf` on the generated file (I-PROXY-19), included from a minimal main config
+    next to it (no chroot, user or pidfile, like test_config_check), so the check is about the
+    generated clauses and not the container's paths. True when the check passed, or when
+    unbound-checkconf is not installed (warned once per process)."""
+    global _checkconf_missing_warned
+    exe = shutil.which("unbound-checkconf")
+    if not exe:
+        if not _checkconf_missing_warned:
+            log.warning("unbound-checkconf not installed; generated Unbound config is not checked before reload")
+            _checkconf_missing_warned = True
+        return True
+    main = path.with_name(path.name + ".main")
+    main.write_text("server:\n"
+                    '    chroot: ""\n'
+                    '    username: ""\n'
+                    f'    directory: "{path.parent.as_posix()}"\n'
+                    '    pidfile: ""\n'
+                    f'    include: "{path.as_posix()}"\n')
+    try:
+        r = subprocess.run([exe, str(main)], capture_output=True, text=True)
+    finally:
+        main.unlink(missing_ok=True)
+    if r.returncode:
+        log.error("unbound-checkconf rejected the generated config, keeping the previous one: %s",
+                  (r.stderr or r.stdout or "").strip())
+        return False
+    return True
+
+
+def _write_unbound(path: pathlib.Path, text: str) -> bool:
+    """Like _write, but the new text replaces the file (and so is reloaded) only when
+    unbound-checkconf accepts it; a rejected config is logged and the old file stays."""
+    if path.exists() and path.read_text() == text:
+        return False
+    check = path.with_suffix(path.suffix + ".check")
+    check.write_text(text)
+    try:
+        if not unbound_conf_ok(check):
+            return False
+        os.chmod(check, 0o644)
+        check.replace(path)
+        return True
+    finally:
+        check.unlink(missing_ok=True)
 
 
 def _nft_table_present() -> bool:

@@ -74,6 +74,8 @@ def test_state_skips_bad_group_entries_and_keeps_the_rest(state_dict, caplog):
     {"ccc_ip": "ccc"},
     {"lab_subnet": "lab"},
     {"lan_if": "lan0; flush ruleset"},
+    {"lab_subnet": 3232238080},
+    {"ccc_ip": 3232238082},
 ])
 def test_state_still_rejects_structural_errors(state_dict, bad):
     with pytest.raises(ValueError):
@@ -828,7 +830,8 @@ def _rewrite(path, text, mtime):
 
 @pytest.mark.parametrize("bad", ["[]", "{not json", '"policy"', '{"groups": null}', '{"categories": {"ai": 5}}',
                                  '{"path_rules": {"ai": 7}}', '{"inspect_hosts": 3}', '{"google": []}',
-                                 '{"categories": []}'])  # type checks of scalars (lab_subnet: 12): Step 22
+                                 '{"categories": ["ai"]}', '{"lab_subnet": 12}', '{"ccc_ip": 3232238082}',
+                                 '{"version": "5"}', '{"always_block": [1]}'])
 def test_policy_reload_keeps_last_good_on_any_error(state_file, tmp_path, caplog, bad):
     out = tmp_path / "net"
     generate.generate(state_file, out)
@@ -928,3 +931,102 @@ def test_event_limits_match_net_events_controller():
     ctrl = (pathlib.Path(__file__).resolve().parents[2] / "server/app/Http/Controllers/Internal/NetEventsController.php").read_text(encoding="utf-8")
     assert int(re.search(r"'events\.\*\.host' => '[^']*max:(\d+)'", ctrl)[1]) == EVENT_HOST_MAX
     assert int(re.search(r"'events\.\*\.path' => '[^']*max:(\d+)'", ctrl)[1]) == EVENT_PATH_MAX
+
+
+# -- Step 22 (I-PROXY-19): every state field type-checked; generated Unbound config checked before reload --
+
+@pytest.mark.parametrize("bad", [
+    {"version": "5"}, {"version": True}, {"version": None}, {"proxy_port": "8080"}, {"agent_port": 8443.0},
+    {"ccc_ip": None}, {"lab_subnet": ["192.168.10.0/24"]}, {"wan_if": 0},
+    {"events_url": 5}, {"events_token": ["t"]},
+    {"always_block": "doh"}, {"always_block": [None]}, {"inspect_hosts": {"google.com": 1}},
+    {"doh_ips": "8.8.8.8"},
+    {"categories": ["ai"]}, {"categories": {"ai": "openai.com"}}, {"categories": {"ai": [5]}},
+    {"path_rules": {"ai": None}}, {"group_categories": {"test": "ai"}}, {"group_categories": None},
+    {"log_urls": True}, {"log_urls": []}, {"google": "on"}, {"groups": []},
+])
+def test_state_type_checks_every_field(state_dict, bad):
+    with pytest.raises(ValueError, match=next(iter(bad))):
+        State.from_dict(dict(state_dict, **bad))
+
+
+def test_state_renders_canonical_addresses_and_reads_php_empty_arrays(state_dict, caplog):
+    doc = dict(state_dict, lab_subnet="192.168.10.7/24", ccc_ip="192.168.10.2",
+               categories=[], path_rules=[], group_categories=[], events_token=None,
+               doh_ips=["8.8.8.8", " 45.90.28.0/24 ", "45.90.28.1/24", "2001:4860:4860::8888/128", "dns", 5, "1.1.1.1/33"])
+    with caplog.at_level("WARNING", logger="xg-netpolicy.state"):
+        s = State.from_dict(doc)
+    assert s.lab_subnet == "192.168.10.0/24" and s.ccc_ip == "192.168.10.2"
+    assert (s.categories, s.path_rules, s.group_categories, s.events_token) == ({}, {}, {}, "")
+    assert s.doh_ips == ["8.8.8.8", "45.90.28.0/24", "45.90.28.0/24", "2001:4860:4860::8888"]
+    assert [x.split(" (")[0] for x in s.skipped] == ["doh_ips: 'dns'", "doh_ips: 5", "doh_ips: '1.1.1.1/33'"]
+    assert caplog.text.count("doh_ips: skipping") == 3
+    assert "access-control: 192.168.10.0/24 allow" in generate.unbound_conf(s)
+
+
+def test_proxy_loads_policy_with_php_empty_path_rules(state_file, tmp_path):
+    out = tmp_path / "net"
+    generate.generate(state_file, out)
+    pj = out / "proxy.json"
+    pj.write_text(json.dumps(dict(json.loads(pj.read_text()), path_rules=[])))
+    c = PolicyCache(pj)
+    assert c.loaded and c.decide_tls("192.168.10.21", "chatgpt.com").action == "block"
+
+
+class _Res:
+    def __init__(self, code=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = code, stdout, stderr
+
+
+def test_unbound_config_is_checked_before_it_replaces_the_old_one(state_file, state_dict, tmp_path, monkeypatch,
+                                                                  caplog):
+    out = tmp_path / "net"
+    calls = []
+    verdict = {"code": 0}
+
+    def fake_run(cmd, capture_output=True, text=True):
+        calls.append(cmd)
+        if cmd[0].endswith("unbound-checkconf"):
+            main = pathlib.Path(cmd[1])
+            assert main.name == "unbound-xephyguard.conf.check.main"
+            assert f'include: "{(out / "unbound-xephyguard.conf.check").as_posix()}"' in main.read_text()
+            assert (out / "unbound-xephyguard.conf.check").exists()
+            return _Res(verdict["code"], "", "syntax error line 3")
+        return _Res(0)
+
+    monkeypatch.setattr(generate.shutil, "which", lambda name: "/usr/sbin/" + name)
+    monkeypatch.setattr(generate.subprocess, "run", fake_run)
+    assert generate.generate(state_file, out)["unbound"] is True
+    good = (out / "unbound-xephyguard.conf").read_text()
+    assert calls == [["/usr/sbin/unbound-checkconf", str(out / "unbound-xephyguard.conf.check.main")]]
+    assert sorted(f.name for f in out.iterdir()) == ["proxy.json", "sets.nft", "unbound-xephyguard.conf"]
+
+    # a rejected config keeps the old file, is not reloaded, and the nft/proxy files still update
+    verdict["code"] = 1
+    state_file.write_text(json.dumps(dict(state_dict, version=6)))
+    with caplog.at_level("ERROR", logger="xg-netpolicy"):
+        changed = generate.generate(state_file, out)
+    assert changed == {"unbound": False, "nft": True, "proxy": True}
+    assert (out / "unbound-xephyguard.conf").read_text() == good
+    assert sorted(f.name for f in out.iterdir()) == ["proxy.json", "sets.nft", "unbound-xephyguard.conf"]
+    assert "unbound-checkconf rejected the generated config, keeping the previous one: syntax error line 3" in caplog.text
+    calls.clear()
+    generate.apply(out, changed, network_mode="proxy_only")
+    assert not any("unbound-control" in c[0] for c in calls)
+
+    # accepted again: replaced and reloaded
+    verdict["code"] = 0
+    assert generate.generate(state_file, out)["unbound"] is True
+    assert "state version 6" in (out / "unbound-xephyguard.conf").read_text()
+
+
+def test_unbound_check_skipped_with_one_warning_without_binary(state_file, state_dict, tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(generate.shutil, "which", lambda name: None)
+    monkeypatch.setattr(generate, "_checkconf_missing_warned", False)
+    out = tmp_path / "net"
+    with caplog.at_level("WARNING", logger="xg-netpolicy"):
+        assert generate.generate(state_file, out)["unbound"] is True
+        state_file.write_text(json.dumps(dict(state_dict, version=6)))
+        assert generate.generate(state_file, out)["unbound"] is True
+    assert caplog.text.count("unbound-checkconf not installed") == 1
+    assert not (out / "unbound-xephyguard.conf.check").exists()

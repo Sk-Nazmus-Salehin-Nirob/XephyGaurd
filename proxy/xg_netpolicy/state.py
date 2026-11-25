@@ -19,6 +19,18 @@ log = logging.getLogger("xg-netpolicy.state")
 # document has no usable `vpn_ports` (missing, not a list, or nothing valid left).
 VPN_PORTS_DEFAULTS = ["51820/udp", "1194/udp", "1194/tcp", "500/udp", "4500/udp", "1723/tcp", "22/tcp", "1701/udp"]
 
+# Field types checked by validate() (I-PROXY-19). A wrong type rejects the document (ValueError).
+INT_FIELDS = ("version", "proxy_port", "agent_port")
+STR_FIELDS = ("ccc_ip", "lab_subnet", "lan_if", "wan_if")
+OPT_STR_FIELDS = ("events_url", "events_token")  # null (unset server config) is read as ""
+STR_LIST_FIELDS = ("always_block", "inspect_hosts")
+STR_LIST_DICT_FIELDS = ("categories", "path_rules", "group_categories")  # {name: [str, ...]}
+DICT_FIELDS = ("groups", "google", "log_urls")
+
+
+def _type_name(v: Any) -> str:
+    return "null" if v is None else type(v).__name__
+
 
 @dataclass
 class State:
@@ -66,16 +78,18 @@ class State:
         """Structural errors (wrong types, bad ccc_ip/lab_subnet/interface names) raise ValueError
         and reject the document. A single bad PC entry in a group or in google.udm14_clients
         (not a string, not an IPv4 address, outside lab_subnet) is dropped with a warning, so
-        one odd PC never stops a session from being enforced for all the others."""
+        one odd PC never stops a session from being enforced for all the others; so is a bad
+        doh_ips entry. Every field is type-checked first (I-PROXY-19): an integer ccc_ip or
+        lab_subnet would pass ipaddress and be rendered as e.g. 3232238085/32."""
+        self._check_types()
         if self.network_mode is not None and not isinstance(self.network_mode, str):
-            raise ValueError(f"network_mode must be a string, not {type(self.network_mode).__name__}")
-        ipaddress.ip_address(self.ccc_ip)
+            raise ValueError(f"network_mode must be a string, not {_type_name(self.network_mode)}")
+        # canonical text, so the Unbound/nft/proxy files only ever hold what ipaddress printed
+        self.ccc_ip = str(ipaddress.ip_address(self.ccc_ip))
         net = ipaddress.ip_network(self.lab_subnet, strict=False)
-        if not isinstance(self.groups, dict):
-            raise ValueError(f"groups must be an object, not {type(self.groups).__name__}")
-        if not isinstance(self.google, dict):
-            raise ValueError(f"google must be an object, not {type(self.google).__name__}")
+        self.lab_subnet = str(net)
         self.skipped = []
+        self.doh_ips = self._doh_ips(self.doh_ips)
         groups: dict[str, list[str]] = {}
         for g, ips in self.groups.items():
             if not isinstance(ips, list):
@@ -91,6 +105,62 @@ class State:
         for name in self.lan_if, self.wan_if:
             if not isinstance(name, str) or not name.replace("-", "").replace("_", "").replace(".", "").isalnum():
                 raise ValueError(f"bad interface name {name!r}")
+
+    def _check_types(self) -> None:
+        """ValueError on any field of the wrong JSON type. bool is not accepted as int. An empty
+        JSON array is read as an empty object for categories/path_rules/group_categories: PHP's
+        json_encode writes an empty array as [] (e.g. path_rules when no path entry is enabled)."""
+        for k in INT_FIELDS:
+            v = getattr(self, k)
+            if not isinstance(v, int) or isinstance(v, bool):
+                raise ValueError(f"{k} must be an integer, not {_type_name(v)}")
+        for k in STR_FIELDS:
+            v = getattr(self, k)
+            if not isinstance(v, str):
+                raise ValueError(f"{k} must be a string, not {_type_name(v)}")
+        for k in OPT_STR_FIELDS:
+            v = getattr(self, k)
+            if v is None:
+                setattr(self, k, "")
+            elif not isinstance(v, str):
+                raise ValueError(f"{k} must be a string, not {_type_name(v)}")
+        for k in DICT_FIELDS + STR_LIST_DICT_FIELDS:
+            v = getattr(self, k)
+            if v == [] and k in STR_LIST_DICT_FIELDS:
+                setattr(self, k, {})
+            elif not isinstance(v, dict):
+                raise ValueError(f"{k} must be an object, not {_type_name(v)}")
+        for k in STR_LIST_FIELDS:
+            self._str_list(k, getattr(self, k))
+        for k in STR_LIST_DICT_FIELDS:
+            for name, v in getattr(self, k).items():
+                self._str_list(f"{k}.{name}", v)
+        if not isinstance(self.doh_ips, list):
+            raise ValueError(f"doh_ips must be a list, not {_type_name(self.doh_ips)}")
+
+    @staticmethod
+    def _str_list(where: str, v: Any) -> None:
+        if not isinstance(v, list):
+            raise ValueError(f"{where} must be a list, not {_type_name(v)}")
+        for e in v:
+            if not isinstance(e, str):
+                raise ValueError(f"{where} entries must be strings, not {_type_name(e)} ({e!r})")
+
+    def _doh_ips(self, entries: list[Any]) -> list[str]:
+        """Resolver IPs/networks as ipaddress prints them; a bad entry (imported blocklist data) is
+        dropped with a warning instead of making nft -f fail for every set."""
+        kept: list[str] = []
+        for e in entries:
+            try:
+                if not isinstance(e, str):
+                    raise ValueError(f"not a string ({_type_name(e)})")
+                n = ipaddress.ip_network(e.strip(), strict=False)
+                kept.append(str(n.network_address) if n.prefixlen == n.max_prefixlen else str(n))
+            except ValueError as err:
+                reason = str(err) if not isinstance(e, str) else "not an IP address or network"
+                self.skipped.append(f"doh_ips: {e!r} ({reason})")
+                log.warning("doh_ips: skipping %r, %s", e, reason)
+        return kept
 
     def _pc_ips(self, where: str, entries: list[Any], net: ipaddress.IPv4Network | ipaddress.IPv6Network) -> list[str]:
         kept: list[str] = []
