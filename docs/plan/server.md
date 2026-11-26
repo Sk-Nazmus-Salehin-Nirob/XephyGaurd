@@ -5,7 +5,7 @@ Plan written 2026-11-17. Nothing run while planning.
 **Run order:** [server-implementation.md](server-implementation.md) merges these steps with the alternatives table (2026-11-18); follow it, not the numbering here.
 
 Rules for every step: one component, <300 changed lines, one kind of change, test added in the same step, then
-`cd server && APP_KEY="base64:$(openssl rand -base64 32)" php artisan test` and `./vendor/bin/pint --test <touched files>` (keep touched files clean).
+`cd server && APP_KEY="base64:$(openssl rand -base64 32)" php artisan test` and `./vendor/bin/pint --test <touched files>` (keep touched files clean), and since Step 21 `composer analyse` (Larastan level 5, no new findings outside `phpstan-baseline.neon`).
 **[APPROVAL]** = changes a documented feature or ETHICS item; wait for the owner. **[CROSS]** = another component's plan has the matching step; update docs/PROTOCOL.md in the same step if a message changes.
 Note: commit e9ded61 deliberately restored credentials on `/downloads`; Step 8 reverses part of that, so it needs your decision.
 
@@ -37,7 +37,7 @@ Privacy defaults (ETHICS):
 - [x] Step 18: Pint formatting only for `app/Services`, `app/Jobs`, `app/Http/Middleware` (fixes none; touches F20, F32, F108-F111)
 - [x] Step 19: Pint formatting only for `routes`, `config`, `database`, `tests` (fixes none; touches none)
 - [x] Step 20: Make the CI pint job blocking once Steps 17-19 are in (needs approval to edit CI) (fixes none) [APPROVAL]
-- [ ] Step 21: Larastan/PHPStan level 5 would be a new dev dependency: ask first. Until then use `declare(strict_types=1)` on files touched by later steps (fixes none)
+- [x] Step 21: Larastan/PHPStan level 5 would be a new dev dependency: ask first. Until then use `declare(strict_types=1)` on files touched by later steps (fixes none) [APPROVAL, approved by the owner 2026-11-27] (done as S-68)
 
 ## Phase 3: Config and secrets
 - [x] Step 22: `NetworkPolicyWriter` writes `state.json` with mode 0640 (umask), or pass the internal token to sidecars via env (fixes I-SERVER-17; touches F5) [CROSS: proxy I-PROXY-13] (done as S-24; `events_token` dropped from state.json as S-60)

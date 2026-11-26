@@ -10,8 +10,8 @@ Owner pre-approved the [APPROVAL] steps and the alternatives (2026-11-17). Writt
 
 ## Rules for each step
 - Same as [screen-implementation.md](screen-implementation.md) "Rules for each step" (branch `improve`, one step = one commit, <300 lines, test in the same commit, moves never mixed with logic).
-- Run `cd server && APP_KEY="base64:$(openssl rand -base64 32)" php artisan test` and `./vendor/bin/pint --test <touched files>`.
-- `declare(strict_types=1)` on every PHP file a step touches (replaces server.md Step 21. Larastan stays deferred because it is a new dependency).
+- Run `cd server && APP_KEY="base64:$(openssl rand -base64 32)" php artisan test`, `./vendor/bin/pint --test <touched files>` and `composer analyse` (Larastan level 5, since S-68).
+- `declare(strict_types=1)` on every PHP file a step touches. Larastan is in since S-68: a step adds no finding outside `phpstan-baseline.neon`, and one that fixes a baselined finding regenerates the baseline in the same commit.
 - Query-budget steps add the failing `DB::listen` count test (or `EXPLAIN`) first, then the fix in the same commit.
 
 ## Alternatives: what is adopted
@@ -37,7 +37,7 @@ Deferred (not scheduled, ask again later):
 - command outbox ack/expiry (needs agent + PROTOCOL)
 - roster preview UI
 - 2FA
-- Larastan
+- Larastan (done as S-68, approved 2026-11-27)
 
 ## M0: groundwork (no behaviour change)
 - [x] S-1 Baseline: run server tests and `pint --test` on the whole tree and record the pass/fail counts here. No code.
@@ -198,6 +198,8 @@ Formatting goes first so that every later diff is logic only.
   Done 2026-11-25: in the proxy, the TLS (`hooks_tls.py`) and HTTP (`hooks_http.py`) `allowed` events need the new `PolicyCache.records_allowed(ip)` (= `records_observed`: `log_urls.enabled` and `State.in_session`, i.e. listed in `session_clients`, or with an older CCC in test/block_ai/exempt), checked before the allowed-SNI dedup. Before, with `log_urls` on, every PC's visits were shipped also outside class, against ETHICS.md's always-on "–". No server code needed: the CCC already sends `session_clients` (S-58). ETHICS.md row "Visited hosts/paths of allowed sites" now says both kinds are recorded only during a session, never outside class; PROTOCOL.md `allowed` row, F070 updated. New proxy test `allowed_events_only_during_a_session` (in-session PC only, not counted as repeats, group fallback, log_urls off; fails on the old code); `allowed_and_observed_events_never_carry_the_query` and `tls_clienthello_dedups_allowed_sni_per_client_host_per_minute` now use in-session PCs. Proxy 247 passed, 2 skipped, ruff clean. Server suite not affected (no server file touched).
 - [x] S-67 Agent events filed under the session running at their time (F39) [follow-up of S-61].
   Done 2026-11-26: `EventIngestor::ingest` computes each new event's clock-corrected time once (`ts` + the heartbeat's offset, as before) and the new `sessionsByTime` closure gives it the session that `ranAt` that time among `LabSession::runningBetween` for the batch's range, keeping only sessions with the PC on their roster (`session_pcs`, the same rule the active-session path used). The stored event's `lab_session_id` and the session passed to `derive` (alert `lab_session_id`, the 30-minute dedup, the session-dependent severity of `tamper.unclean_restart`, `tamper.agent_stopped` only in a session) follow it. Two queries per batch. Heartbeat handling (student login, `current_user`) and the live-score refresh still use the session active now. Not covered: a `rule_hit` with an `isolate` action replayed from an ended session still isolates the PC now (unchanged); clock skew at a session's start or stop. New `AgentApiTest::test_replayed_agent_batch_goes_to_the_session_running_at_each_event` (events from an ended session, from the gap and from now; fails on the old code). F039, FEATURES.md updated. Windows PHP 8.3: 207 of 208 pass (same Windows-only `NetworkPolicyWriterTest` 0640 failure). Pint clean. No proxy code touched.
+- [x] S-68 [APPROVAL, approved by the owner 2026-11-27] Larastan level 5 (was 21).
+  Done 2026-11-27: `larastan/larastan` ^3.0 in require-dev (lock adds only larastan 3.15.0, phpstan 2.3.7 and iamcal/sql-parser 0.7; no other package moved). `server/phpstan.neon`: level 5 over `app`, `routes`, `database`, `config`, tmp dir `storage/framework/cache/phpstan` (already git-ignored). `phpstan-baseline.neon` lists the 91 existing findings (74 entries, relative paths): 32 `property.notFound` (mostly `Model::$x` where a relation or `find` is not typed to its model), 17 `nullsafe.neverNull`, 9 `argument.type`, 4 `return.type`, 3 `method.notFound` (scopes on an untyped builder), 6 others. New `composer analyse` script (`@php`, so it runs with the PHP that runs composer). CI `server` job runs `vendor/bin/phpstan analyse --memory-limit=1G --no-progress` after Pint, blocking. No PHP file changed, so no behaviour change and no F-doc affected. Windows PHP 8.3: 207 of 208 pass (same Windows-only `NetworkPolicyWriterTest` 0640 failure); `composer analyse` 0 errors; `composer validate --strict` ok. Not covered: the baselined findings are not fixed (follow-up: type the relations, then shrink the baseline). Found while doing it: `composer audit` already reports 6 advisories in the existing lock (laravel/framework <13.40, symfony/http-kernel, mailer, routing <7.4.24), so the CI `composer audit` step fails before and after this step (follow-up: bump those packages).
 
 ## Coverage
 Every server.md step 4-52 maps to an S-step above. Steps 1-3 are done. The screen follow-ups (token `mode`, fresh token on reconnect) stay in plan/screen.md.

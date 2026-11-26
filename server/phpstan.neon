@@ -1,0 +1,17 @@
+# Larastan (PHPStan for Laravel), server.md Step 21.
+# Run: vendor/bin/phpstan analyse --memory-limit=1G
+# Findings that predate Step 21 are listed in phpstan-baseline.neon; new code must not add any.
+# Regenerate the baseline only when fixing listed findings:
+#   vendor/bin/phpstan analyse --memory-limit=1G --generate-baseline
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - phpstan-baseline.neon
+
+parameters:
+    level: 5
+    paths:
+        - app
+        - routes
+        - database
+        - config
+    tmpDir: storage/framework/cache/phpstan

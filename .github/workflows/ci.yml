@@ -116,6 +116,8 @@ jobs:
       - run: npm ci && npm run build
       - run: cp .env.example .env && php artisan key:generate
       - run: vendor/bin/pint --test
+      # Larastan level 5; findings older than server Step 21 are listed in phpstan-baseline.neon.
+      - run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
       - run: php artisan test
 
   python:

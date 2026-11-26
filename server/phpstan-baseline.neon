@@ -1,0 +1,445 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$lab_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Events/AlertRaised.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Events/SessionChanged.php
+
+		-
+			message: '#^Parameter \#1 \$pc of method App\\Services\\PolicyService\:\:response\(\) expects App\\Models\\Pc, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Agent/AgentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/Api/ViewTokenController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$started_by\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/Api/ViewTokenController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/ViewTokenController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Builder\<Illuminate\\Database\\Eloquent\\Model\>\:\:active\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Http/Controllers/Api/ViewTokenController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Internal/ScreenAgentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$retired_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Internal/ScreenAgentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$isolated\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Web/AdminController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:online\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/Web/AdminController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>version" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Web/AdminController.php
+
+		-
+			message: '#^Parameter \#1 \$pc of method App\\Http\\Controllers\\Web\\AlertController\:\:syncPcLiveState\(\) expects App\\Models\\Pc, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/Web/AlertController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Web/DashboardController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$retired_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Web/DashboardController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$version\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Web/DashboardController.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: app/Http/Controllers/Web/DashboardController.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Carbon\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Web/DashboardController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Web/DashboardController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$cert_expires_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Web/EnrollmentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$version\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Web/EnrollmentController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>version" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Web/EnrollmentController.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\Lab\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Web/PublicController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$retired_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Middleware/AuthenticateAgent.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Alert.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Carbon\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Models/Alert.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/EvidenceCapture.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Carbon\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Models/EvidenceCapture.php
+
+		-
+			message: '#^Method App\\Models\\LabSession\:\:runningBetween\(\) should return Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\LabSession\> but returns Illuminate\\Database\\Eloquent\\Collection\<int, static\(App\\Models\\LabSession\)\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Models/LabSession.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$granted\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Student.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Http\\Request\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/Audit.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/EnrollmentService.php
+
+		-
+			message: '#^Method App\\Services\\EnrollmentService\:\:approve\(\) should return App\\Models\\Pc but returns Illuminate\\Database\\Eloquent\\Model\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/EnrollmentService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 5
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$isolated\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$lab_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:tile\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Offset ''events'' on non\-empty\-array on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Parameter \#1 \$pc of class App\\Events\\PcUpdated constructor expects App\\Models\\Pc, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Parameter \#1 \$pc of method App\\Services\\EventIngestor\:\:derive\(\) expects App\\Models\\Pc, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Parameter \#1 \$pc of method App\\Services\\EventIngestor\:\:refreshLiveScore\(\) expects App\\Models\\Pc, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Parameter \#1 \$pc of method App\\Services\\EventIngestor\:\:sessionsByTime\(\) expects App\\Models\\Pc, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Parameter \#1 \$pc of method App\\Services\\PolicyService\:\:forPc\(\) expects App\\Models\\Pc, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Parameter \#2 \$pc of method App\\Services\\EventIngestor\:\:applyHeartbeat\(\) expects App\\Models\\Pc, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>version" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/EventIngestor.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$agent\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/HealthChecks.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>clock_offset_ms" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/HealthChecks.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: app/Services/Ingest/EventSchema.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$version\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/InspectorQueries.php
+
+		-
+			message: '#^Offset ''title'' on non\-empty\-array on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/InspectorQueries.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Carbon\\Carbon\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 4
+			path: app/Services/InspectorQueries.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>started_at" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/InspectorQueries.php
+
+		-
+			message: '#^Method App\\Services\\PolicyService\:\:effectiveMany\(\) should return array\<int, array\{profile\: App\\Models\\Profile, session\: App\\Models\\LabSession\|null, override\: App\\Models\\SessionPc\|null\}\> but returns array\<int\<0, max\>, array\{profile\: Illuminate\\Database\\Eloquent\\Model\|null, session\: App\\Models\\LabSession\|null, override\: App\\Models\\SessionPc\|null\}\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/PolicyService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>id" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Services/PolicyService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>version" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/PolicyService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/ReportModel.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$student_number\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ReportModel.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Services/ReportModel.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>student_number" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/ReportModel.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Score\:\:\$course\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ResearchExport.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Score\:\:\$experiment_condition\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ResearchExport.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Score\:\:\$experiment_group\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ResearchExport.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Score\:\:\$mode\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ResearchExport.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Score\:\:\$pseudonym\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ResearchExport.php
+
+		-
+			message: '#^Method App\\Services\\ResearchExport\:\:rows\(\) should return Illuminate\\Support\\LazyCollection\<int, list\<mixed\>\> but returns Illuminate\\Support\\LazyCollection\<int, array\{int, mixed, mixed, mixed, mixed, mixed, string, int, \.\.\.\}\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Services/ResearchExport.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Support\\LazyCollection\<int,App\\Models\\Score\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Services/ResearchExport.php
+
+		-
+			message: '#^Result of && is always false\.$#'
+			identifier: booleanAnd.alwaysFalse
+			count: 1
+			path: app/Services/ScreenPrivacyRules.php
+
+		-
+			message: '#^Static property App\\Services\\ScreenPrivacyRules\:\:\$cache \(array\{int\|null, array\}\|null\) does not accept array\{non\-falsy\-string, list\<array\{process\?\: string, title_regex\?\: string\}\>\}\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: app/Services/ScreenPrivacyRules.php
+
+		-
+			message: '#^Static property App\\Services\\ScreenPrivacyRules\:\:\$cache \(array\{int\|null, array\}\|null\) is never assigned array\{int\|null, array\} so it can be removed from the property type\.$#'
+			identifier: property.unusedType
+			count: 1
+			path: app/Services/ScreenPrivacyRules.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between int\|null and non\-falsy\-string will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: app/Services/ScreenPrivacyRules.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$agent\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/SessionManager.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/SessionManager.php
+
+		-
+			message: '#^Parameter \#2 \$profile of method App\\Services\\SessionManager\:\:start\(\) expects App\\Models\\Profile, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/SessionManager.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>email" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/SessionManager.php
