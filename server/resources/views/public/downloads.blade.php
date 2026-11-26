@@ -5,7 +5,6 @@
   $cccHost = $ccc ?: request()->getHost();
   $portSuffix = request()->getPort() && !in_array(request()->getPort(), [80, 443], true) ? ':' . request()->getPort() : '';
   $baseUrl = (request()->isSecure() ? 'https://' : 'http://') . $cccHost . $portSuffix;
-  $httpBaseUrl = 'http://' . $cccHost . $portSuffix;
   $caFp = $fingerprint ?? '';
   $exeName = $setupFile ?? '';
   $exeMeta = $exeName ? collect($files ?? [])->firstWhere('name', $exeName) : null;
@@ -15,7 +14,7 @@
       . ' /S /KEY=<ENROLL_KEY>'
       . ' /CCC=' . $cccHost
       . ($caFp !== '' ? ' /CAFP=' . $caFp : '');
-  $linCmd = 'curl -fsSL ' . $httpBaseUrl . '/install/linux.sh | sudo bash -s -- --key <ENROLL_KEY>';
+  $linCmd = \App\Services\InstallCommand::linux($cccHost, $caFp);   // fetch CA, check fingerprint, then HTTPS (S-74)
 @endphp
 <script type="application/json" id="xg-page-data">{!! json_encode([
   'cccHost' => $cccHost,
@@ -65,7 +64,7 @@
   <section class="panel panel-pad stack">
     <h2 class="h2">Silent install</h2>
     <div><div class="cmd-label">Windows (as administrator)</div><div class="cmd"><pre x-text="win"></pre><button class="btn btn-sm copy" @click="xgCopy(win, 'Copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg></button></div></div>
-    <div><div class="cmd-label">Ubuntu / Debian</div><div class="cmd"><pre x-text="lin"></pre><button class="btn btn-sm copy" @click="xgCopy(lin, 'Copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg></button></div></div>
+    <div><div class="cmd-label">Ubuntu / Debian</div><p class="help">Checks the lab CA against the fingerprint above before anything runs as root; the script and the package come over HTTPS only. Compare the fingerprint with the CCC console (<code>xephyguard-ccc doctor</code>) if you did not open this page over HTTPS.</p><div class="cmd"><pre x-text="lin"></pre><button class="btn btn-sm copy" @click="xgCopy(lin, 'Copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg></button></div></div>
   </section>
   <section class="panel panel-pad stack"><h2 class="h2">After installing</h2>
     <ol class="steps-num"><li><b>The agent starts by itself</b><div class="muted small">It runs in the background.</div></li><li><b>Approve it here</b><div class="muted small">It appears on <a href="{{ route('enroll.index') }}">Add a PC</a> within a few seconds.</div></li><li><b>If someone ends it</b><div class="muted small">The PC shows as offline on the map and an alert is raised.</div></li></ol></section>

@@ -40,6 +40,7 @@
 <script type="application/json" id="xg-page-data">{!! json_encode([
   'key' => $key ?? '',
   'fp' => $fingerprint ?? '',
+  'lin' => \App\Services\InstallCommand::linux($cccHost, (string) ($fingerprint ?? '')),
   'exeName' => $exeName,
   'cccHost' => $cccHost,
   'baseUrl' => $baseUrl,

@@ -1,10 +1,12 @@
 # Adding Linux lab PCs (Ubuntu / Debian)
 
-**One PC:** on the dashboard open **Add a PC**, copy the one-liner, run it on the PC as root:
+**One PC:** on the dashboard open **Add a PC**, copy the command (it holds the real CA fingerprint), run it on the PC:
 ```bash
-curl -fsSL http://192.168.10.2/install/linux.sh | sudo bash -s -- --key XG-XXXXXX-XXXXXX-XXXXXX
+curl -fsSL -o xg-ca.crt http://192.168.10.2/ca.crt &&   { openssl x509 -in xg-ca.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f | grep -qx <FINGERPRINT> || { echo "CA fingerprint mismatch: stop" >&2; false; }; } &&   curl -fsSL --cacert xg-ca.crt https://192.168.10.2/install/linux.sh | sudo bash -s -- --key XG-XXXXXX-XXXXXX-XXXXXX --ca-fingerprint <FINGERPRINT>
 ```
-It downloads and verifies the lab CA (fingerprint check), installs the `.deb`, enrolls, and waits.
+It checks the lab CA against the fingerprint you copied before anything runs as root, then fetches the script and
+the `.deb` over HTTPS with that CA, installs, enrolls, and waits. Compare the fingerprint with the CCC console
+(`sudo xephyguard-ccc doctor`) if you did not open the dashboard over HTTPS.
 The PC appears as **Pending** on the dashboard → click **Approve** → name the seat on the seat map.
 
 **Manual:** `sudo apt install ./xephyguard-agent_<ver>_amd64.deb` then

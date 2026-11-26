@@ -99,6 +99,20 @@ class DashboardTest extends TestCase
         $this->assertSame($first->id, SignatureVersion::active()->id);
     }
 
+    public function test_linux_install_script_needs_the_operator_pin_and_fetches_over_https(): void
+    {
+        $this->bootLab();
+        $fp = CertificateAuthority::fromConfig()->fingerprint();
+        $sh = $this->get('https://192.168.10.2/install/linux.sh')->assertOk()->getContent();
+        $this->assertStringContainsString('CA_FP="'.$fp.'"', $sh);
+        $this->assertStringContainsString('--ca-fingerprint) PIN="$2"', $sh);
+        $this->assertStringContainsString('[ "$PIN" = "$CA_FP" ] ||', $sh);              // pin given by the operator must match
+        $this->assertStringContainsString('[ "$got" = "$PIN" ] ||', $sh);                // downloaded CA checked against that pin
+        $this->assertStringContainsString('curl -fsSL --cacert "$tmp/ca.crt" "https://$CCC/downloads/$deb"', $sh);
+        $this->assertStringContainsString('--ca-fingerprint "$PIN"', $sh);
+        $this->assertStringNotContainsString('http://$CCC/downloads', $sh);
+    }
+
     public function test_download_allows_bat_scripts(): void
     {
         $dir = storage_path('app/public/downloads');
@@ -113,7 +127,7 @@ class DashboardTest extends TestCase
         }
     }
 
-    public function test_downloads_serves_deb_and_generates_http_linux_installer_command(): void
+    public function test_downloads_serves_deb_and_generates_pinned_https_linux_installer_command(): void
     {
         $lab = $this->bootLab();
         $lab->update(['ccc_ip' => '192.168.10.2']);
@@ -129,7 +143,15 @@ class DashboardTest extends TestCase
             $res->assertSee('xephyguard-agent_test_amd64.deb');
             preg_match('/<script type="application\/json" id="xg-page-data">(.*?)<\/script>/s', $res->getContent(), $m);
             $page = json_decode($m[1] ?? '{}', true, 512, JSON_THROW_ON_ERROR);
-            $this->assertStringStartsWith('curl -fsSL http://192.168.10.2/install/linux.sh', $page['lin'] ?? '');
+            // S-74: CA over HTTP, checked against the fingerprint shown, then the script over HTTPS with that CA and pin.
+            $fp = CertificateAuthority::fromConfig()->fingerprint();
+            $this->assertStringStartsWith('curl -fsSL -o xg-ca.crt http://192.168.10.2/ca.crt && ', $page['lin'] ?? '');
+            $this->assertStringContainsString('grep -qx '.$fp, $page['lin']);
+            $this->assertStringContainsString('curl -fsSL --cacert xg-ca.crt https://192.168.10.2/install/linux.sh | sudo bash -s -- --key <ENROLL_KEY> --ca-fingerprint '.$fp, $page['lin']);
+            $this->assertStringNotContainsString('http://192.168.10.2/install/', $page['lin']);
+            $enroll = $this->actingAs($this->user('instructor'))->get('https://192.168.10.2/enroll')->assertOk();
+            preg_match('/<script type="application\/json" id="xg-page-data">(.*?)<\/script>/s', $enroll->getContent(), $e);
+            $this->assertSame($page['lin'], json_decode($e[1] ?? '{}', true, 512, JSON_THROW_ON_ERROR)['lin'] ?? null);
             // S-15: the lab key never appears on /downloads, not even for logged-in staff.
             $this->assertStringNotContainsString($lab->enrollKey(), $res->getContent());
             $this->assertArrayNotHasKey('key', $page);

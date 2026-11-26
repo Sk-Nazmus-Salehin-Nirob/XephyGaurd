@@ -41,7 +41,7 @@ class PublicController extends Controller
         ]);
     }
 
-    /** `curl -fsSL http://<ccc>/install/linux.sh | sudo bash -s -- --key <KEY>` */
+    /** Run as `curl --cacert xg-ca.crt https://<ccc>/install/linux.sh | sudo bash -s -- --key <KEY> --ca-fingerprint <FP>`; see InstallCommand. */
     public function linuxInstaller(): Response
     {
         $ccc = $this->resolveCccHost();

@@ -514,12 +514,13 @@ After installing, each PC appears there as **Pending**. Click **Approve** and gi
 Supported: Ubuntu 22.04/24.04 and Debian 12, amd64.
 
 #### 5-L.1 One PC (one-liner)
-On the PC, as an admin user:
+On the PC, as an admin user, paste the command from **Add a PC** (it holds the real CA fingerprint):
 ```bash
-curl -fsSL http://192.168.10.2/install/linux.sh | sudo bash -s -- --key XG-XXXXXX-XXXXXX-XXXXXX
+curl -fsSL -o xg-ca.crt http://192.168.10.2/ca.crt &&   { openssl x509 -in xg-ca.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f | grep -qx <FINGERPRINT> || { echo "CA fingerprint mismatch: stop" >&2; false; }; } &&   curl -fsSL --cacert xg-ca.crt https://192.168.10.2/install/linux.sh | sudo bash -s -- --key XG-XXXXXX-XXXXXX-XXXXXX --ca-fingerprint <FINGERPRINT>
 ```
 The script:
-1. downloads the CA and checks its fingerprint (it aborts on a mismatch);
+1. downloads the CA and checks it against the fingerprint you copied, before anything runs as root (the
+   script itself and the `.deb` then come over HTTPS verified with that CA);
 2. installs the `.deb`;
 3. enrolls and waits up to 10 minutes for your approval;
 4. shows the status.

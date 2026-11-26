@@ -958,24 +958,36 @@ No login needed for any of these.
 ### F99. Downloads and install commands ⚠SEC
 - **What:** lists installers in `storage/app/public/downloads` with sizes and ready-to-copy install
   commands with a `<ENROLL_KEY>` placeholder and the CA fingerprint plus check instructions (S-15:
-  the key and one-time tokens are only on the authenticated `/enroll` page).
+  the key and one-time tokens are only on the authenticated `/enroll` page). The Linux command (built by
+  `InstallCommand::linux`, the same one `/enroll` shows) fetches `ca.crt`, stops unless its SHA-256 matches the
+  fingerprint shown, then runs the script over HTTPS with that CA and pin (S-74). Files are served on :443 only
+  (nginx, ccc-deploy Step 6).
 - **Trigger:** `GET /downloads` (+ `.html`), `GET /downloads/{file}` (`.deb .rpm .msi .exe .sha256 .bat`).
-- **Code:** `PublicController::downloadsIndex`, `download`; `resources/views/public/downloads.blade.php`.
+- **Code:** `PublicController::downloadsIndex`, `download`; `resources/views/public/downloads.blade.php`;
+  `S/Services/InstallCommand.php`.
 - **Status:** working (`downloads_layout_handles_guest_no_rail_and_kb_sizes`,
-  `downloads_serves_deb_and_generates_http_linux_installer_command`, `download_allows_bat_scripts`).
-- **Test:** 1. Open `/downloads` logged out. 2. The enrollment key is visible.
+  `downloads_serves_deb_and_generates_pinned_https_linux_installer_command`, `download_allows_bat_scripts`).
+- **Test:** 1. Open `https://<ccc>/downloads` logged out. 2. No enrollment key is shown; the Linux command
+  contains the fingerprint and `https://…/install/linux.sh`.
 
 ### F100. Linux install script
-- **What:** a shell script that installs the agent and enrolls it; used as `curl http://… | sudo bash`.
-- **Trigger:** `GET /install/linux.sh`.
-- **Code:** `PublicController::linuxInstaller`.
-- **Status:** working (installer command test). ⚠SEC plain HTTP piped to root.
-- **Test:** 1. `curl -s localhost:8000/install/linux.sh | head`.
+- **What:** a shell script that installs the agent and enrolls it. Run only through the command on
+  `/downloads` or `/enroll`: `curl --cacert xg-ca.crt https://… | sudo bash -s -- --key K --ca-fingerprint FP`
+  after that command checked `ca.crt` against the fingerprint the operator copied (S-74). The script needs
+  `--ca-fingerprint` (exit 2 without it), refuses a pin that differs from its CA (exit 3), checks the downloaded
+  CA against the pin and fetches the `.deb` over HTTPS with that CA.
+- **Trigger:** `GET /install/linux.sh` (nginx :443 only, ccc-deploy Step 6).
+- **Code:** `PublicController::linuxInstaller`, `resources/views/public/install-linux.blade.php`.
+- **Status:** working (`linux_install_script_needs_the_operator_pin_and_fetches_over_https`; the pin checks
+  were run with bash, the full install was not run on a lab PC).
+- **Test:** 1. Copy the Linux command from `/enroll` and run it on a PC. 2. Change one character of the
+  fingerprint: it stops with "CA fingerprint mismatch".
 
 ### F101. CA certificate download
 - **Trigger:** `GET /ca.crt`.
 - **Code:** `PublicController::caCert`.
-- **Status:** working.
+- **Status:** working. Still served on plain HTTP :80 (a PC needs it before it can check TLS); it is trusted
+  only after its SHA-256 matches the fingerprint the operator copied (S-74).
 - **Test:** see F3.
 
 ### F102. Shared clipboard / text share ⚠SEC ⚠PRIV

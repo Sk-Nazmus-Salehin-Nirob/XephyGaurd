@@ -1543,6 +1543,7 @@ document.addEventListener('alpine:init', () => {
       exeName: d.exeName || 'XephyGuard-Setup.exe',
       cccHost: d.cccHost || window.location.hostname || '',
       baseUrl: d.baseUrl || window.location.origin,
+      lin: d.lin || '',
       pending: Array.isArray(d.pending) ? d.pending : [],
       enrolled: Array.isArray(d.enrolled) ? d.enrolled : [],
       get cmd() {
@@ -1551,7 +1552,7 @@ document.addEventListener('alpine:init', () => {
           const cccArg = this.cccHost || window.location.hostname || this.baseUrl;
           return this.exeName + ' /S /KEY=' + keyPart + ' /CCC=' + cccArg + (this.fp ? ' /CAFP=' + this.fp : '');
         }
-        return 'curl -fsSL ' + this.baseUrl + '/install/linux.sh | sudo bash -s -- --key ' + keyPart;
+        return this.lin.split('<ENROLL_KEY>').join(keyPart);   // built by InstallCommand::linux (S-74)
       },
       get shown() {
         const q = this.q.toLowerCase();
