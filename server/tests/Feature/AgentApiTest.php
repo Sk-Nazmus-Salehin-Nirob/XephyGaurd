@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Models\Agent;
 use App\Models\Alert;
+use App\Models\AuditLog;
 use App\Models\Command;
 use App\Models\Event;
 use App\Models\KeyStat;
@@ -232,6 +233,42 @@ class AgentApiTest extends TestCase
         $this->assertNull($sid('tamper.config_changed'));
         $this->assertSame($current->id, $sid('tamper.ca_changed'));
         $this->assertSame(1, Alert::where('lab_session_id', $current->id)->count());
+    }
+
+    public function test_replayed_isolate_hit_from_an_ended_session_does_not_isolate_now(): void
+    {
+        Queue::fake();
+        $lab = $this->bootLab();
+        [$pc, $token, $cert] = $this->enrolledPc();
+        $sm = app(SessionManager::class);
+        $at = fn (int $minutesAgo) => now()->subMinutes($minutesAgo)->getTimestampMs();
+        $this->travel(-180)->minutes();
+        $earlier = $sm->start($lab, $this->profile('Test: AI blocked'), 'CS101');
+        $this->travel(60)->minutes();
+        $sm->stop($earlier);
+        $this->travelBack();
+        $current = $sm->start($lab, $this->profile('Test: AI blocked'), 'CS102');
+
+        $hit = fn (int $seq, int $ts, string $rule) => ['seq' => $seq, 'ts' => $ts, 'type' => 'rule_hit', 'data' => [
+            'rule_id' => $rule, 'category' => 'ai_web', 'severity' => 'high', 'description' => 'AI site', 'subject' => 'chat.example',
+            'actions' => ['alert', 'isolate'], 'mode' => 'test']];
+        $batch = fn (array $events) => ['v' => 1, 'pc_id' => (string) $pc->id, 'heartbeat' => ['mode' => 'test', 'user' => 'alice',
+            'agent_version' => '0.1.0', 'local_time_ms' => now()->getTimestampMs(), 'capabilities' => ['keys' => true]], 'events' => $events];
+        $h = $this->agentHeaders($token, $cert);
+
+        // Replayed from the ended session: filed there, alert raised there, PC not isolated now.
+        $this->withHeaders($h)->postJson('/api/agent/v1/events', $batch([$hit(1, $at(150), 'ai.old')]))->assertOk()
+            ->assertJson(['ack_seq' => 1, 'isolated' => false]);
+        $this->assertSame($earlier->id, Event::where('seq', 1)->value('lab_session_id'));
+        $this->assertSame($earlier->id, Alert::where('rule_id', 'ai.old')->value('lab_session_id'));
+        $this->assertFalse($pc->fresh()->isolated);
+        $this->assertSame(0, AuditLog::where('action', 'pc.isolate')->count());
+
+        // The same hit in the running session still isolates.
+        $this->withHeaders($h)->postJson('/api/agent/v1/events', $batch([$hit(2, $at(0), 'ai.now')]))->assertOk()
+            ->assertJson(['ack_seq' => 2, 'isolated' => true]);
+        $this->assertSame($current->id, Alert::where('rule_id', 'ai.now')->value('lab_session_id'));
+        $this->assertTrue($pc->fresh()->isolated);
     }
 
     public function test_broadcast_auth_only_for_own_channel(): void

@@ -220,7 +220,9 @@ class EventIngestor
                 }
                 $actions = is_array($d['actions'] ?? null) ? $d['actions'] : [];
                 $pc->last_event = mb_substr(($d['description'] ?? $d['rule_id'] ?? 'rule hit').' ('.($d['subject'] ?? '').')', 0, 160);
-                if (in_array('isolate', $actions, true) && ! $pc->isolated) {
+                // A hit replayed from a session that has ended is filed (event, alert) but does not isolate the PC now (S-70).
+                $ended = $session !== null && $session->status !== 'active';
+                if (in_array('isolate', $actions, true) && ! $pc->isolated && ! $ended) {
                     $this->sessions->isolate($pc, true, null, 'rule '.$str('rule_id'));
                 }
                 $sev = $str('severity', 16) ?? 'medium';

@@ -124,7 +124,7 @@ and a listed field with the wrong type, is dropped before storage; strings are c
 
 ### Actions (policy per mode)
 `log` (always) → `warn` (notice on the PC) → `kill` (opt-in per rule) → `alert` (CCC raises an alert) →
-`isolate` (CCC moves the PC to the isolated nftables set). Default Test mode: log + warn + alert.
+`isolate` (CCC moves the PC to the isolated nftables set; not for a hit replayed from a session that has ended). Default Test mode: log + warn + alert.
 
 ## Commands (CCC → agent)
 Reverb (Pusher protocol 7) over `wss://<ccc>:8443/app/<key>`, mTLS required. The agent subscribes to
