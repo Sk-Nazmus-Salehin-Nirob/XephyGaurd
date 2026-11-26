@@ -23,11 +23,13 @@ class AlertReview extends Model
         static::deleting(fn () => throw new LogicException('alert reviews are append-only'));
     }
 
+    /** @return BelongsTo<Alert, $this> */
     public function alert(): BelongsTo
     {
         return $this->belongsTo(Alert::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

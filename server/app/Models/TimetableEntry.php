@@ -12,11 +12,13 @@ class TimetableEntry extends Model
 
     protected $casts = ['enabled' => 'boolean', 'valid_from' => 'date', 'valid_until' => 'date'];
 
+    /** @return BelongsTo<Profile, $this> */
     public function profile(): BelongsTo
     {
         return $this->belongsTo(Profile::class);
     }
 
+    /** @return BelongsTo<Lab, $this> */
     public function lab(): BelongsTo
     {
         return $this->belongsTo(Lab::class);

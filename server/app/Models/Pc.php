@@ -20,36 +20,43 @@ class Pc extends Model
         'silent_alerted_at' => 'datetime',
     ];
 
+    /** @return BelongsTo<Lab, $this> */
     public function lab(): BelongsTo
     {
         return $this->belongsTo(Lab::class);
     }
 
+    /** @return BelongsTo<Seat, $this> */
     public function seat(): BelongsTo
     {
         return $this->belongsTo(Seat::class);
     }
 
+    /** @return HasOne<Agent, $this> */
     public function agent(): HasOne
     {
         return $this->hasOne(Agent::class)->whereNull('revoked_at')->latestOfMany();
     }
 
+    /** @return HasMany<Agent, $this> */
     public function agents(): HasMany
     {
         return $this->hasMany(Agent::class);
     }
 
+    /** @return HasMany<Alert, $this> */
     public function alerts(): HasMany
     {
         return $this->hasMany(Alert::class);
     }
 
+    /** @return HasMany<Event, $this> */
     public function events(): HasMany
     {
         return $this->hasMany(Event::class);
     }
 
+    /** @return HasMany<EvidenceCapture, $this> */
     public function evidenceCaptures(): HasMany
     {
         return $this->hasMany(EvidenceCapture::class);

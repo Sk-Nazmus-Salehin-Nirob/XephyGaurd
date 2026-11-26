@@ -13,6 +13,7 @@ class Event extends Model
 
     protected $casts = ['data' => 'array', 'occurred_at' => 'datetime', 'received_at' => 'datetime'];
 
+    /** @return BelongsTo<Pc, $this> */
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);

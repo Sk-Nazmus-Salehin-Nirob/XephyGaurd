@@ -11,11 +11,13 @@ class Score extends Model
 
     protected $casts = ['reasons' => 'array', 'features' => 'array', 'not_observable' => 'array'];
 
+    /** @return BelongsTo<Pc, $this> */
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);
     }
 
+    /** @return BelongsTo<Student, $this> */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);

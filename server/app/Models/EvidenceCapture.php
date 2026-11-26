@@ -34,16 +34,19 @@ class EvidenceCapture extends Model
         'occurred_at' => 'datetime',
     ];
 
+    /** @return BelongsTo<Pc, $this> */
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);
     }
 
+    /** @return BelongsTo<LabSession, $this> */
     public function session(): BelongsTo
     {
         return $this->belongsTo(LabSession::class, 'lab_session_id');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function capturer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'captured_by');

@@ -18,6 +18,7 @@ use Illuminate\Support\Str;
  */
 class HealthChecks
 {
+    /** @var Collection<int, Pc>|null */
     private ?Collection $pcs = null;
 
     /**
@@ -160,7 +161,11 @@ class HealthChecks
         return $r;
     }
 
-    /** Active PCs with their agent, loaded once per instance (checks and the health page share it). */
+    /**
+     * Active PCs with their agent, loaded once per instance (checks and the health page share it).
+     *
+     * @return Collection<int, Pc>
+     */
     public function activePcs(): Collection
     {
         return $this->pcs ??= Pc::query()->active()->with('agent')->get();

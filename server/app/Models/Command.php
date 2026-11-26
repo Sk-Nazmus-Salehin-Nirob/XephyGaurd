@@ -11,6 +11,7 @@ class Command extends Model
 
     protected $casts = ['args' => 'array', 'result' => 'array', 'acked_at' => 'datetime'];
 
+    /** @return BelongsTo<Pc, $this> */
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);

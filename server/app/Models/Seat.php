@@ -10,11 +10,13 @@ class Seat extends Model
 {
     protected $fillable = ['lab_id', 'label', 'x', 'y'];
 
+    /** @return BelongsTo<Lab, $this> */
     public function lab(): BelongsTo
     {
         return $this->belongsTo(Lab::class);
     }
 
+    /** @return HasOne<Pc, $this> */
     public function pc(): HasOne
     {
         return $this->hasOne(Pc::class);

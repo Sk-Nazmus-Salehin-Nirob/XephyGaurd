@@ -16,17 +16,23 @@ class Enrollment extends Model
 
     protected $casts = ['macs' => 'array', 'decided_at' => 'datetime', 'issued_token' => 'encrypted'];
 
+    /** @return BelongsTo<Lab, $this> */
     public function lab(): BelongsTo
     {
         return $this->belongsTo(Lab::class);
     }
 
+    /** @return BelongsTo<Pc, $this> */
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);
     }
 
-    /** A PC that only looks like this machine (same hostname or MAC, not the same machine_uid). */
+    /**
+     * A PC that only looks like this machine (same hostname or MAC, not the same machine_uid).
+     *
+     * @return BelongsTo<Pc, $this>
+     */
     public function conflictPc(): BelongsTo
     {
         return $this->belongsTo(Pc::class, 'conflict_pc_id');

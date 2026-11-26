@@ -15,16 +15,19 @@ class Lab extends Model
 
     protected $casts = ['auto_approve' => 'boolean', 'auto_approve_macs' => 'array', 'enroll_key_rotated_at' => 'datetime'];
 
+    /** @return HasMany<Pc, $this> */
     public function pcs(): HasMany
     {
         return $this->hasMany(Pc::class);
     }
 
+    /** @return HasMany<Seat, $this> */
     public function seats(): HasMany
     {
         return $this->hasMany(Seat::class);
     }
 
+    /** @return HasMany<LabSession, $this> */
     public function sessions(): HasMany
     {
         return $this->hasMany(LabSession::class);

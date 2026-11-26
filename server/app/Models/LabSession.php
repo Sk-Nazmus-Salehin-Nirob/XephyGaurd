@@ -28,31 +28,37 @@ class LabSession extends Model
 
     protected $casts = ['starts_at' => 'datetime', 'ends_at' => 'datetime', 'started_at' => 'datetime', 'ended_at' => 'datetime'];
 
+    /** @return BelongsTo<Lab, $this> */
     public function lab(): BelongsTo
     {
         return $this->belongsTo(Lab::class);
     }
 
+    /** @return BelongsTo<Profile, $this> */
     public function profile(): BelongsTo
     {
         return $this->belongsTo(Profile::class);
     }
 
+    /** @return BelongsToMany<Pc, $this> */
     public function pcs(): BelongsToMany
     {
         return $this->belongsToMany(Pc::class, 'session_pcs')->withPivot(['override_profile_id', 'override_reason', 'student_id'])->withTimestamps();
     }
 
+    /** @return HasMany<SessionPc, $this> */
     public function sessionPcs(): HasMany
     {
         return $this->hasMany(SessionPc::class);
     }
 
+    /** @return HasMany<Alert, $this> */
     public function alerts(): HasMany
     {
         return $this->hasMany(Alert::class);
     }
 
+    /** @return HasMany<Score, $this> */
     public function scores(): HasMany
     {
         return $this->hasMany(Score::class);
@@ -72,7 +78,7 @@ class LabSession extends Model
      * Sessions of the lab that were running at some moment in [$from, $to]: started by $to and either still
      * active or ended after $from. Latest start first, so the first one ranAt() a moment is the one shown then.
      *
-     * @return Collection<int, self>
+     * @return Collection<int, static>
      */
     public static function runningBetween(int $labId, CarbonInterface $from, CarbonInterface $to): Collection
     {

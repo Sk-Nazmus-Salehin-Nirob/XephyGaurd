@@ -16,21 +16,25 @@ class Alert extends Model
 
     public const SEVERITY_POINTS = ['info' => 0, 'low' => 5, 'medium' => 15, 'high' => 30, 'critical' => 50];
 
+    /** @return BelongsTo<Pc, $this> */
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);
     }
 
+    /** @return BelongsTo<LabSession, $this> */
     public function session(): BelongsTo
     {
         return $this->belongsTo(LabSession::class, 'lab_session_id');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function acknowledger(): BelongsTo
     {
         return $this->belongsTo(User::class, 'acknowledged_by');
     }
 
+    /** @return HasMany<AlertReview, $this> */
     public function reviews(): HasMany
     {
         return $this->hasMany(AlertReview::class);

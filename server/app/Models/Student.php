@@ -21,11 +21,13 @@ class Student extends Model
         });
     }
 
+    /** @return HasMany<Consent, $this> */
     public function consents(): HasMany
     {
         return $this->hasMany(Consent::class);
     }
 
+    /** @return HasOne<Consent, $this> */
     public function latestConsent(): HasOne
     {
         return $this->hasOne(Consent::class)->where('purpose', 'research')->latestOfMany('recorded_at');

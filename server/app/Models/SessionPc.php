@@ -16,21 +16,25 @@ class SessionPc extends Model
 
     protected $fillable = ['lab_session_id', 'pc_id', 'override_profile_id', 'override_reason', 'student_id'];
 
+    /** @return BelongsTo<LabSession, $this> */
     public function session(): BelongsTo
     {
         return $this->belongsTo(LabSession::class, 'lab_session_id');
     }
 
+    /** @return BelongsTo<Pc, $this> */
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);
     }
 
+    /** @return BelongsTo<Student, $this> */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
     }
 
+    /** @return BelongsTo<Profile, $this> */
     public function overrideProfile(): BelongsTo
     {
         return $this->belongsTo(Profile::class, 'override_profile_id');

@@ -25,6 +25,7 @@ class Agent extends Model
         return hash_hmac('sha256', $token, 'xg-agent-token|'.strtolower($fingerprint));
     }
 
+    /** @return BelongsTo<Pc, $this> */
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);

@@ -57,11 +57,13 @@ class EnrollmentToken extends Model
             ->update(['used_at' => now(), 'enrollment_id' => $e->id, 'updated_at' => now()]) === 1;
     }
 
+    /** @return BelongsTo<Enrollment, $this> */
     public function enrollment(): BelongsTo
     {
         return $this->belongsTo(Enrollment::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

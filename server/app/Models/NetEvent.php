@@ -13,6 +13,7 @@ class NetEvent extends Model
 
     protected $casts = ['occurred_at' => 'datetime'];
 
+    /** @return BelongsTo<Pc, $this> */
     public function pc(): BelongsTo
     {
         return $this->belongsTo(Pc::class);
