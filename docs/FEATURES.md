@@ -1085,6 +1085,9 @@ Defined in `server/routes/console.php`.
 - **What:** one-command CCC install on Ubuntu: asks for interfaces, mode, IPs; writes `.env`, state
   dirs, CA; starts `mysql`, `web` (nginx + php-fpm, ports 80/443/8443), `reverb`, `worker`,
   `scheduler`, `netpolicy`, `proxy`, `analysis`, `discovery`.
+  nginx :80 serves only `/ca.crt`, `/notice` and `/build/`; the install script, `/downloads` and the PAC are
+  HTTPS only (redirected to :443, ccc-deploy Step 6, I-CCC-2). The install summary prints the CA fingerprint
+  and points lab PCs to the pinned install command on `/enroll` (server S-74).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
@@ -1093,6 +1096,7 @@ Defined in `server/routes/console.php`.
 ### F113. `xephyguard-ccc` admin CLI
 - **What:** `doctor`, `status`, `logs [svc]`, `enroll-key`, `backup DIR` (DB dump + CA + settings),
   `update` (build, migrate, restart), `artisan …`.
+  `doctor` also prints the lab CA SHA-256 fingerprint to compare with the install command (ccc-deploy Step 6).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.

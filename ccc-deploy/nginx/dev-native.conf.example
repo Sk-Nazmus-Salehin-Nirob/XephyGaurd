@@ -8,7 +8,7 @@
 #
 # Behind it run:  php artisan serve --host=127.0.0.1 --port=8000      (Laravel)
 #                 php artisan reverb:start --host=127.0.0.1 --port=8081 (WebSockets)
-# Ports on the lab network: 80 (CA + installers), 443 (dashboard), 8443 (agents, mTLS).
+# Ports on the lab network: 80 (CA + notice only), 443 (dashboard, install script, downloads), 8443 (agents, mTLS).
 
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 
@@ -20,8 +20,6 @@ server {
     listen 80;
     root "@PUBLIC@";
     location = /ca.crt     { proxy_pass http://xg_laravel; proxy_set_header Host $host; }
-    location ^~ /install/  { proxy_pass http://xg_laravel; proxy_set_header Host $host; }
-    location ^~ /downloads/{ proxy_pass http://xg_laravel; proxy_set_header Host $host; }
     location = /notice     { proxy_pass http://xg_laravel; proxy_set_header Host $host; }
     location ^~ /build/    { try_files $uri =404; }
     location / { return 301 https://$host$request_uri; }

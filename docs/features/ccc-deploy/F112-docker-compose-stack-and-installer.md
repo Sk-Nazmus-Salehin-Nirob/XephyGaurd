@@ -7,6 +7,9 @@
 - **What:** one-command CCC install on Ubuntu: asks for interfaces, mode, IPs; writes `.env`, state
   dirs, CA; starts `mysql`, `web` (nginx + php-fpm, ports 80/443/8443), `reverb`, `worker`,
   `scheduler`, `netpolicy`, `proxy`, `analysis`, `discovery`.
+  nginx :80 serves only `/ca.crt`, `/notice` and `/build/`; the install script, `/downloads` and the PAC are
+  HTTPS only (redirected to :443, ccc-deploy Step 6, I-CCC-2). The install summary prints the CA fingerprint
+  and points lab PCs to the pinned install command on `/enroll` (server S-74).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

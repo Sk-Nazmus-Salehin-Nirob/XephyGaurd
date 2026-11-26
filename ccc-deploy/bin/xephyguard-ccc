@@ -35,6 +35,12 @@ doctor() {
   [ -z "$(dig +short @127.0.0.1 dns.google A)" ] && ok "DoH resolvers are sinkholed" || bad "dns.google still resolves" "check /var/lib/xephyguard/net/unbound-xephyguard.conf"
   (exec 3<>/dev/tcp/127.0.0.1/8080) 2>/dev/null && ok "Transparent proxy listening on 8080" || bad "Proxy not listening" "sudo xephyguard-ccc logs proxy"
   curl -sk --max-time 3 "https://127.0.0.1/up" >/dev/null && ok "Dashboard reachable" || bad "Dashboard not reachable on 443" "sudo xephyguard-ccc logs web"
+  # The fingerprint operators compare with the one in the Linux install command and on the Downloads page (I-CCC-2).
+  if fp=$(openssl x509 -in /var/lib/xephyguard/ca/ca.crt -noout -fingerprint -sha256 2>/dev/null); then
+    ok "Lab CA fingerprint (SHA-256): $(printf '%s' "${fp#*=}" | tr -d ':' | tr 'A-F' 'a-f')"
+  else
+    bad "Lab CA certificate not readable" "sudo xephyguard-ccc logs web (the setup creates /var/lib/xephyguard/ca/ca.crt)"
+  fi
   echo "Application"
   dc exec -T web php artisan xephyguard:doctor || FAIL=1
   exit $FAIL

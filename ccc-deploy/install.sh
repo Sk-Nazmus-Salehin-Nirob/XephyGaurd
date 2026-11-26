@@ -206,6 +206,10 @@ cat <<DONE
   Health check:     sudo xephyguard-ccc doctor
 
   Browsers will warn about the certificate until the lab CA is trusted on this admin machine:
-  download http://$CCC_IP/ca.crt and compare the fingerprint above.
+  download http://$CCC_IP/ca.crt, compare its SHA-256 with the fingerprint above, then trust it.
+
+  Lab PCs: copy the install command from https://$CCC_IP/enroll (or /downloads). It checks ca.crt
+  against this fingerprint before anything runs as root; the script and installers are HTTPS only.
+  'sudo xephyguard-ccc doctor' prints the fingerprint again.
 
 DONE

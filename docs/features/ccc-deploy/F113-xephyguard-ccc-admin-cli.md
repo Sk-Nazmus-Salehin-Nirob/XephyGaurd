@@ -6,6 +6,7 @@
 
 - **What:** `doctor`, `status`, `logs [svc]`, `enroll-key`, `backup DIR` (DB dump + CA + settings),
   `update` (build, migrate, restart), `artisan …`.
+  `doctor` also prints the lab CA SHA-256 fingerprint to compare with the install command (ccc-deploy Step 6).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.
