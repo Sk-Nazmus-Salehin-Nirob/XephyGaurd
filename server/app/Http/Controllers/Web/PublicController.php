@@ -73,7 +73,7 @@ class PublicController extends Controller
     {
         $lab = Lab::current();
         $ca = CertificateAuthority::fromConfig();
-        $ccc = $this->resolveCccHost($lab?->ccc_ip);
+        $ccc = $this->resolveCccHost($lab->ccc_ip);
         $setupFile = self::resolveWindowsInstallerName();
         $files = collect(glob(storage_path('app/public/downloads/*')) ?: [])
             ->filter(fn ($p) => is_file($p))

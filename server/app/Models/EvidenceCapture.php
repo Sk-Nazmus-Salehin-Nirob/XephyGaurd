@@ -66,8 +66,8 @@ class EvidenceCapture extends Model
             'sha256' => $this->sha256,
             'size_bytes' => $this->size_bytes,
             'note' => $this->note,
-            'occurred_at' => $this->occurred_at?->format('H:i:s'),
-            'occurred_iso' => $this->occurred_at?->toIso8601String(),
+            'occurred_at' => $this->occurred_at->format('H:i:s'),
+            'occurred_iso' => $this->occurred_at->toIso8601String(),
             'url' => route('evidence.show', $this),
         ];
     }

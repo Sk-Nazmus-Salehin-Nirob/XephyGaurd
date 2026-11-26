@@ -49,7 +49,7 @@ class DashboardController extends Controller
                 )
                 ->map(fn ($a) => $a->broadcastPayload() + [
                     'pc_retired' => $a->pc?->retired_at !== null,
-                    'occurred_at_iso' => $a->occurred_at?->toIso8601String(),
+                    'occurred_at_iso' => $a->occurred_at->toIso8601String(),
                     'ago_min' => $a->occurred_at ? max(0, (int) $a->occurred_at->diffInMinutes(now())) : 0,
                     'acked' => $a->acknowledged_at !== null,
                     'by' => $a->acknowledger?->name ?? '',

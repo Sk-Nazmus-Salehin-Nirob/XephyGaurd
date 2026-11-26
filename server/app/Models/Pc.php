@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
@@ -8,6 +10,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
+/**
+ * @property-read Agent|null $agent the current agent; none before the first enrollment
+ */
 class Pc extends Model
 {
     protected $fillable = ['lab_id', 'seat_id', 'name', 'hostname', 'machine_uid', 'os', 'os_version', 'macs', 'ip', 'status', 'mode',
