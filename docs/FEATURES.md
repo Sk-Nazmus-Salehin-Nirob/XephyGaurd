@@ -679,6 +679,11 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
   `0.0.0.0`, and mitmproxy runs with `block_global=true`, so clients with a public address are refused (a lab on a
   public subnet needs that changed). proxy_only loads `proxy/nftables/xephyguard-proxy-only.nft` (table
   `inet xephyguard_input`): 53/8080/8085 answer only `XG_LAB_SUBNET` and loopback (ccc-deploy Step 3, I-CCC-4).
+  One source for the mode: `network_mode` in state.json wins in the proxy entrypoint, xg_netpolicy and
+  `xephyguard-ccc doctor`; `XG_NETWORK_MODE` (.env) is only the default before the server has written state.json.
+  The proxy picks its listener modes at start, so after changing the mode in Settings restart it
+  (`docker compose restart proxy` in the deploy directory); the nft rules for the other mode come from install.sh
+  (ccc-deploy Step 14, I-CCC-9).
 - **Trigger:** setting `network_mode` (F104), `XG_NETWORK_MODE`; installer question.
 - **Code:** `NetworkPolicyWriter`, `proxy/xg_netpolicy/generate.py`, `ccc-deploy/docker/proxy-entrypoint.sh`.
   The watcher reads the state document once per change and takes the generated files and the applied `network_mode` from that one read (`State.network_mode`); when the document has no or a null `network_mode`, `XG_NETWORK_MODE` decides (`watch_reads_state_once_and_uses_its_network_mode`).
@@ -1109,6 +1114,7 @@ Defined in `server/routes/console.php`.
   gateway|proxy_only, a lab name without quotes, `$`, backticks, backslashes or control characters; non-ASCII is
   fine), writes the lab name single-quoted, and reads `.env` with `xg_env_load` (`ccc-deploy/bin/xg-env.sh`), which
   parses KEY=VALUE instead of running the file as shell (ccc-deploy Step 13, I-CCC-21).
+  The proxy takes `network_mode` from state.json; `XG_NETWORK_MODE` is only its default (ccc-deploy Step 14, I-CCC-9).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

@@ -26,6 +26,7 @@
   gateway|proxy_only, a lab name without quotes, `$`, backticks, backslashes or control characters; non-ASCII is
   fine), writes the lab name single-quoted, and reads `.env` with `xg_env_load` (`ccc-deploy/bin/xg-env.sh`), which
   parses KEY=VALUE instead of running the file as shell (ccc-deploy Step 13, I-CCC-21).
+  The proxy takes `network_mode` from state.json; `XG_NETWORK_MODE` is only its default (ccc-deploy Step 14, I-CCC-9).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

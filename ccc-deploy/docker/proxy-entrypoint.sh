@@ -1,12 +1,17 @@
 #!/bin/sh
 set -eu
 
-MODE="${XG_NETWORK_MODE:-}"
 STATE_FILE="/var/lib/xephyguard/net/state.json"
 
-if [ -z "$MODE" ] && [ -f "$STATE_FILE" ]; then
+# One source for the mode (I-CCC-9): network_mode in state.json (Settings, F64/F104) wins; XG_NETWORK_MODE
+# (.env, the installer's answer) is only the default before the server has written state.json. Read here as
+# root, before gosu (state.json is 0640). A change takes effect when the proxy restarts.
+MODE=""
+if [ -f "$STATE_FILE" ]; then
   MODE=$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1])).get("network_mode") or "").strip())' "$STATE_FILE" 2>/dev/null || true)
 fi
+[ -n "$MODE" ] || MODE="${XG_NETWORK_MODE:-gateway}"
+echo "proxy: network mode $MODE" >&2
 
 # Listen on the lab-side CCC address only, never 0.0.0.0 (I-CCC-4): XG_CCC_IP from .env, else ccc_ip in
 # state.json. In gateway mode the nft redirect delivers to the LAN interface's address, which is XG_CCC_IP.

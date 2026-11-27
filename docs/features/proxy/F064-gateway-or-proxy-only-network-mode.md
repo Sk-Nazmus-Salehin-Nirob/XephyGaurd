@@ -10,6 +10,11 @@
   `0.0.0.0`, and mitmproxy runs with `block_global=true`, so clients with a public address are refused (a lab on a
   public subnet needs that changed). proxy_only loads `proxy/nftables/xephyguard-proxy-only.nft` (table
   `inet xephyguard_input`): 53/8080/8085 answer only `XG_LAB_SUBNET` and loopback (ccc-deploy Step 3, I-CCC-4).
+  One source for the mode: `network_mode` in state.json wins in the proxy entrypoint, xg_netpolicy and
+  `xephyguard-ccc doctor`; `XG_NETWORK_MODE` (.env) is only the default before the server has written state.json.
+  The proxy picks its listener modes at start, so after changing the mode in Settings restart it
+  (`docker compose restart proxy` in the deploy directory); the nft rules for the other mode come from install.sh
+  (ccc-deploy Step 14, I-CCC-9).
 - **Trigger:** setting `network_mode` ([F104](../server/F104-settings.md)), `XG_NETWORK_MODE`; installer question.
 - **Code:** `NetworkPolicyWriter`, `proxy/xg_netpolicy/generate.py`, `ccc-deploy/docker/proxy-entrypoint.sh`.
   The `--watch` loop survives any error in one iteration (invalid document, OSError, failed tool): it logs and counts it and keeps the previous configuration (`watch_survives_*`).

@@ -22,7 +22,10 @@ bad()  { printf '  \033[31m✘\033[0m %s\n      → %s\n' "$1" "$2"; FAIL=1; }
 FAIL=0
 
 doctor() {
-  echo "Host"
+  # The mode the proxy and netpolicy run: state.json first, .env only before the server has written it (I-CCC-9).
+  mode=$(jq -r '.network_mode // empty' /var/lib/xephyguard/net/state.json 2>/dev/null || true)
+  XG_NETWORK_MODE=${mode:-${XG_NETWORK_MODE:-gateway}}
+  echo "Host (network mode: $XG_NETWORK_MODE)"
   [ "$(sysctl -n net.ipv4.ip_forward)" = 1 ] && ok "IP forwarding on" || bad "IP forwarding is off" "sudo sysctl -w net.ipv4.ip_forward=1 (install.sh makes it permanent)"
   if [ "$XG_NETWORK_MODE" = gateway ]; then
     nft list table inet xephyguard >/dev/null 2>&1 && ok "nftables gateway rules loaded" || bad "nftables rules missing" "sudo nft -f /etc/nftables.d/xephyguard.nft"
