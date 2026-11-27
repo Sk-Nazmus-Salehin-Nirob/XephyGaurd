@@ -23,6 +23,8 @@
   `install-agent.sh` requires `--cafp` (stops before anything else without it, and on a mismatch), then downloads
   the `.deb` only from `https://<ccc>[:--https-port]/downloads` with `curl --proto =https --cacert` the pinned CA;
   a native CCC without Nginx has no HTTPS, so there `--deb` is needed (server S-74 follow-up).
+  `setup-server-docker.sh` refuses a lab name with quotes, `$`, backticks, backslashes or control characters and
+  writes it single-quoted into `.env.local`, as install.sh does (ccc-deploy Step 13 follow-up).
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,

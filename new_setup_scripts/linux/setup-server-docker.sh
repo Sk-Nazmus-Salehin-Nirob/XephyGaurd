@@ -80,6 +80,10 @@ TZ_EXPLICIT=0
 [[ -n "$CCC_IP" ]]  || CCC_IP="$(xg_detect_lan_ip)"
 [[ -n "$SUBNET" ]]  || SUBNET="$(xg_detect_subnet "$CCC_IP" "$LAN_IF")"
 [[ -n "$TZ_NAME" ]] || TZ_NAME="$(xg_detect_timezone)"
+# The lab name goes single-quoted into .env.local, which Compose reads: the same rule as install.sh (I-CCC-21).
+case $LAB_NAME in
+  '' | *[\'\"\$\`\\]* | *[[:cntrl:]]*) xg_die "Lab name may not be empty or contain quotes, \$, backticks, backslashes or control characters." ;;
+esac
 
 compute_tz_offset() {
   local tz="$1"
@@ -171,7 +175,7 @@ REVERB_APP_SECRET=$(xg_rand_hex 24)
 REVERB_HOST=127.0.0.1
 REVERB_PORT=8081
 REVERB_SCHEME=http
-XG_LAB_NAME="${LAB_NAME}"
+XG_LAB_NAME='${LAB_NAME}'
 XG_CCC_IP=${CCC_IP}
 XG_LAB_SUBNET=${SUBNET}
 XG_LAN_IF=${LAN_IF}
