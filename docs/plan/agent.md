@@ -72,10 +72,25 @@ The audit has no performance finding. No step until one is measured.
 ## Phase 9: Dependency updates
 - [x] Step 40: Check that FetchContent pins (nlohmann/json, toml++, Catch2) are exact tags; report only, ask before updating (fixes none; touches none) — pins exact (json URL+SHA256, toml++ v3.4.0, Catch2 v3.7.1 tags); nothing updated
 
+## Interception CA (ccc-deploy Step 7, approved by the owner 2026-11-27)
+- [ ] Step 41: When the policy's `interception_ca_sha256` differs from the installed one, fetch
+  `https://<ccc>/interception-ca.crt` with `ca_file` (the lab root) as the only trust anchor and the CCC host check,
+  refuse it unless its SHA-256 equals the policy value and it is a CA cert, write it atomically to
+  `<ca dir>/interception-ca.crt` and install it into the OS trust: Linux
+  `/usr/local/share/ca-certificates/xephyguard-interception-ca.crt` + `update-ca-certificates` + the NSS script;
+  Windows `CertAddEncodedCertificateToStore` (Root), removing the previous one by thumbprint. null removes it. The
+  CA tamper check covers the file too. The agent's own TLS keeps trusting only `ca_file`. Tests for the
+  fetch/verify/replace logic with a fake fetcher (fixes I-CCC-3 with server S-75 and ccc-deploy Step 7; touches F14,
+  F72) [CROSS: server S-75, ccc-deploy Step 7]
+- [ ] Step 42: installers: `postrm` removes `xephyguard-interception-ca.crt` and runs `update-ca-certificates
+  --fresh`; `install-browser-ca.sh` takes the certificate path and NSS nickname as arguments; the NSIS uninstaller
+  removes the interception CA from Root by its thumbprint (fixes none; touches F14) [CROSS: ccc-deploy Step 7]
+
 ## Cross-component order (agent side)
 1. screen/ccc-deploy: gateway behind nginx mTLS (I-CCC-1, I-CCC-7) → agent Step 9.
 2. screen Steps 59-61 (helper→service IPC, service relay, helper drops its WS client) → agent Step 10; server Step 1 (`pc_id`-bound viewer JWT, I-SERVER-1) is independent of the agent.
 3. data/ signature schema (Step 18) → agent Step 19 → Step 35.
+4. server S-75 (publish the interception CA) → agent Steps 41-42 → ccc-deploy Step 7 (mitmproxy switches to it).
 
 ## Alternative architecture proposals (not scheduled; each needs owner approval before any step is written)
 
