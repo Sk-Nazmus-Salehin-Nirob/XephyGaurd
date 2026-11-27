@@ -218,6 +218,16 @@ public:
     virtual void pump(int ms) = 0;
 };
 
+/// OS and browser trust for the web proxy's interception CA (server S-75). Never the agent's own TLS trust.
+class ITrustStore {
+public:
+    virtual ~ITrustStore() = default;
+    /// Adds `pem` (SHA-256 `sha`) as a trusted root for browsers and the OS. True on success.
+    virtual bool install(const std::string& pem, const std::string& sha) = 0;
+    /// Removes the root this agent installed with SHA-256 `sha`; nothing else. True if it is gone.
+    virtual bool remove(const std::string& sha) = 0;
+};
+
 /// Everything the service process needs from the OS.
 struct ServicePlatform {
     std::unique_ptr<IProcessMonitor> processes;
@@ -232,6 +242,7 @@ struct ServicePlatform {
     std::unique_ptr<IServiceHost> service_host;
     std::unique_ptr<IHelperLauncher> helper_launcher;
     std::unique_ptr<IIpcServer> ipc;
+    std::unique_ptr<ITrustStore> trust;   // interception CA; nullptr = only the agent's own copy is kept
 };
 
 /// Per-user OS settings the helper applies inside the session (adapters only, never in apps/).

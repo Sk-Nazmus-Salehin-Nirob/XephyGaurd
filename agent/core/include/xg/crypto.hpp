@@ -23,5 +23,7 @@ std::optional<std::string> generate_key_and_csr(const std::string& key_path, con
 std::optional<std::string> cert_fingerprint(const std::string& pem);
 /// Seconds until notAfter of the certificate, or nullopt.
 std::optional<long> cert_seconds_left(const std::string& pem);
+/// True if the first certificate in `pem` parses and is a CA (basicConstraints CA:TRUE).
+bool cert_is_ca(const std::string& pem);
 
 }  // namespace xg::crypto

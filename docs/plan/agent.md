@@ -73,7 +73,7 @@ The audit has no performance finding. No step until one is measured.
 - [x] Step 40: Check that FetchContent pins (nlohmann/json, toml++, Catch2) are exact tags; report only, ask before updating (fixes none; touches none) — pins exact (json URL+SHA256, toml++ v3.4.0, Catch2 v3.7.1 tags); nothing updated
 
 ## Interception CA (ccc-deploy Step 7, approved by the owner 2026-11-27)
-- [ ] Step 41: When the policy's `interception_ca_sha256` differs from the installed one, take the PEM from the
+- [x] Step 41: When the policy's `interception_ca_sha256` differs from the installed one, take the PEM from the
   policy response's `interception_ca` (same mTLS channel, pinned to `ca_file`; server S-75),
   refuse it unless its SHA-256 equals the policy value and it is a CA cert, write it atomically to
   `<ca dir>/interception-ca.crt` and install it into the OS trust: Linux
@@ -82,6 +82,28 @@ The audit has no performance finding. No step until one is measured.
   CA tamper check covers the file too. The agent's own TLS keeps trusting only `ca_file`. Tests for the
   fetch/verify/replace logic with a fake fetcher (fixes I-CCC-3 with server S-75 and ccc-deploy Step 7; touches F14,
   F72) [CROSS: server S-75, ccc-deploy Step 7]
+  Done 2026-11-27. New `xg/interception_ca.hpp`: pure `ica::decide(installed_sha, policy_sha, pem)` (keep /
+  install / remove / reject: install only when the PEM's SHA-256 equals the policy value, case-insensitive, and
+  `crypto::cert_is_ca` (new, `X509_check_ca`); an absent field removes an installed one) and `ica::path_for`.
+  New platform `ITrustStore` (`ServicePlatform::trust`, nullptr allowed): Linux `trust_store.cpp` writes
+  `/usr/local/share/ca-certificates/xephyguard-interception-ca.crt`, runs `/usr/sbin/update-ca-certificates` and
+  (best effort) `install-browser-ca.sh <file> "XephyGuard Interception CA"`; its `remove` acts only when that
+  file still holds the named hash (after a replace it holds the new one), then `--fresh` and `--remove <nick>`
+  (the script arguments are Step 42). Windows `trust_store_win.cpp`: Local Machine Root store,
+  `CertAddEncodedCertificateToStore` (replace existing) and removal by SHA-256 of the DER. `Agent::apply_
+  interception_ca` runs after `apply_policy` in `on_policy_fetched` with `policy.interception_ca_sha256` and the
+  response's `interception_ca`: trust install first, previous one removed, the copy
+  `interception-ca.crt` next to `ca_file` written last (a failed install leaves no file, so the next policy
+  retries); `ca_file` and the agent's own TLS are never touched. The integrity check reports `ca_changed` when the
+  copy's content changes and `ca_removed` once when it disappears. **Changed from the plan line:** the PEM comes
+  in the mTLS policy response (server S-75), so there is no second HTTPS fetch. F14, F85, FEATURES.md updated.
+  New `test_interception_ca.cpp` (decision table; install with a failing then working fake trust store,
+  unchanged, mismatching PEM, replace, remove, lab CA untouched). Checked: MSVC (VS 2026, vcpkg OpenSSL static)
+  Debug build of `xg_tests` and `xephyguard-agent`, new tests pass (24 assertions); whole suite 89 of 92 cases,
+  and the same 3 fail on HEAD on this machine (87 of 90: `config round trip` save twice, and a locked temp dir
+  in `agent pushes proxy_pac_url to helper in proxy_only mode`, Windows only). Linux `trust_store.cpp`: MinGW
+  g++ 15 `-fsyntax-only` only; no Linux build or run here (no WSL/Docker), and the store calls themselves were
+  never run against a real Root store or update-ca-certificates.
 - [ ] Step 42: installers: `postrm` removes `xephyguard-interception-ca.crt` and runs `update-ca-certificates
   --fresh`; `install-browser-ca.sh` takes the certificate path and NSS nickname as arguments; the NSIS uninstaller
   removes the interception CA from Root by its thumbprint (fixes none; touches F14) [CROSS: ccc-deploy Step 7]

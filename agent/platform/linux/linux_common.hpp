@@ -99,6 +99,7 @@ std::unique_ptr<IServiceHost> make_service_host();
 std::unique_ptr<IHelperLauncher> make_helper_launcher();
 std::unique_ptr<IIpcServer> make_ipc_server(std::string allowed_exe);
 std::unique_ptr<IIpcClient> make_ipc_client();
+std::unique_ptr<ITrustStore> make_trust_store();
 
 std::unique_ptr<IWindowMonitor> make_window_monitor();
 std::unique_ptr<IClipboardMonitor> make_clipboard_monitor();

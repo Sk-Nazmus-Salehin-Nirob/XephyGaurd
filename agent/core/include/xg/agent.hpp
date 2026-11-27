@@ -48,6 +48,9 @@ public:
     void apply_policy(const Policy& p);
     /// `envelope` = {"version","bundle":"<json text>","signature":"<b64>"} as served by the CCC.
     bool apply_signatures(const json& envelope, bool require_signature = true);
+    /// Installs, replaces or removes the proxy's interception CA (policy `interception_ca_sha256`, response
+    /// `interception_ca`; server S-75). Leaves `ca_file` and the agent's own TLS trust alone.
+    void apply_interception_ca(const std::string& policy_sha, const std::string& pem);
     void handle_command(const protocol::Command& cmd);
     bool isolated() const { return isolated_; }
     NetworkLock network_lock() const { return network_lock_; }

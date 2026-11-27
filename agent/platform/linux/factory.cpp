@@ -20,6 +20,7 @@ std::unique_ptr<ServicePlatform> make_service_platform(const Config& cfg) {
     p->service_host = lnx::make_service_host();
     p->helper_launcher = lnx::make_helper_launcher();
     p->ipc = lnx::make_ipc_server(cfg.helper_path);
+    p->trust = lnx::make_trust_store();
     return p;
 }
 

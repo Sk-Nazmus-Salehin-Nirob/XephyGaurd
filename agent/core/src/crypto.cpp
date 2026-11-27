@@ -9,6 +9,7 @@
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 
 #include <cstdio>
 #include <ctime>
@@ -173,6 +174,11 @@ std::optional<long> cert_seconds_left(const std::string& pem) {
     int days = 0, secs = 0;
     if (ASN1_TIME_diff(&days, &secs, nullptr, X509_get0_notAfter(cert.get())) != 1) return std::nullopt;
     return long(days) * 86400L + secs;
+}
+
+bool cert_is_ca(const std::string& pem) {
+    auto cert = load_cert(pem);
+    return cert && X509_check_ca(cert.get()) == 1;   // 1 = basicConstraints CA:TRUE
 }
 
 }  // namespace xg::crypto

@@ -7,6 +7,7 @@
 
 #include "xg/artifact_scan.hpp"
 #include "xg/crypto.hpp"
+#include "xg/interception_ca.hpp"
 #include "xg/ipc_messages.hpp"
 #include "xg/json_read.hpp"
 #include "xg/log.hpp"
@@ -1139,6 +1140,20 @@ void Agent::check_integrity(bool initial) {
             if (!cfg_.ca_fingerprint.empty() && to_lower(cfg_.ca_fingerprint) != *fp)
                 report("ca_changed", {{"path", cfg_.ca_file}, {"pinned", true}});
         }
+        // The proxy's interception CA, once installed (apply_interception_ca keeps file_hashes_ current).
+        const std::string ica_path = ica::path_for(cfg_.ca_file);
+        bool ica_ok = false;
+        const auto ica_pem = read_file(ica_path, &ica_ok);
+        if (ica_ok) {
+            if (auto fp = crypto::cert_fingerprint(ica_pem)) {
+                auto& prev = file_hashes_[ica_path];
+                if (!initial && !prev.empty() && prev != *fp) report("ca_changed", {{"path", ica_path}});
+                prev = *fp;
+            }
+        } else if (auto it = file_hashes_.find(ica_path); it != file_hashes_.end() && !it->second.empty()) {
+            report("ca_removed", {{"path", ica_path}});
+            file_hashes_.erase(it);   // once; the next policy with a hash installs it again
+        }
     }
     // Clock: wall time moved relative to the monotonic clock.
     const int64_t wms = now_ms() - steady_ms();
@@ -1229,12 +1244,55 @@ void Agent::on_policy_fetched(const json& j) {
         return;
     }
     apply_policy(p);
+    apply_interception_ca(jr::str(j["policy"], "interception_ca_sha256"), jr::str(j, "interception_ca"));
     queue_->kv_set("policy", j["policy"].dump());
     if (j.contains("realtime") && j["realtime"].is_object()) {
         realtime_cfg_ = j["realtime"];
         queue_->kv_set("realtime", realtime_cfg_.dump());
     }
     publish_view();
+}
+
+void Agent::apply_interception_ca(const std::string& policy_sha, const std::string& pem) {
+    const std::string path = ica::path_for(cfg_.ca_file);
+    bool have = false;
+    const std::string current = read_file(path, &have);
+    const std::string installed = have ? crypto::cert_fingerprint(current).value_or("") : "";
+    const auto d = ica::decide(installed, policy_sha, pem);
+    switch (d.action) {
+        case ica::Action::keep:
+            return;
+        case ica::Action::reject:
+            log::warn("interception CA: {}; keeping what is installed", d.reason);
+            return;
+        case ica::Action::install: {
+            const std::string sha = to_lower(policy_sha);
+            if (plat_.trust && !plat_.trust->install(pem, sha)) {
+                log::error("interception CA: could not add it to the system trust; retrying with the next policy");
+                return;
+            }
+            if (!installed.empty() && plat_.trust && !plat_.trust->remove(installed))
+                log::warn("interception CA: could not remove the previous one ({})", installed);
+            // Written last: the file means "installed", so a failed install above is retried.
+            if (!write_file_atomic(path, pem)) {
+                log::error("interception CA: could not write {}", path);
+                return;
+            }
+            file_hashes_[path] = sha;
+            log::info("interception CA installed ({})", sha);
+            return;
+        }
+        case ica::Action::remove:
+            if (plat_.trust && !plat_.trust->remove(installed)) {
+                log::error("interception CA: could not remove it from the system trust");
+                return;
+            }
+            std::error_code ec;
+            fs::remove(path, ec);
+            file_hashes_.erase(path);
+            log::info("interception CA removed ({})", installed);
+            return;
+    }
 }
 
 void Agent::on_ack(const msg::AckReceived& a) {

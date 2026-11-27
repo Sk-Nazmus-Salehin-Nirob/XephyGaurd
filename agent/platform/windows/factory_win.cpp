@@ -16,6 +16,7 @@ std::unique_ptr<ServicePlatform> make_service_platform(const Config& cfg) {
     p->service_host = win::make_service_host();
     p->helper_launcher = win::make_helper_launcher(cfg.helper_path);
     p->ipc = win::make_ipc_server(cfg.helper_path);
+    p->trust = win::make_trust_store();
     return p;
 }
 
