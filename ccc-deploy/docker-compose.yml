@@ -96,12 +96,13 @@ services:
       - /var/lib/xephyguard/mitmproxy:/home/mitmproxy/.mitmproxy      # owned by uid 1500 (install.sh)
       - /var/log/xephyguard/proxy:/var/log/xephyguard
 
-  analysis:   # behavioral scoring service (127.0.0.1:8090)
+  analysis:   # behavioral scoring service, 127.0.0.1:8090 only (XG_ANALYSIS_BIND; host networking, I-CCC-18)
     image: xephyguard/ccc-analysis:${XG_VERSION:-latest}
     build: { context: .., dockerfile: ccc-deploy/docker/analysis.Dockerfile }
     network_mode: host
     restart: unless-stopped
     environment:
+      XG_ANALYSIS_BIND: 127.0.0.1   # the CCC calls http://127.0.0.1:8090; never the LAN
       XG_DB_URL: mysql://xephyguard:${DB_PASSWORD}@127.0.0.1:3306/xephyguard
       XG_ANALYSIS_TOKEN: ${XG_ANALYSIS_TOKEN}   # its own secret; never the proxy's XG_INTERNAL_TOKEN
       XG_SCORING_V2: ${XG_SCORING_V2:-0}

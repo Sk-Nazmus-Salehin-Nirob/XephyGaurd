@@ -844,6 +844,14 @@ def test_compose_hardens_proxy_discovery_and_gateway():
             assert services[name]["read_only"] is True and "cap_add" not in services[name], (f.name, name)
 
 
+def test_compose_binds_analysis_to_loopback():
+    """ccc-deploy Step 19 (I-CCC-18): analysis runs with host networking, so the bind must be loopback."""
+    yaml = pytest.importorskip("yaml")
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy"
+    for f in sorted(deploy.glob("docker-compose*.yml")):
+        assert yaml.safe_load(f.read_text())["services"]["analysis"]["environment"]["XG_ANALYSIS_BIND"] == "127.0.0.1", f.name
+
+
 # -- Step 17 (I-PROXY-29): network_mode comes from the parsed State, the document is read once per digest --
 
 @pytest.mark.parametrize("doc_mode,expected", [("proxy_only", "proxy_only"), ("gateway", "gateway"),
