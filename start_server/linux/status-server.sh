@@ -67,8 +67,8 @@ case "$RESOLVED_MODE" in
     REVERB_PORT="$(xg_read_env "$ENV_FILE" REVERB_PORT "8081")"
 
     echo "Ports:"
-    print_port_row "HTTP (CA / Installers)" 80
-    print_port_row "HTTPS (Dashboard / WSS)" 443
+    print_port_row "HTTP (CA cert / notice)" 80
+    print_port_row "HTTPS (Dashboard / installers)" 443
     print_port_row "mTLS (Agent API)" 8443
     print_port_row "MySQL" 3306
     print_port_row "PHP-FPM / Internal HTTP" 8000
@@ -81,7 +81,7 @@ case "$RESOLVED_MODE" in
 
     CA_FP=""
     if docker exec xephyguard-local-web-1 test -f /var/lib/xephyguard/ca/ca.crt >/dev/null 2>&1; then
-      CA_FP="$(docker exec xephyguard-local-web-1 openssl x509 -in /var/lib/xephyguard/ca/ca.crt -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2 || true)"
+      CA_FP="$(docker exec xephyguard-local-web-1 openssl x509 -in /var/lib/xephyguard/ca/ca.crt -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f' || true)"
     elif [[ -f "$SERVER_DIR/storage/app/private/ca/ca.crt" ]]; then
       CA_FP="$(xg_ca_fingerprint "$SERVER_DIR/storage/app/private/ca/ca.crt" || true)"
     fi
@@ -90,7 +90,7 @@ case "$RESOLVED_MODE" in
     printf "Dashboard URL     : %s\n" "$APP_URL"
     printf "First-time Setup  : %s/setup\n" "${APP_URL%/}"
     printf "Notice / CA Cert  : http://%s/notice  |  http://%s/ca.crt\n" "$CCC_IP" "$CCC_IP"
-    printf "Downloads Page    : http://%s/downloads\n" "$CCC_IP"
+    printf "Downloads Page    : https://%s/downloads  (HTTPS only, lab CA; Linux install command on https://%s/enroll)\n" "$CCC_IP" "$CCC_IP"
     printf "Agent mTLS        : https://%s:8443\n" "$CCC_IP"
     [[ -n "$CA_FP" ]] && printf "CA SHA-256        : %s\n" "$CA_FP"
     ;;
@@ -110,8 +110,8 @@ case "$RESOLVED_MODE" in
     GW_PORT="$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_PORT "8082")"
 
     echo "Ports:"
-    print_port_row "HTTP (CA / Installers)" 80
-    print_port_row "HTTPS (Dashboard / WSS)" 443
+    print_port_row "HTTP (CA cert / notice)" 80
+    print_port_row "HTTPS (Dashboard / installers)" 443
     print_port_row "mTLS (Agent API)" 8443
     print_port_row "MySQL" 3306
     print_port_row "Reverb WebSocket" 8081
@@ -125,6 +125,7 @@ case "$RESOLVED_MODE" in
     printf "Dashboard URL     : %s\n" "$APP_URL"
     printf "First-time Setup  : %s/setup\n" "${APP_URL%/}"
     printf "Notice / CA Cert  : http://%s/notice  |  http://%s/ca.crt\n" "$CCC_IP" "$CCC_IP"
+    printf "Downloads Page    : https://%s/downloads  (HTTPS only, lab CA; Linux install command on https://%s/enroll)\n" "$CCC_IP" "$CCC_IP"
     printf "Agent mTLS        : https://%s:8443\n" "$CCC_IP"
     [[ -n "$CA_FP" ]] && printf "CA SHA-256        : %s\n" "$CA_FP"
     ;;

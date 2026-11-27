@@ -264,7 +264,8 @@ xg_find_gateway_bin() {
 xg_ca_fingerprint() {
   local crt="$1"
   [[ -f "$crt" ]] || return 1
-  openssl x509 -in "$crt" -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2
+  # Same form as the Linux install command, /downloads and xephyguard-ccc doctor: lower-case hex, no colons.
+  openssl x509 -in "$crt" -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f'
 }
 
 # Detect active / configured runtime mode: docker | prod | native | none

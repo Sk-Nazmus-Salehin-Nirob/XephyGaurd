@@ -61,7 +61,8 @@ Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "  Dashboard (Local):   http://localhost:$AppPort/ (or https://localhost$httpsSuffix/)" -ForegroundColor Yellow
 Write-Host "  Dashboard (LAN):     http://${LanIp}:${AppPort}/ (or https://${LanIp}${httpsSuffix}/)" -ForegroundColor Yellow
-Write-Host "  Student Downloads:   http://${LanIp}:${AppPort}/downloads (Nginx: http://${LanIp}${httpSuffix}/downloads)" -ForegroundColor White
+Write-Host "  Student Downloads:   https://${LanIp}${httpsSuffix}/downloads (Nginx, verify with the lab CA below; direct: http://${LanIp}:${AppPort}/downloads)" -ForegroundColor White
+Write-Host "  Lab CA certificate:  http://${LanIp}${httpSuffix}/ca.crt (compare its SHA-256 before trusting it)" -ForegroundColor Gray
 Write-Host "  Live Screen Relay:   ws://${LanIp}:${GatewayPort}/ (or wss://${LanIp}${httpsSuffix}/screen-gw/)" -ForegroundColor Cyan
 Write-Host "  Events WebSocket:    ws://${LanIp}:${ReverbPort}/" -ForegroundColor Gray
 if ($cafp) {

@@ -9,7 +9,8 @@ param(
     [string[]]$IPList = @(),
     [string]$TeacherIP = "",
     [string]$SetupFile = "",
-    [string]$SetupUrl = ""
+    [string]$SetupUrl = "",
+    [int]$HttpsPort = 443
 )
 
 $RepoRoot  = (Get-Item (Join-Path $PSScriptRoot "..\..")).FullName
@@ -100,10 +101,15 @@ if ($IPList.Count -gt 0) {
 # 3. Retrieve Active Lab Credentials & Installer URL
 # ------------------------------------------------------------------------------
 $CAFP = Get-XephyCaFingerprint -ServerDir $ServerDir
-if (-not $CAFP) {
-    Write-Error "CA certificate not found in $ServerDir\storage\app\private\ca\ca.crt. Run .\new_setup_scripts\windows\setup-server.ps1 first."
+$caPath = Join-Path $ServerDir "storage\app\private\ca\ca.crt"
+if (-not $CAFP -or -not (Enable-XephyLabCaTls -CaPath $caPath)) {
+    Write-Error "CA certificate not found in $caPath. Run .\new_setup_scripts\windows\setup-server.ps1 first."
     exit 1
 }
+# /downloads is HTTPS only (server S-74): plain http:// now redirects. The teacher PC and every student PC
+# verify the server certificate against this lab CA (fingerprint $CAFP), not against the Windows store.
+$caB64 = ((Get-Content $caPath -Raw) -replace '-----.*?-----|\r|\n', '').Trim()
+$httpsBase = if ($HttpsPort -eq 443) { "https://$TeacherIP" } else { "https://${TeacherIP}:$HttpsPort" }
 
 $KEY = ""
 try {
@@ -121,11 +127,13 @@ $resolvedSetupUrl = $SetupUrl
 if (-not $resolvedSetupUrl) {
     if (-not $SetupFile) {
         try {
-            $dlPage = Invoke-WebRequest -Uri "http://$TeacherIP/downloads" -UseBasicParsing -TimeoutSec 5
+            $dlPage = Invoke-WebRequest -Uri "$httpsBase/downloads" -UseBasicParsing -TimeoutSec 5
             if ($dlPage.Content -match '/downloads/(XephyGuard-Setup[^"''\s<>]+\.exe)') {
                 $SetupFile = $Matches[1]
             }
-        } catch {}
+        } catch {
+            Write-Host "[!] $httpsBase/downloads not reachable with the lab CA ($($_.Exception.Message)); using the local downloads folder." -ForegroundColor Yellow
+        }
     }
     if (-not $SetupFile) {
         $localDl = Join-Path $ServerDir "storage\app\public\downloads"
@@ -139,9 +147,13 @@ if (-not $resolvedSetupUrl) {
         Write-Host "[ERROR] Could not resolve XephyGuard-Setup-*.exe automatically. Pass -SetupFile or -SetupUrl." -ForegroundColor Red
         exit 1
     }
-    $resolvedSetupUrl = "http://$TeacherIP/downloads/$SetupFile"
+    $resolvedSetupUrl = "$httpsBase/downloads/$SetupFile"
 }
 Write-Host "Installer URL:   $resolvedSetupUrl" -ForegroundColor Gray
+Write-Host "Lab CA SHA-256:  $CAFP" -ForegroundColor Gray
+if ($resolvedSetupUrl -notmatch '^https://') {
+    Write-Warning "The installer URL is not HTTPS: student PCs cannot verify where the installer comes from."
+}
 
 # ------------------------------------------------------------------------------
 # 4. Prompt for Student PC Administrator Credentials & Execute
@@ -152,7 +164,11 @@ $Cred = Get-Credential
 Write-Host "`n[*] Deploying XephyGuard Agent to $($Targets.Count) PC(s)..." -ForegroundColor Cyan
 
 $scriptBlock = {
-    param($serverIp, $key, $cafp, $setupUrl)
+    param($serverIp, $key, $cafp, $setupUrl, $caB64, $tlsSource)
+
+    # Same check as on the teacher PC: the CCC certificate must chain to the lab CA (Enable-XephyLabCaTls).
+    if (-not ('XephyLabCaTls' -as [type])) { Add-Type -TypeDefinition $tlsSource }
+    [XephyLabCaTls]::Use([System.Convert]::FromBase64String($caB64))
 
     $tempExe = Join-Path $env:TEMP "XephyGuard-Setup.exe"
     Invoke-WebRequest -Uri $setupUrl -OutFile $tempExe -UseBasicParsing
@@ -180,7 +196,7 @@ try {
     }
 } catch {}
 
-$results = Invoke-Command -ComputerName $Targets -Credential $Cred -ScriptBlock $scriptBlock -ArgumentList $TeacherIP, $KEY, $CAFP, $resolvedSetupUrl -ErrorVariable failedRemotes -ErrorAction SilentlyContinue
+$results = Invoke-Command -ComputerName $Targets -Credential $Cred -ScriptBlock $scriptBlock -ArgumentList $TeacherIP, $KEY, $CAFP, $resolvedSetupUrl, $caB64, $XephyLabCaTlsSource -ErrorVariable failedRemotes -ErrorAction SilentlyContinue
 
 Write-Host "`n==================== DEPLOYMENT SUMMARY ====================" -ForegroundColor Cyan
 foreach ($r in $results) {

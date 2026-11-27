@@ -1125,6 +1125,10 @@ Defined in `server/routes/console.php`.
   The Docker stack's screen gateway binds `127.0.0.1:8082` only (`-addr` flag in `docker-compose.local.yml`,
   `SCREEN_GATEWAY_ADDR=127.0.0.1:8082` in a new or re-run `.env.local`); the LAN reaches it only through nginx
   `/screen-gw/` (ccc-deploy Step 2, I-CCC-1). The native no-nginx "direct HTTP" mode still serves it on `:<gateway port>`.
+  The status scripts name `https://<ccc>/downloads` (HTTPS only since server S-74; Windows also the direct
+  `http://<ip>:<app port>/downloads`), point to `/enroll` for the Linux install command (Linux) or to `/ca.crt` to
+  compare (Windows), and print the CA SHA-256 as lower-case hex without colons, the form the install command,
+  `/downloads` and `xephyguard-ccc doctor` use.
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,
@@ -1149,6 +1153,11 @@ Defined in `server/routes/console.php`.
 
 ### F117. Fleet deployment (Ansible, GPO)
 - **Code:** `installers/ansible/site.yml` + roles, `installers/gpo/README.md`, `new_setup_scripts/windows/deploy-agents.ps1`.
+  `deploy-agents.ps1` reads the page and fetches the installer from `https://<ccc>[:-HttpsPort]/downloads`; the
+  teacher PC and every student PC accept the CCC certificate only if it chains to the lab CA in
+  `server/storage/app/private/ca/ca.crt` and its IP SAN matches (`Enable-XephyLabCaTls` in
+  `start_server/windows/_common.ps1`, compiled on the remote PC from the same source); a `-SetupUrl` that is not
+  HTTPS gets a warning (server S-74 follow-up).
 - **Status:** unclear.
 - **Test:** 1. `ansible-playbook -i inventory.ini installers/ansible/site.yml --check`.
 

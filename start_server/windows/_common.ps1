@@ -143,3 +143,45 @@ function Get-XephyCaFingerprint {
         if ($hasher -is [IDisposable]) { $hasher.Dispose() }
     }
 }
+
+# TLS trust for https://<ccc>/downloads (server S-74): Windows PowerShell 5.1 has no --cacert, so this
+# process-wide validator accepts a server certificate only if it chains to exactly the lab CA given and its
+# name (IP SAN) matches the URL. Passed as source text so remote PCs (Invoke-Command) can compile it too.
+$XephyLabCaTlsSource = @'
+using System;
+using System.Net;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+public static class XephyLabCaTls {
+    static byte[] caDer;
+    public static void Use(byte[] der) {
+        caDer = der;
+        ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+        ServicePointManager.ServerCertificateValidationCallback = Check;
+    }
+    static bool Check(object sender, X509Certificate cert, X509Chain unused, SslPolicyErrors errors) {
+        if (cert == null || (errors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0) return false;
+        var ca = new X509Certificate2(caDer);
+        var chain = new X509Chain();
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+        chain.ChainPolicy.ExtraStore.Add(ca);
+        if (!chain.Build(new X509Certificate2(cert))) return false;
+        var root = chain.ChainElements[chain.ChainElements.Count - 1].Certificate.RawData;
+        if (chain.ChainElements.Count < 2 || root.Length != caDer.Length) return false;
+        for (int i = 0; i < root.Length; i++) if (root[i] != caDer[i]) return false;
+        return true;
+    }
+}
+'@
+
+# Trusts only the lab CA (PEM file) for HTTPS requests in this process; returns $false if the file is unusable.
+function Enable-XephyLabCaTls {
+    param([string]$CaPath)
+    if (-not (Test-Path $CaPath)) { return $false }
+    $b64 = ((Get-Content $CaPath -Raw) -replace '-----.*?-----|\r|\n', '').Trim()
+    if (-not $b64) { return $false }
+    if (-not ('XephyLabCaTls' -as [type])) { Add-Type -TypeDefinition $XephyLabCaTlsSource }
+    [XephyLabCaTls]::Use([System.Convert]::FromBase64String($b64))
+    return $true
+}
