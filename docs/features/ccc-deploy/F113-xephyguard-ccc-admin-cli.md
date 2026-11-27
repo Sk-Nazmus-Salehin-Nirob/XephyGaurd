@@ -24,6 +24,8 @@
   The dashboard check verifies TLS with the lab CA (`--cacert`, `--resolve xephyguard-ccc:443:127.0.0.1`, `-f`),
   never `curl -k`; the DoH check passes only on an NXDOMAIN for `dns.google` and fails when the resolver gives no
   answer (ccc-deploy Step 26, I-CCC-22, I-CCC-23).
+  `artisan …`, `enroll-key` and doctor's `xephyguard:doctor` run as `www-data` in the web container
+  (`docker compose exec -u www-data`), so they never leave root-owned app files (ccc-deploy Step 28, I-CCC-10).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.
