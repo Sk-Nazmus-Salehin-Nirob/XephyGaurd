@@ -17,6 +17,84 @@ def _load(name, rel):
 
 
 daemon = _load("xg_docker_daemon", "ccc-deploy/bin/xg-docker-daemon.py")
+discovery = _load("xg_discovery", "ccc-deploy/services/discovery.py")
+
+
+# -- ccc-deploy Step 22 (I-CCC-12): the discovery responder ignores junk and never stops --
+
+PROBE = b'{"probe":"XEPHYGUARD_DISCOVER","v":1}'
+
+
+@pytest.mark.parametrize("data", [b"[]", b"1", b'"x"', b"null", b"{", b"\xff\xfe", b"", b'{"probe":"other"}'])
+def test_discovery_ignores_what_is_not_a_probe_object(data):
+    assert discovery.reply_for(data) is None
+
+
+def test_discovery_answers_a_probe(monkeypatch, tmp_path):
+    monkeypatch.setattr(discovery, "CA", str(tmp_path / "missing.crt"))
+    monkeypatch.setenv("XG_CCC_IP", "192.168.10.2")
+    monkeypatch.setenv("XG_LAB_NAME", "Lab 3")
+    reply = json.loads(discovery.reply_for(PROBE))
+    assert reply == {"service": "xephyguard-ccc", "host": "192.168.10.2", "api_port": 8443,
+                     "ca_fingerprint": "", "lab": "Lab 3"}
+
+
+@pytest.mark.parametrize("content", [b"not a certificate", b"\xff\xfe\x00", b""])
+def test_discovery_fingerprint_is_empty_for_a_malformed_ca(monkeypatch, tmp_path, content):
+    (tmp_path / "ca.crt").write_bytes(content)
+    monkeypatch.setattr(discovery, "CA", str(tmp_path / "ca.crt"))
+    assert discovery.fingerprint() == ""
+
+
+def test_discovery_fingerprint_of_a_real_certificate(monkeypatch, tmp_path):
+    import datetime
+    import hashlib
+    import ssl
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "lab CA")])
+    now = datetime.datetime.now(datetime.UTC)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(1).not_valid_before(now).not_valid_after(now + datetime.timedelta(days=1))
+            .sign(key, hashes.SHA256()))
+    pem = cert.public_bytes(serialization.Encoding.PEM)
+    (tmp_path / "ca.crt").write_bytes(pem)
+    monkeypatch.setattr(discovery, "CA", str(tmp_path / "ca.crt"))
+    assert discovery.fingerprint() == hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem.decode())).hexdigest()
+
+
+def test_discovery_loop_survives_bad_datagrams_and_send_errors(monkeypatch):
+    sent = []
+
+    class FakeSocket:
+        def __init__(self, *a):
+            self.queue = [(b"[]", ("10.0.0.5", 1)), (PROBE, ("10.0.0.6", 1)), (PROBE, ("10.0.0.7", 1))]
+
+        def setsockopt(self, *a):
+            pass
+
+        def bind(self, addr):
+            pass
+
+        def recvfrom(self, n):
+            if not self.queue:
+                raise KeyboardInterrupt   # ends the test; not caught by the loop
+            return self.queue.pop(0)
+
+        def sendto(self, data, addr):
+            if addr[0] == "10.0.0.6":
+                raise OSError("network unreachable")
+            sent.append(addr[0])
+
+    monkeypatch.setattr(discovery.socket, "socket", FakeSocket)
+    with pytest.raises(KeyboardInterrupt):
+        discovery.main()
+    assert sent == ["10.0.0.7"]   # the send error on .6 did not stop the loop
 
 
 # -- ccc-deploy Step 20 (I-CCC-14): base images pinned by exact tag and digest, no toolchain download --

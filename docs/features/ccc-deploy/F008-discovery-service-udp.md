@@ -9,6 +9,9 @@
 - **Code:** `ccc-deploy/services/discovery.py`; agent side `A/core/src/discovery*` (reply parsing).
 - **In/out/side effects:** replies with CCC address and CA fingerprint; no writes. `ca.crt` is read in a `with`
   block (no file handle left open per reply); ruff clean, CI rules and ruff's defaults (ccc-deploy Step 9).
-- **Status:** partly working (agent reply parsing tested; the service itself has no test).
+  Only a JSON object with `"probe":"XEPHYGUARD_DISCOVER"` gets a reply (`reply_for`); `[]`, numbers, strings,
+  invalid JSON or UTF-8 are ignored, a missing or malformed `ca.crt` gives `"ca_fingerprint": ""`, and an error on
+  one datagram (e.g. `sendto`) is logged and the loop goes on (ccc-deploy Step 22, I-CCC-12).
+- **Status:** partly working (agent reply parsing tested; the service's reply, fingerprint and loop are unit-tested in `proxy/tests/test_ccc_deploy_scripts.py`, never run on a lab LAN).
 - **Test:** 1. Start `python3 ccc-deploy/services/discovery.py`. 2. From a lab PC, run the agent
   enroll without `--ccc` and check it finds the server.

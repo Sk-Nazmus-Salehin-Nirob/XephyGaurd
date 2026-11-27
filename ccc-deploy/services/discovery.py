@@ -6,6 +6,9 @@ Response: {"service":"xephyguard-ccc","host":"192.168.10.2","api_port":8443,"ca_
 
 The reply is unauthenticated; agents therefore pin the CA fingerprint shown on the Add-a-PC page when one
 is given (--ca-fingerprint), and every later connection is TLS-verified against that CA.
+
+Any datagram from the LAN is untrusted: anything that is not a JSON object with the probe is ignored, an
+unreadable or malformed ca.crt gives an empty fingerprint, and no single datagram can stop the loop (I-CCC-12).
 """
 import hashlib
 import json
@@ -25,8 +28,22 @@ def fingerprint() -> str:
         with open(CA) as f:
             der = ssl.PEM_cert_to_DER_cert(f.read())
         return hashlib.sha256(der).hexdigest()
-    except OSError:
+    except (OSError, ValueError, UnicodeDecodeError):   # missing, unreadable or not a PEM certificate
         return ""
+
+
+def reply_for(data: bytes) -> bytes | None:
+    """The reply to one datagram, or None when it is not a discovery probe."""
+    try:
+        req = json.loads(data)
+    except ValueError:   # also UnicodeDecodeError
+        return None
+    if not isinstance(req, dict) or req.get("probe") != "XEPHYGUARD_DISCOVER":
+        return None
+    reply = {"service": "xephyguard-ccc", "host": os.environ.get("XG_CCC_IP", ""),
+             "api_port": int(os.environ.get("XG_AGENT_PORT", "8443")),
+             "ca_fingerprint": fingerprint(), "lab": os.environ.get("XG_LAB_NAME", "")}
+    return json.dumps(reply).encode()
 
 
 def main() -> None:
@@ -35,17 +52,14 @@ def main() -> None:
     s.bind(("0.0.0.0", PORT))
     log.info("discovery responder on udp/%d", PORT)
     while True:
-        data, addr = s.recvfrom(2048)
         try:
-            req = json.loads(data)
-        except ValueError:
-            continue
-        if req.get("probe") != "XEPHYGUARD_DISCOVER":
-            continue
-        reply = {"service": "xephyguard-ccc", "host": os.environ.get("XG_CCC_IP", ""), "api_port": int(os.environ.get("XG_AGENT_PORT", "8443")),
-                 "ca_fingerprint": fingerprint(), "lab": os.environ.get("XG_LAB_NAME", "")}
-        s.sendto(json.dumps(reply).encode(), addr)
-        log.info("answered %s", addr[0])
+            data, addr = s.recvfrom(2048)
+            out = reply_for(data)
+            if out is not None:
+                s.sendto(out, addr)
+                log.info("answered %s", addr[0])
+        except Exception:   # keep answering whatever one datagram did; logged with its traceback
+            log.exception("discovery: datagram skipped")
 
 
 if __name__ == "__main__":
