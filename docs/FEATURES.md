@@ -1117,6 +1117,8 @@ Defined in `server/routes/console.php`.
   The proxy takes `network_mode` from state.json; `XG_NETWORK_MODE` is only its default (ccc-deploy Step 14, I-CCC-9).
   IP forwarding (`/etc/sysctl.d/60-xephyguard.conf`) is set only in gateway mode; a proxy_only install removes that
   file and leaves the running value alone (ccc-deploy Step 15, I-CCC-29).
+  The proxy resolves through Unbound (127.0.0.1) only; a fallback resolver is used only if `XG_DNS_FALLBACK` is
+  set in `.env` (ccc-deploy Step 16, I-CCC-28).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

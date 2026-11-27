@@ -819,6 +819,15 @@ def test_compose_gives_secrets_only_to_the_services_that_use_them():
         assert set(services["discovery"]["environment"]) == {"XG_CCC_IP", "XG_LAB_NAME"}, f.name
 
 
+def test_compose_proxy_dns_has_no_public_fallback_by_default():
+    """ccc-deploy Step 16 (I-CCC-28): the proxy resolves through Unbound only unless XG_DNS_FALLBACK is set."""
+    yaml = pytest.importorskip("yaml")
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy"
+    for f in sorted(deploy.glob("docker-compose*.yml")):
+        dns = yaml.safe_load(f.read_text())["services"]["proxy"]["dns"]
+        assert dns == ["127.0.0.1", "${XG_DNS_FALLBACK:-127.0.0.1}"], f.name
+
+
 # -- Step 17 (I-PROXY-29): network_mode comes from the parsed State, the document is read once per digest --
 
 @pytest.mark.parametrize("doc_mode,expected", [("proxy_only", "proxy_only"), ("gateway", "gateway"),

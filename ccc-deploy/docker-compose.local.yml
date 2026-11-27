@@ -81,9 +81,9 @@ services:
     image: xephyguard/ccc-proxy:local
     build: { context: .., dockerfile: ccc-deploy/docker/proxy.Dockerfile, network: host }
     network_mode: host
-    dns:
+    dns:   # Unbound only: a public fallback would send every lab lookup out when Unbound fails (I-CCC-28)
       - 127.0.0.1
-      - 8.8.8.8
+      - ${XG_DNS_FALLBACK:-127.0.0.1}   # opt in to a fallback resolver by setting it in .env.local
     restart: unless-stopped
     environment:   # as production: no env_file, so no DB password, APP_KEY or screen secret (I-CCC-13)
       XG_NETWORK_MODE: ${XG_NETWORK_MODE:-proxy_only}
