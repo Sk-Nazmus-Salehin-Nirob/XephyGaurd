@@ -48,16 +48,37 @@ doctor() {
   exit $FAIL
 }
 
+# A subshell, so set -e and umask stay inside. Every file holds student data or secrets: umask 077 before
+# anything is created (I-CCC-8), and "written" only after a complete dump (I-CCC-5). Each step also has its
+# own check, because bash ignores set -e when the caller tests the function (backup || ...).
+backup() (
+  set -e
+  umask 077
+  out=${1:?usage: xephyguard-ccc backup DIR}
+  ts=$(date +%Y%m%d-%H%M)
+  db="$out/xephyguard-db-$ts.sql.gz"
+  fail() { echo "Backup FAILED: $1; the files in $out are incomplete" >&2; exit 1; }
+  install -d -m 0700 "$out" || fail "cannot create $out"
+  dc exec -T mysql sh -c 'command -v mysqldump' >/dev/null 2>&1 \
+    || fail "mysqldump not available in the mysql container (is it running? sudo xephyguard-ccc status)"
+  # pipefail (top of the script) makes a mysqldump error fail the pipeline; the trailer catches a truncated dump.
+  if ! dc exec -T mysql mysqldump -uroot -p"$DB_ROOT_PASSWORD" --single-transaction xephyguard | gzip > "$db" \
+     || ! gzip -t "$db" || ! gzip -dc "$db" | tail -n 1 | grep -q '^-- Dump completed'; then
+    rm -f "$db"
+    fail "database dump failed (wrong DB_ROOT_PASSWORD or MySQL down? sudo xephyguard-ccc logs mysql)"
+  fi
+  tar -czf "$out/xephyguard-ca-$ts.tgz" -C /var/lib/xephyguard ca || fail "cannot archive /var/lib/xephyguard/ca"
+  cp .env "$out/xephyguard-env-$ts" || fail "cannot copy .env"
+  chmod 0600 "$db" "$out/xephyguard-ca-$ts.tgz" "$out/xephyguard-env-$ts" || fail "cannot chmod the backup files"
+  echo "Backup written to $out (contains the CA private key and secrets: store it safely)"
+)
+
 case "${1:-}" in
   doctor) doctor ;;
   status) dc ps ;;
   logs) shift; dc logs -f --tail=200 "$@" ;;
   enroll-key) shift; dc exec -T web php artisan xephyguard:enroll-key "$@" ;;
-  backup)
-    out=${2:?usage: xephyguard-ccc backup DIR}; mkdir -p "$out"; ts=$(date +%Y%m%d-%H%M)
-    dc exec -T mysql mysqldump -uroot -p"$DB_ROOT_PASSWORD" --single-transaction xephyguard | gzip > "$out/xephyguard-db-$ts.sql.gz"
-    tar -czf "$out/xephyguard-ca-$ts.tgz" -C /var/lib/xephyguard ca && cp .env "$out/xephyguard-env-$ts" && chmod 0600 "$out"/xephyguard-*
-    echo "Backup written to $out (contains the CA private key and secrets: store it safely)" ;;
+  backup) backup "${2:-}" ;;
   update) dc build && dc run --rm -T web artisan migrate --force && dc up -d ;;
   artisan) shift; dc exec web php artisan "$@" ;;
   *) sed -n '2,10p' "$0" ;;
