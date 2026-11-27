@@ -364,6 +364,40 @@ def test_unbound_control_is_unix_socket_only(rel):
     assert "control-port" not in rc
 
 
+@pytest.mark.parametrize("rel", ["proxy/dns/unbound.conf", "ccc-deploy/docker/unbound-local.conf"])
+def test_unbound_interfaces_come_from_the_ccc_ip_template(rel):
+    # netpolicy-run renders XG_CCC_IP + 127.0.0.1 into the placeholder; no template binds every address (I-CCC-4).
+    import pathlib
+
+    conf = (pathlib.Path(__file__).resolve().parents[2] / rel).read_text()
+    server = conf.split("remote-control:", 1)[0]
+    assert "__INTERFACE_LINES__" in server
+    assert [ln for ln in server.splitlines() if ln.strip().startswith("interface:")] == []
+
+
+def test_proxy_entrypoint_binds_the_ccc_ip_with_block_global():
+    import pathlib
+
+    sh = (pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy/docker/proxy-entrypoint.sh").read_text()
+    assert "@0.0.0.0:" not in sh
+    assert "--set block_global=true" in sh and "block_global=false" not in sh
+    assert sh.count("@${LISTEN}:80") == 4   # both listeners in both modes
+
+
+def test_proxy_only_input_drops_proxy_and_dns_outside_the_lab():
+    import pathlib
+
+    nft = (pathlib.Path(__file__).resolve().parents[2] / "proxy/nftables/xephyguard-proxy-only.nft").read_text()
+    assert "table inet xephyguard_input {" in nft   # not "inet xephyguard": xg_netpolicy owns that table
+    assert _nft_chain(nft, "input") == [
+        "type filter hook input priority filter; policy accept;",
+        'iif "lo" accept',
+        "ip saddr @LAB_SUBNET@ accept",
+        "tcp dport { 53, 8080, 8085 } counter drop",
+        "udp dport 53 counter drop",
+    ]
+
+
 def _nft_chain(text, name):
     body = text.split(f"chain {name} {{", 1)[1].split("\n    }", 1)[0]
     return [ln.strip() for ln in body.splitlines() if ln.strip() and not ln.strip().startswith("#")]

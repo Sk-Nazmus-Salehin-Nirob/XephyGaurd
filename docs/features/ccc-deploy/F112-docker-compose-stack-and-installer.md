@@ -13,6 +13,9 @@
   The screen gateway listens on `127.0.0.1:8082` only; agents reach it through `wss://<ccc>:8443/screen-gw/agent`
   (mTLS), browsers through `wss://<ccc>/screen-gw/view`. `SCREEN_GATEWAY_URL` stays empty so the viewer URL
   follows the HTTPS dashboard host (ccc-deploy Step 2, I-CCC-1).
+  `proxy` and `netpolicy` get `XG_CCC_IP` and listen there only (Unbound also on 127.0.0.1); in proxy_only mode
+  install.sh loads the input filter `/etc/nftables.d/xephyguard-proxy-only.nft` (proxy and DNS for the lab subnet
+  only) (ccc-deploy Step 3, I-CCC-4).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

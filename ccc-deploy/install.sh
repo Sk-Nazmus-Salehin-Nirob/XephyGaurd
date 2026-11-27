@@ -184,6 +184,14 @@ if [ "$MODE" = gateway ]; then
   nft -f /etc/nftables.d/xephyguard.nft
   systemctl enable nftables >/dev/null
 else
+  # One interface: the proxy and DNS answer only the lab subnet, not the campus/upstream network (I-CCC-4).
+  say "Installing nftables proxy_only input filter (proxy and DNS for $SUBNET only)"
+  install -d /etc/nftables.d
+  sed -e "s|@LAB_SUBNET@|$SUBNET|g" "$ROOT/proxy/nftables/xephyguard-proxy-only.nft" > /etc/nftables.d/xephyguard-proxy-only.nft
+  grep -q 'nftables.d/xephyguard-proxy-only.nft' /etc/nftables.conf || echo 'include "/etc/nftables.d/xephyguard-proxy-only.nft"' >> /etc/nftables.conf
+  nft -c -f /etc/nftables.d/xephyguard-proxy-only.nft
+  nft -f /etc/nftables.d/xephyguard-proxy-only.nft
+  systemctl enable nftables >/dev/null
   warn "proxy_only mode: configure the lab router to forward TCP 80/443 to $CCC_IP:8080 and to hand out $CCC_IP as DNS."
 fi
 

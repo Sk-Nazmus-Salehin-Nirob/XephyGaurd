@@ -6,6 +6,10 @@
 
 - **What:** the CCC is either the lab's router (gateway: DNS + nftables + transparent proxy) or only a
   proxy reached by PAC (proxy_only).
+  In both modes mitmproxy (8080/8085) and Unbound (53) listen on `XG_CCC_IP` (Unbound also on 127.0.0.1), never
+  `0.0.0.0`, and mitmproxy runs with `block_global=true`, so clients with a public address are refused (a lab on a
+  public subnet needs that changed). proxy_only loads `proxy/nftables/xephyguard-proxy-only.nft` (table
+  `inet xephyguard_input`): 53/8080/8085 answer only `XG_LAB_SUBNET` and loopback (ccc-deploy Step 3, I-CCC-4).
 - **Trigger:** setting `network_mode` ([F104](../server/F104-settings.md)), `XG_NETWORK_MODE`; installer question.
 - **Code:** `NetworkPolicyWriter`, `proxy/xg_netpolicy/generate.py`, `ccc-deploy/docker/proxy-entrypoint.sh`.
   The `--watch` loop survives any error in one iteration (invalid document, OSError, failed tool): it logs and counts it and keeps the previous configuration (`watch_survives_*`).

@@ -674,6 +674,10 @@ on `private-pc.<id>` (`S/Events/AgentCommand.php`) and acknowledged in the next 
 ### F64. Gateway or proxy-only network mode
 - **What:** the CCC is either the lab's router (gateway: DNS + nftables + transparent proxy) or only a
   proxy reached by PAC (proxy_only).
+  In both modes mitmproxy (8080/8085) and Unbound (53) listen on `XG_CCC_IP` (Unbound also on 127.0.0.1), never
+  `0.0.0.0`, and mitmproxy runs with `block_global=true`, so clients with a public address are refused (a lab on a
+  public subnet needs that changed). proxy_only loads `proxy/nftables/xephyguard-proxy-only.nft` (table
+  `inet xephyguard_input`): 53/8080/8085 answer only `XG_LAB_SUBNET` and loopback (ccc-deploy Step 3, I-CCC-4).
 - **Trigger:** setting `network_mode` (F104), `XG_NETWORK_MODE`; installer question.
 - **Code:** `NetworkPolicyWriter`, `proxy/xg_netpolicy/generate.py`, `ccc-deploy/docker/proxy-entrypoint.sh`.
   The watcher reads the state document once per change and takes the generated files and the applied `network_mode` from that one read (`State.network_mode`); when the document has no or a null `network_mode`, `XG_NETWORK_MODE` decides (`watch_reads_state_once_and_uses_its_network_mode`).
@@ -1091,6 +1095,9 @@ Defined in `server/routes/console.php`.
   The screen gateway listens on `127.0.0.1:8082` only; agents reach it through `wss://<ccc>:8443/screen-gw/agent`
   (mTLS), browsers through `wss://<ccc>/screen-gw/view`. `SCREEN_GATEWAY_URL` stays empty so the viewer URL
   follows the HTTPS dashboard host (ccc-deploy Step 2, I-CCC-1).
+  `proxy` and `netpolicy` get `XG_CCC_IP` and listen there only (Unbound also on 127.0.0.1); in proxy_only mode
+  install.sh loads the input filter `/etc/nftables.d/xephyguard-proxy-only.nft` (proxy and DNS for the lab subnet
+  only) (ccc-deploy Step 3, I-CCC-4).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
@@ -1100,6 +1107,8 @@ Defined in `server/routes/console.php`.
 - **What:** `doctor`, `status`, `logs [svc]`, `enroll-key`, `backup DIR` (DB dump + CA + settings),
   `update` (build, migrate, restart), `artisan …`.
   `doctor` also prints the lab CA SHA-256 fingerprint to compare with the install command (ccc-deploy Step 6).
+  `doctor` probes the proxy on `$XG_CCC_IP:8080` (it no longer listens on loopback) and, in proxy_only mode,
+  checks that the `inet xephyguard_input` table is loaded (ccc-deploy Step 3).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.

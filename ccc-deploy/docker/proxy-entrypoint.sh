@@ -8,10 +8,22 @@ if [ -z "$MODE" ] && [ -f "$STATE_FILE" ]; then
   MODE=$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1])).get("network_mode") or "").strip())' "$STATE_FILE" 2>/dev/null || true)
 fi
 
+# Listen on the lab-side CCC address only, never 0.0.0.0 (I-CCC-4): XG_CCC_IP from .env, else ccc_ip in
+# state.json. In gateway mode the nft redirect delivers to the LAN interface's address, which is XG_CCC_IP.
+LISTEN="${XG_CCC_IP:-}"
+if [ -z "$LISTEN" ] && [ -f "$STATE_FILE" ]; then
+  LISTEN=$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1])).get("ccc_ip") or "").strip())' "$STATE_FILE" 2>/dev/null || true)
+fi
+case "$LISTEN" in
+  "") echo "proxy: XG_CCC_IP unset and no ccc_ip in $STATE_FILE; listening on 127.0.0.1 only (lab PCs get no proxy)" >&2
+      LISTEN=127.0.0.1 ;;
+  *[!0-9.]*) echo "proxy: XG_CCC_IP '$LISTEN' is not an IPv4 address" >&2; exit 1 ;;
+esac
+
 if [ "$MODE" = "proxy_only" ]; then
-  MODE_ARGS="--mode regular@0.0.0.0:8080 --mode transparent@0.0.0.0:8085"
+  MODE_ARGS="--mode regular@${LISTEN}:8080 --mode transparent@${LISTEN}:8085"
 else
-  MODE_ARGS="--mode transparent@0.0.0.0:8080 --mode regular@0.0.0.0:8085"
+  MODE_ARGS="--mode transparent@${LISTEN}:8080 --mode regular@${LISTEN}:8085"
 fi
 
 CONFDIR="/home/mitmproxy/.mitmproxy"
@@ -21,7 +33,7 @@ set -- mitmdump \
   $MODE_ARGS \
   --showhost \
   --set "confdir=${CONFDIR}" \
-  --set block_global=false \
+  --set block_global=true \
   --set connection_strategy=lazy \
   --set termlog_verbosity=warn \
   -s /opt/xephyguard/proxy/addons/xephyguard_addon.py \

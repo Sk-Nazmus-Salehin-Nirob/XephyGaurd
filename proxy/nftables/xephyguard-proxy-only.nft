@@ -1,0 +1,20 @@
+#!/usr/sbin/nft -f
+# XephyGuard input filter for proxy_only mode. Rendered by ccc-deploy/install.sh, which replaces @LAB_SUBNET@.
+# proxy_only has a single interface (the lab router hands out the CCC as DNS and forwards web traffic to it),
+# so there is no WAN interface to match: the "WAN" is every source outside the lab subnet. The proxy
+# (8080, 8085) and DNS (53) answer the lab and loopback only, never the campus/upstream network (I-CCC-4).
+# Every other port (dashboard, agent 8443, SSH) is left as it is. Gateway mode uses xephyguard.nft instead.
+# Its own table: xg_netpolicy loads sets only into "inet xephyguard" and skips nft in proxy_only mode.
+
+table inet xephyguard_input
+delete table inet xephyguard_input
+
+table inet xephyguard_input {
+    chain input {
+        type filter hook input priority filter; policy accept;
+        iif "lo" accept
+        ip saddr @LAB_SUBNET@ accept
+        tcp dport { 53, 8080, 8085 } counter drop
+        udp dport 53 counter drop
+    }
+}

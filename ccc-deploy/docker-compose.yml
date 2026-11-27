@@ -66,6 +66,8 @@ services:
     network_mode: host
     cap_add: [NET_ADMIN]
     restart: unless-stopped
+    environment:
+      XG_CCC_IP: ${XG_CCC_IP:-}   # Unbound listens here and on 127.0.0.1 only (I-CCC-4)
     volumes: [ "/var/lib/xephyguard/net:/var/lib/xephyguard/net" ]
 
   proxy:      # mitmproxy with the XephyGuard addon (SNI filter + selective inspection; transparent or regular by mode)
@@ -78,6 +80,7 @@ services:
     restart: unless-stopped
     environment:
       XG_NETWORK_MODE: ${XG_NETWORK_MODE:-gateway}
+      XG_CCC_IP: ${XG_CCC_IP:-}   # mitmproxy listens on this lab-side address only (I-CCC-4)
       XG_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}   # bearer for /api/internal/net-events; not in proxy.json (I-PROXY-13)
       XG_RETENTION_RAW_DAYS: ${XG_RETENTION_RAW_DAYS:-140}   # purge age of the event spill file (ETHICS.md raw events)
     volumes:
