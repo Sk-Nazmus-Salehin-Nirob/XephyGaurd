@@ -298,6 +298,8 @@ Section "Uninstall"
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="XephyGuard Agent"'
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="XephyGuard Isolate"'
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="XephyGuard Lock"'
+  ; The proxy's interception CA the agent added to Root (agent Step 41), found by the copy it kept.
+  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -Command "$$f = Join-Path $$env:ProgramData 'XephyGuard\interception-ca.crt'; if (Test-Path $$f) { $$t = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $$f).Thumbprint; Remove-Item -Path ('Cert:\LocalMachine\Root\' + $$t) -ErrorAction SilentlyContinue; Remove-Item $$f -ErrorAction SilentlyContinue }"`
   Delete /REBOOTOK "$INSTDIR\*.*"
   RMDir /REBOOTOK "$INSTDIR"
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\XephyGuard"

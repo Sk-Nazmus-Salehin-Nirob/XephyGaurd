@@ -104,9 +104,21 @@ The audit has no performance finding. No step until one is measured.
   in `agent pushes proxy_pac_url to helper in proxy_only mode`, Windows only). Linux `trust_store.cpp`: MinGW
   g++ 15 `-fsyntax-only` only; no Linux build or run here (no WSL/Docker), and the store calls themselves were
   never run against a real Root store or update-ca-certificates.
-- [ ] Step 42: installers: `postrm` removes `xephyguard-interception-ca.crt` and runs `update-ca-certificates
+- [x] Step 42: installers: `postrm` removes `xephyguard-interception-ca.crt` and runs `update-ca-certificates
   --fresh`; `install-browser-ca.sh` takes the certificate path and NSS nickname as arguments; the NSIS uninstaller
   removes the interception CA from Root by its thumbprint (fixes none; touches F14) [CROSS: ccc-deploy Step 7]
+  Done 2026-11-27. `install-browser-ca.sh [CERT [NICKNAME]]` (no arguments: the lab CA as before) and
+  `--remove NICKNAME`; `prerm` (remove) runs `--remove "XephyGuard Interception CA"` while the script still
+  exists; `postrm` (remove and purge, not only purge: a PC without the agent must not keep trusting the proxy)
+  deletes `xephyguard-interception-ca.crt` and runs `update-ca-certificates --fresh`; `firefox.json`
+  `Certificates.Install` also lists the Linux interception CA path (Windows Firefox already reads Root through
+  `ImportEnterpriseRoots`). NSIS uninstall: PowerShell takes the thumbprint of
+  `%ProgramData%\XephyGuard\interception-ca.crt` and removes `Cert:\LocalMachine\Root\<thumbprint>`, then the copy.
+  F115, F116, FEATURES.md updated (touches F115/F116 rather than F14). Checked: `sh -n` and shellcheck 0.10.0 on
+  the LF form of the three scripts (0, as HEAD); firefox.json parses; the PowerShell line (with NSIS `$$` → `$`)
+  parses with 0 errors and PS 5.1 `X509Certificate2` gives the same SHA-1 thumbprint as openssl for a PEM file;
+  makensis 3 compiles the script (rc 0, only the existing optional-file warnings; test exe deleted). Not run:
+  the .deb scripts on a PC and the uninstaller on Windows.
 
 ## Cross-component order (agent side)
 1. screen/ccc-deploy: gateway behind nginx mTLS (I-CCC-1, I-CCC-7) → agent Step 9.

@@ -5,6 +5,9 @@ set -e
   systemctl try-reload-or-restart systemd-resolved >/dev/null 2>&1 || true
   # Network rules the agent installed (isolation, session network lock) must not outlive it.
   for t in xephyguard_isolate xephyguard_lock; do nft delete table inet "$t" >/dev/null 2>&1 || true; done
+  # A PC without the agent must not keep trusting the lab proxy's interception CA (agent Step 41).
+  rm -f /usr/local/share/ca-certificates/xephyguard-interception-ca.crt
+  update-ca-certificates --fresh >/dev/null 2>&1 || true
 }
 if [ "$1" = purge ]; then
   rm -rf /etc/xephyguard /var/lib/xephyguard /var/log/xephyguard

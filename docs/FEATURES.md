@@ -1232,6 +1232,10 @@ Defined in `server/routes/console.php`.
 - **What:** CPack `.deb` with the agent, helper, systemd units, default config, postinst/prerm/postrm.
 - **Trigger:** `cmake -S agent -B agent/build-rel -DCMAKE_BUILD_TYPE=Release -DXG_BUILD_TESTS=OFF && cmake --build agent/build-rel -j2 && (cd agent/build-rel && cpack)`.
 - **Code:** `agent/CMakeLists.txt`, `agent/packaging/`, `installers/linux/*`.
+  Uninstall also drops the proxy's interception CA the agent installed (agent Step 41): `prerm` removes the
+  "XephyGuard Interception CA" nickname from the NSS databases (`install-browser-ca.sh --remove`, which now also
+  takes `CERT NICKNAME`), `postrm` deletes the system copy and runs `update-ca-certificates --fresh`; the Firefox
+  policy lists the interception CA's path next to the lab CA's (agent Step 42).
 - **Status:** unclear (CI builds it; not built today).
 - **Test:** 1. Build it. 2. `sudo apt install ./xephyguard-agent_*.deb` in a VM.
 
@@ -1239,6 +1243,8 @@ Defined in `server/routes/console.php`.
 - **What:** `XephyGuard-Setup-<ver>.exe`: installs agent + helper, service, CA and code-signing cert
   into Root, ACLs, tamper manifest; `/S /KEY=` silent install.
 - **Code:** `installers/windows/xephyguard.nsi`, CI job `agent-windows-msvc`, `scripts/sign_binaries.ps1`.
+  The uninstaller removes the proxy's interception CA from Root by the thumbprint of the copy the agent kept
+  (`%ProgramData%\XephyGuard\interception-ca.crt`), then the copy (agent Step 42).
 - **Status:** unclear (never run on real Windows). ⚠SEC gives Users read access to the agent key;
   installs a self-signed cert as a root CA; unsigned build in CI.
 - **Test:** only on a Windows VM.

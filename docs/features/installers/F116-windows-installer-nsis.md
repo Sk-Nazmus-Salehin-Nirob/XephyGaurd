@@ -7,6 +7,8 @@
 - **What:** `XephyGuard-Setup-<ver>.exe`: installs agent + helper, service, CA and code-signing cert
   into Root, ACLs, tamper manifest; `/S /KEY=` silent install.
 - **Code:** `installers/windows/xephyguard.nsi`, CI job `agent-windows-msvc`, `scripts/sign_binaries.ps1`.
+  The uninstaller removes the proxy's interception CA from Root by the thumbprint of the copy the agent kept
+  (`%ProgramData%\XephyGuard\interception-ca.crt`), then the copy (agent Step 42).
 - **Status:** unclear (never run on real Windows). ⚠SEC gives Users read access to the agent key;
   installs a self-signed cert as a root CA; unsigned build in CI.
 - **Test:** only on a Windows VM.
