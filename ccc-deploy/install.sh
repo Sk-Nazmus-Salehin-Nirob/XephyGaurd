@@ -187,7 +187,7 @@ say "Waiting for MySQL"
 mysql_root() { docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec "$@"' sh "$@"; }
 for _ in $(seq 60); do mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null 2>&1 && break; sleep 2; done
 artisan() { docker compose run --rm -T web artisan "$@"; }
-artisan migrate --force
+docker compose run --rm -T migrate   # the one-shot migrate service; later `run web` calls depend on it (I-CCC-24)
 say "Creating the lab certificate authority"
 artisan xephyguard:ca:init --server-ip="$CCC_IP" --server-dns=xephyguard-ccc --server-dns="$(hostname)"
 chown 33:33 "$STATE/ca"/ca.key "$STATE/ca"/server.key && chmod 0600 "$STATE/ca"/*.key && chmod 0644 "$STATE/ca"/*.crt

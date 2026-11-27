@@ -1128,6 +1128,9 @@ Defined in `server/routes/console.php`.
   `analysis` gets `XG_ANALYSIS_BIND: 127.0.0.1` in both compose files (ccc-deploy Step 19, I-CCC-18).
   Every base image (`docker/*.Dockerfile`, `mysql` in both compose files) is pinned as `name:exact-tag@sha256:…`,
   and the gateway build uses `GOTOOLCHAIN=local` (ccc-deploy Step 20, I-CCC-14; updating them is Step 32).
+  Migrations run only in the one-shot `migrate` service (`artisan migrate --force`, `restart: "no"`); web, reverb,
+  worker and scheduler start after it completes successfully; the web entrypoint no longer migrates
+  (ccc-deploy Step 21, I-CCC-24).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
@@ -1147,6 +1150,8 @@ Defined in `server/routes/console.php`.
   It reads `.env` with `xg_env_load` from `$XG_DEPLOY/bin/xg-env.sh` (parsed, never sourced; ccc-deploy Step 13).
   `doctor` takes the network mode from state.json (ccc-deploy Step 14) and checks IP forwarding only in gateway
   mode (ccc-deploy Step 15).
+  `update` is `build` then `up -d`: compose runs the one-shot `migrate` service first and starts the app roles only
+  if it succeeds (ccc-deploy Step 21).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.

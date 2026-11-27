@@ -10,7 +10,7 @@ fi
 case "$1" in
   web)
     php artisan config:cache && php artisan route:cache && php artisan view:cache
-    php artisan migrate --force
+    # Migrations run once, in the one-shot "migrate" service every app role waits for (I-CCC-24).
     exec supervisord -n -c /etc/supervisor/supervisord.conf ;;
   reverb)    exec su -s /bin/sh www-data -c "php artisan reverb:start --host=127.0.0.1 --port=8081" ;;
   worker)    exec su -s /bin/sh www-data -c "php artisan queue:work --sleep=1 --tries=3 --max-time=3600" ;;

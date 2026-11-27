@@ -89,7 +89,8 @@ case "${1:-}" in
   logs) shift; dc logs -f --tail=200 "$@" ;;
   enroll-key) shift; dc exec -T web php artisan xephyguard:enroll-key "$@" ;;
   backup) backup "${2:-}" ;;
-  update) dc build && dc run --rm -T web artisan migrate --force && dc up -d ;;
+  # up runs the one-shot migrate service first; the app roles start only if it succeeds (I-CCC-24).
+  update) dc build && dc up -d ;;
   artisan) shift; dc exec web php artisan "$@" ;;
   *) sed -n '2,10p' "$0" ;;
 esac

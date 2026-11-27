@@ -40,6 +40,9 @@
   `analysis` gets `XG_ANALYSIS_BIND: 127.0.0.1` in both compose files (ccc-deploy Step 19, I-CCC-18).
   Every base image (`docker/*.Dockerfile`, `mysql` in both compose files) is pinned as `name:exact-tag@sha256:…`,
   and the gateway build uses `GOTOOLCHAIN=local` (ccc-deploy Step 20, I-CCC-14; updating them is Step 32).
+  Migrations run only in the one-shot `migrate` service (`artisan migrate --force`, `restart: "no"`); web, reverb,
+  worker and scheduler start after it completes successfully; the web entrypoint no longer migrates
+  (ccc-deploy Step 21, I-CCC-24).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

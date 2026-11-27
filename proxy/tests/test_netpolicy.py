@@ -803,7 +803,7 @@ def test_compose_gives_secrets_only_to_the_services_that_use_them():
     DB_ROOT_PASSWORD blanked; every other service lists its variables, none sees APP_KEY or the root password."""
     yaml = pytest.importorskip("yaml")
     deploy = pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy"
-    app_services = {"web", "reverb", "worker", "scheduler"}
+    app_services = {"migrate", "web", "reverb", "worker", "scheduler"}
     for f in sorted(deploy.glob("docker-compose*.yml")):
         services = yaml.safe_load(f.read_text())["services"]
         for name, svc in services.items():
@@ -842,6 +842,22 @@ def test_compose_hardens_proxy_discovery_and_gateway():
         assert services["proxy"]["cap_add"] == ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID"], f.name
         for name in ("discovery", "screen-gateway"):
             assert services[name]["read_only"] is True and "cap_add" not in services[name], (f.name, name)
+
+
+def test_compose_runs_migrations_once_before_every_app_role():
+    """ccc-deploy Step 21 (I-CCC-24): a one-shot migrate service; web, reverb, worker and scheduler wait for it."""
+    yaml = pytest.importorskip("yaml")
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy"
+    for f in sorted(deploy.glob("docker-compose*.yml")):
+        services = yaml.safe_load(f.read_text())["services"]
+        migrate = services["migrate"]
+        assert migrate["command"] == ["artisan", "migrate", "--force"] and migrate["restart"] == "no", f.name
+        assert set(migrate["depends_on"]) == {"mysql"}, f.name
+        for name in ("web", "reverb", "worker", "scheduler"):
+            dep = services[name]["depends_on"]["migrate"]
+            assert dep == {"condition": "service_completed_successfully"}, (f.name, name)
+    entry = (deploy / "docker/entrypoint.sh").read_text()
+    assert "artisan migrate" not in entry
 
 
 def test_compose_binds_analysis_to_loopback():

@@ -18,8 +18,16 @@ x-app: &app
     - xg_local_logs:/var/www/html/storage/logs
   depends_on:
     mysql: { condition: service_healthy }
+    migrate: { condition: service_completed_successfully }   # schema first, for every app role (I-CCC-24)
 
 services:
+  migrate:    # one-shot: the only place migrations run (bootstrap-local.sh starts it through compose)
+    <<: *app
+    command: ["artisan", "migrate", "--force"]
+    restart: "no"
+    depends_on:
+      mysql: { condition: service_healthy }
+
   mysql:
     image: mysql:8.4.13@sha256:8c233bad33d520a7aae1c1e619c3a9775f4a1ba2d463d692fada04ec7f40be00
     network_mode: host

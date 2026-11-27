@@ -282,8 +282,7 @@ fi
 
 # ---- Migrations, SQLite import OR fresh bootstrap ----
 xg_info "Running database migrations..."
-"${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm --no-deps --entrypoint php web \
-  /var/www/html/artisan migrate --force
+"${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm --no-deps migrate   # one-shot service (ccc-deploy I-CCC-24)
 
 USER_COUNT="$(mysql_app mysql -uxephyguard xephyguard -Nse "SELECT COUNT(*) FROM users" 2>/dev/null | tr -d ' \r\n' || echo 0)"
 LAB_COUNT="$(mysql_app mysql -uxephyguard xephyguard -Nse "SELECT COUNT(*) FROM labs" 2>/dev/null | tr -d ' \r\n' || echo 0)"

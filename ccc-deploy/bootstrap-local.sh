@@ -78,7 +78,7 @@ dc run --rm -T --no-deps --user 0:0 --entrypoint sh \
     '
 
 echo "[3/6] Running Laravel migrations on MySQL..."
-dc run --rm -T --no-deps web artisan migrate --force
+dc run --rm -T --no-deps migrate   # the one-shot migrate service (I-CCC-24)
 
 USER_COUNT=$(mysql_app mysql -N -B -u"$DB_USERNAME" "$DB_DATABASE" -e "SELECT COUNT(*) FROM users;")
 if [ "$RESEED" = "--reseed" ] || [ "$USER_COUNT" -eq 0 ]; then

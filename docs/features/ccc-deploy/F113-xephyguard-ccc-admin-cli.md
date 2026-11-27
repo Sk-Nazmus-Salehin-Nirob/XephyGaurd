@@ -17,6 +17,8 @@
   It reads `.env` with `xg_env_load` from `$XG_DEPLOY/bin/xg-env.sh` (parsed, never sourced; ccc-deploy Step 13).
   `doctor` takes the network mode from state.json (ccc-deploy Step 14) and checks IP forwarding only in gateway
   mode (ccc-deploy Step 15).
+  `update` is `build` then `up -d`: compose runs the one-shot `migrate` service first and starts the app roles only
+  if it succeeds (ccc-deploy Step 21).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.
