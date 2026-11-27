@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # XephyGuard Linux Student PC Agent Installer & Enrollee (Self-Contained)
 # Works on Ubuntu/Debian student workstations both directly or via remote SSH push.
-# Note: Can also be installed directly from a running CCC via:
-#   curl -fsSL http://<CCC_IP>/install/linux.sh | sudo bash -s -- --key <ENROLL_KEY>
+# Note: Can also be installed directly from a running CCC with the pinned command shown on
+#   https://<CCC_IP>/enroll (it checks ca.crt against the fingerprint before anything runs as root).
+# Trust (server S-74): ca.crt comes over plain HTTP but is used only if its SHA-256 equals --cafp, which the
+# operator copies from the CCC (Downloads/Enroll page or `xephyguard-ccc doctor`); the .deb is then fetched
+# over HTTPS and verified with exactly that CA.
 set -euo pipefail
 
 CCC=""
@@ -10,22 +13,25 @@ KEY=""
 CA_FP=""
 DEB_PATH=""
 HTTP_PORT=80
+HTTPS_PORT=443
 TIMEOUT=600
 SKIP_BROWSER_CA=0
 BROWSER_CA_URL_PATH=""
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") --ccc <CCC_IP_OR_HOST> --key <ENROLL_KEY> [options]
+Usage: $(basename "$0") --ccc <CCC_IP_OR_HOST> --key <ENROLL_KEY> --cafp <SHA256> [options]
 
 Required:
   --ccc <IP_OR_HOST>       CCC server IP address or hostname
   --key <ENROLL_KEY>       Current lab enrollment key (shown on CCC dashboard / Enroll page)
+  --cafp <SHA256>          SHA-256 fingerprint of the Lab CA (Downloads/Enroll page, or 'xephyguard-ccc doctor')
 
 Options:
-  --cafp <SHA256>          Expected SHA-256 fingerprint of Lab CA (recommended verification)
   --deb <PATH>             Install local .deb package instead of downloading from CCC
-  --http-port <PORT>       CCC HTTP download port for CA/.deb (default: 80; use 8000 for native without Nginx)
+                           (needed for a native CCC without Nginx: it has no HTTPS)
+  --http-port <PORT>       CCC HTTP port for ca.crt (default: 80; use 8000 for native without Nginx)
+  --https-port <PORT>      CCC HTTPS port for the .deb download (default: 443)
   --timeout <SECONDS>      Enrollment approval wait timeout (default: 600)
   --skip-browser-ca        Skip installing Lab CA into system/browser NSS stores
   -h, --help               Show this help
@@ -39,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --cafp) CA_FP="${2:?Missing value for --cafp}"; shift 2 ;;
     --deb) DEB_PATH="${2:?Missing value for --deb}"; shift 2 ;;
     --http-port) HTTP_PORT="${2:?Missing value for --http-port}"; shift 2 ;;
+    --https-port) HTTPS_PORT="${2:?Missing value for --https-port}"; shift 2 ;;
     --timeout) TIMEOUT="${2:?Missing value for --timeout}"; shift 2 ;;
     --skip-browser-ca) SKIP_BROWSER_CA=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -48,6 +55,8 @@ done
 
 [[ -n "$CCC" ]] || { echo "[ERR] --ccc <CCC_IP_OR_HOST> is required." >&2; usage; exit 2; }
 [[ -n "$KEY" ]] || { echo "[ERR] --key <ENROLL_KEY> is required." >&2; usage; exit 2; }
+# Without the pin, a CA fetched over HTTP could be anyone's, and so could the .deb it vouches for.
+[[ -n "$CA_FP" ]] || { echo "[ERR] --cafp <SHA256> is required: copy it from the CCC's Downloads/Enroll page or 'sudo xephyguard-ccc doctor'." >&2; exit 2; }
 [[ "$(id -u)" -eq 0 ]] || { echo "[ERR] Please run as root (e.g. sudo bash $0 ...)." >&2; exit 1; }
 
 for cmd in curl openssl dpkg apt-get systemctl; do
@@ -56,6 +65,8 @@ done
 
 BASE_HTTP="http://${CCC}"
 [[ "$HTTP_PORT" != "80" ]] && BASE_HTTP="http://${CCC}:${HTTP_PORT}"
+BASE_HTTPS="https://${CCC}"
+[[ "$HTTPS_PORT" != "443" ]] && BASE_HTTPS="https://${CCC}:${HTTPS_PORT}"
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -64,16 +75,12 @@ echo "[*] Fetching Lab CA certificate from ${BASE_HTTP}/ca.crt..."
 curl -fsSL "${BASE_HTTP}/ca.crt" -o "$TMP_DIR/ca.crt"
 
 ACTUAL_FP="$(openssl x509 -in "$TMP_DIR/ca.crt" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f')"
-if [[ -n "$CA_FP" ]]; then
-  EXPECTED_FP="$(printf '%s' "$CA_FP" | tr -d ': \t\r\n' | tr 'A-F' 'a-f')"
-  if [[ "$ACTUAL_FP" != "$EXPECTED_FP" ]]; then
-    echo "[ERR] CA fingerprint mismatch! Expected=$EXPECTED_FP Got=$ACTUAL_FP" >&2
-    exit 3
-  fi
-  echo "[OK] CA SHA-256 fingerprint verified ($ACTUAL_FP)."
-else
-  echo "[*] CA SHA-256 fingerprint: $ACTUAL_FP"
+EXPECTED_FP="$(printf '%s' "$CA_FP" | tr -d ': \t\r\n' | tr 'A-F' 'a-f')"
+if [[ "$ACTUAL_FP" != "$EXPECTED_FP" ]]; then
+  echo "[ERR] CA fingerprint mismatch! Expected=$EXPECTED_FP Got=$ACTUAL_FP" >&2
+  exit 3
 fi
+echo "[OK] CA SHA-256 fingerprint verified ($ACTUAL_FP)."
 
 if [[ -n "$DEB_PATH" ]]; then
   [[ -f "$DEB_PATH" ]] || { echo "[ERR] Specified --deb file not found: $DEB_PATH" >&2; exit 1; }
@@ -82,10 +89,10 @@ else
   ARCH="$(dpkg --print-architecture)"
   DEB_NAME="xephyguard-agent_latest_${ARCH}.deb"
   TARGET_DEB="$TMP_DIR/$DEB_NAME"
-  echo "[*] Downloading ${BASE_HTTP}/downloads/${DEB_NAME}..."
-  if ! curl -fsSL "${BASE_HTTP}/downloads/${DEB_NAME}" -o "$TARGET_DEB"; then
-    echo "[ERR] Could not download ${DEB_NAME} from ${BASE_HTTP}/downloads/." >&2
-    echo "      Build/upload the .deb or pass --deb /path/to/xephyguard-agent.deb." >&2
+  echo "[*] Downloading ${BASE_HTTPS}/downloads/${DEB_NAME} (TLS verified with the pinned Lab CA)..."
+  if ! curl -fsSL --proto '=https' --cacert "$TMP_DIR/ca.crt" "${BASE_HTTPS}/downloads/${DEB_NAME}" -o "$TARGET_DEB"; then
+    echo "[ERR] Could not download ${DEB_NAME} from ${BASE_HTTPS}/downloads/ with the Lab CA." >&2
+    echo "      Build/upload the .deb, check --https-port, or pass --deb /path/to/xephyguard-agent.deb." >&2
     exit 4
   fi
 fi

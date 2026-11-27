@@ -318,6 +318,7 @@ else
   "$REPO_ROOT/start_server/linux/start-server.sh" --mode docker
   echo "Next steps:"
   echo "  1. Open the Dashboard URL above -> visit /setup to create the instructor admin account."
-  echo "  2. Run 'new_setup_scripts/linux/install-agent.sh --ccc $CCC_IP --key <ENROLL_KEY>' on Linux client PCs,"
+  echo "  2. Run 'new_setup_scripts/linux/install-agent.sh --ccc $CCC_IP --key <ENROLL_KEY> --cafp <CA_SHA256>' on Linux client PCs"
+  echo "     (the CA SHA-256 is printed above and on the Downloads page),"
   echo "     or 'new_setup_scripts\\windows\\deploy-agents.ps1' from Windows."
 fi

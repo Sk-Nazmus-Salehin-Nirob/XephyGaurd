@@ -111,15 +111,15 @@ After the server starts, open the Dashboard URL printed at the end of setup and 
 
 Either run the CCC-hosted one-liner directly on each Ubuntu/Debian student machine:
 
-```bash
-curl -fsSL http://<CCC_IP>/install/linux.sh | sudo bash -s -- --key <ENROLL_KEY>
-```
+Copy the install command from `https://<CCC_IP>/enroll` (or `/downloads`): it fetches `ca.crt`, stops
+unless its SHA-256 matches the pinned fingerprint, and then gets the script and the `.deb` over HTTPS with that CA.
 
-Or copy/run [`linux/install-agent.sh`](linux/install-agent.sh) (completely self-contained, supports offline `.deb` via `--deb`):
+Or copy/run [`linux/install-agent.sh`](linux/install-agent.sh) (self-contained, supports offline `.deb` via `--deb`).
+`--cafp` is required: copy the Lab CA SHA-256 from the Downloads/Enroll page or `sudo xephyguard-ccc doctor`.
 
 ```bash
-sudo ./new_setup_scripts/linux/install-agent.sh --ccc <CCC_IP> --key <ENROLL_KEY>
-# Optional SHA-256 verification and local package:
+sudo ./new_setup_scripts/linux/install-agent.sh --ccc <CCC_IP> --key <ENROLL_KEY> --cafp <CA_SHA256>
+# Local package (also needed for a native CCC without Nginx, which has no HTTPS):
 sudo ./new_setup_scripts/linux/install-agent.sh --ccc <CCC_IP> --key <ENROLL_KEY> --cafp <CA_SHA256> --deb ./xephyguard-agent.deb
 ```
 

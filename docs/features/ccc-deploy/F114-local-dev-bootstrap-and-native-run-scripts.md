@@ -20,6 +20,9 @@
   `import-sqlite-to-local.php` (`bootstrap-local.sh --reseed`) imports every table in one transaction with
   `DELETE FROM` instead of `TRUNCATE`; an error or a row-count mismatch rolls it all back and MySQL keeps its data
   (ccc-deploy Step 27, I-CCC-31).
+  `install-agent.sh` requires `--cafp` (stops before anything else without it, and on a mismatch), then downloads
+  the `.deb` only from `https://<ccc>[:--https-port]/downloads` with `curl --proto =https --cacert` the pinned CA;
+  a native CCC without Nginx has no HTTPS, so there `--deb` is needed (server S-74 follow-up).
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,
