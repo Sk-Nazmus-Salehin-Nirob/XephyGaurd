@@ -11,6 +11,8 @@ x-app: &app
   build: { context: .., dockerfile: ccc-deploy/docker/app.Dockerfile }
   network_mode: host
   env_file: .env
+  environment:
+    DB_ROOT_PASSWORD: ""   # in .env for mysql and install.sh only; no app container uses root (I-CCC-13)
   restart: unless-stopped
   volumes:
     - /var/lib/xephyguard/ca:/var/lib/xephyguard/ca
@@ -105,7 +107,9 @@ services:
     build: { context: .., dockerfile: ccc-deploy/docker/discovery.Dockerfile }
     network_mode: host
     restart: unless-stopped
-    env_file: .env
+    environment:   # only what the reply carries; no env_file, so no secret reaches this LAN-facing UDP service (I-CCC-13)
+      XG_CCC_IP: ${XG_CCC_IP:-}
+      XG_LAB_NAME: ${XG_LAB_NAME:-}
     volumes: [ "/var/lib/xephyguard/ca:/var/lib/xephyguard/ca:ro" ]
 
   screen-gateway:  # screen WebSocket relay (127.0.0.1:8082 only; LAN reaches it through nginx /screen-gw/)

@@ -798,6 +798,27 @@ def test_compose_passes_internal_token_to_proxy():
         assert explicit or shared, f.name
 
 
+def test_compose_gives_secrets_only_to_the_services_that_use_them():
+    """ccc-deploy Step 11 (I-CCC-13): only the Laravel app containers read the whole .env file, and they get
+    DB_ROOT_PASSWORD blanked; every other service lists its variables, none sees APP_KEY or the root password."""
+    yaml = pytest.importorskip("yaml")
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy"
+    app_services = {"web", "reverb", "worker", "scheduler"}
+    for f in sorted(deploy.glob("docker-compose*.yml")):
+        services = yaml.safe_load(f.read_text())["services"]
+        for name, svc in services.items():
+            env = svc.get("environment") or {}
+            if name in app_services:
+                assert svc.get("env_file"), (f.name, name)
+                assert env.get("DB_ROOT_PASSWORD") == "", (f.name, name)
+                continue
+            assert "env_file" not in svc, (f.name, name)
+            assert "APP_KEY" not in env, (f.name, name)
+            if name != "mysql":
+                assert not any("DB_ROOT_PASSWORD" in str(v) for v in env.values()), (f.name, name)
+        assert set(services["discovery"]["environment"]) == {"XG_CCC_IP", "XG_LAB_NAME"}, f.name
+
+
 # -- Step 17 (I-PROXY-29): network_mode comes from the parsed State, the document is read once per digest --
 
 @pytest.mark.parametrize("doc_mode,expected", [("proxy_only", "proxy_only"), ("gateway", "gateway"),

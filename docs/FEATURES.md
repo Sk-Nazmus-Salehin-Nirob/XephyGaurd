@@ -1100,6 +1100,9 @@ Defined in `server/routes/console.php`.
   install.sh loads the input filter `/etc/nftables.d/xephyguard-proxy-only.nft` (proxy and DNS for the lab subnet
   only) (ccc-deploy Step 3, I-CCC-4).
   `install.sh`, `bootstrap-local.sh` and `docker/*.sh` are shellcheck clean (0.10.0, ccc-deploy Step 8).
+  Only the Laravel containers (`web`, `reverb`, `worker`, `scheduler`) read the whole `.env`, with
+  `DB_ROOT_PASSWORD` blanked; every other service lists its own variables (discovery: `XG_CCC_IP`, `XG_LAB_NAME`),
+  so no non-app container sees `APP_KEY` or the root password (ccc-deploy Step 11, I-CCC-13).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
@@ -1129,6 +1132,8 @@ Defined in `server/routes/console.php`.
   `http://<ip>:<app port>/downloads`), point to `/enroll` for the Linux install command (Linux) or to `/ca.crt` to
   compare (Windows), and print the CA SHA-256 as lower-case hex without colons, the form the install command,
   `/downloads` and `xephyguard-ccc doctor` use.
+  `docker-compose.local.yml` gives `.env.local` only to the Laravel containers (with `DB_ROOT_PASSWORD` blanked);
+  netpolicy, proxy, discovery and screen-gateway get explicit variables as in production (ccc-deploy Step 11).
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,

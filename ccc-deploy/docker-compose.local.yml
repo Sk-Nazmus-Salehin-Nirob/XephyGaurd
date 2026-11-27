@@ -7,6 +7,8 @@ x-app: &app
   build: { context: .., dockerfile: ccc-deploy/docker/app.Dockerfile, network: host }
   network_mode: host
   env_file: .env.local
+  environment:
+    DB_ROOT_PASSWORD: ""   # in .env.local for mysql and bootstrap-local.sh only; no app container uses root (I-CCC-13)
   restart: unless-stopped
   volumes:
     - xg_local_ca:/var/lib/xephyguard/ca
@@ -67,7 +69,9 @@ services:
     network_mode: host
     cap_add: [NET_ADMIN]
     restart: unless-stopped
-    env_file: .env.local
+    environment:   # no env_file: DNS and nft need no secret (I-CCC-13)
+      XG_CCC_IP: ${XG_CCC_IP:-}
+      XG_NETWORK_MODE: ${XG_NETWORK_MODE:-proxy_only}
     volumes:
       - xg_local_net:/var/lib/xephyguard/net
       - ./docker/unbound-local.conf:/etc/unbound/unbound-local.conf.tmpl:ro
@@ -80,7 +84,11 @@ services:
       - 127.0.0.1
       - 8.8.8.8
     restart: unless-stopped
-    env_file: .env.local
+    environment:   # as production: no env_file, so no DB password, APP_KEY or screen secret (I-CCC-13)
+      XG_NETWORK_MODE: ${XG_NETWORK_MODE:-proxy_only}
+      XG_CCC_IP: ${XG_CCC_IP:-}
+      XG_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}   # bearer for /api/internal/net-events (I-PROXY-13)
+      XG_RETENTION_RAW_DAYS: ${XG_RETENTION_RAW_DAYS:-140}
     volumes:
       - xg_local_net:/var/lib/xephyguard/net:ro
       - xg_local_mitmproxy:/home/mitmproxy/.mitmproxy
@@ -103,7 +111,9 @@ services:
     build: { context: .., dockerfile: ccc-deploy/docker/discovery.Dockerfile, network: host }
     network_mode: host
     restart: unless-stopped
-    env_file: .env.local
+    environment:   # only what the reply carries (I-CCC-13)
+      XG_CCC_IP: ${XG_CCC_IP:-}
+      XG_LAB_NAME: ${XG_LAB_NAME:-}
     volumes:
       - xg_local_ca:/var/lib/xephyguard/ca:ro
 
@@ -115,9 +125,12 @@ services:
     # Same as production: -addr is a flag so a .env.local SCREEN_GATEWAY_ADDR cannot widen the bind (I-CCC-1);
     # -trusted-proxy: nginx (same host) passes the verified agent cert from :8443/screen-gw/agent.
     command: ["/usr/local/bin/xephyguard-screen-gateway", "-addr", "127.0.0.1:8082", "-trusted-proxy", "127.0.0.1"]
-    env_file: .env.local
+    # As production: no env_file, so only its own settings and never SCREEN_GATEWAY_DEV_INSECURE (I-CCC-13).
     environment:
+      SCREEN_GATEWAY_SECRET: ${SCREEN_GATEWAY_SECRET}
       SCREEN_GATEWAY_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}  # agent cert -> PC lookup on 127.0.0.1:8000
+      SCREEN_GATEWAY_ISSUER: ${SCREEN_GATEWAY_ISSUER:-xephyguard-ccc}
+      SCREEN_GATEWAY_AUDIENCE: ${SCREEN_GATEWAY_AUDIENCE:-xephyguard-gateway}
 
 volumes:
   xg_local_mysql:

@@ -17,6 +17,9 @@
   install.sh loads the input filter `/etc/nftables.d/xephyguard-proxy-only.nft` (proxy and DNS for the lab subnet
   only) (ccc-deploy Step 3, I-CCC-4).
   `install.sh`, `bootstrap-local.sh` and `docker/*.sh` are shellcheck clean (0.10.0, ccc-deploy Step 8).
+  Only the Laravel containers (`web`, `reverb`, `worker`, `scheduler`) read the whole `.env`, with
+  `DB_ROOT_PASSWORD` blanked; every other service lists its own variables (discovery: `XG_CCC_IP`, `XG_LAB_NAME`),
+  so no non-app container sees `APP_KEY` or the root password (ccc-deploy Step 11, I-CCC-13).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

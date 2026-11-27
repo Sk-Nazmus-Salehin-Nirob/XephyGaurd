@@ -13,6 +13,8 @@
   `http://<ip>:<app port>/downloads`), point to `/enroll` for the Linux install command (Linux) or to `/ca.crt` to
   compare (Windows), and print the CA SHA-256 as lower-case hex without colons, the form the install command,
   `/downloads` and `xephyguard-ccc doctor` use.
+  `docker-compose.local.yml` gives `.env.local` only to the Laravel containers (with `DB_ROOT_PASSWORD` blanked);
+  netpolicy, proxy, discovery and screen-gateway get explicit variables as in production (ccc-deploy Step 11).
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,
