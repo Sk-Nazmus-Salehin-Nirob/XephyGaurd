@@ -23,7 +23,8 @@ install.sh and gateway forwarding were never run on a real two-NIC host, so ever
 - [ ] Step 7: Dedicated interception CA for mitmproxy; the lab root `ca.key` is no longer mounted in the proxy container (fixes I-CCC-3, I-CCC-15; touches F112, F114) [APPROVAL: reverses DECISIONS #11; update DECISIONS.md and THREAT_MODEL.md]
 
 ## Phase 2: Tooling
-- [ ] Step 8: shellcheck clean for `ccc-deploy/*.sh`, `docker/*.sh`, `bin/xephyguard-ccc` (quoting fixes only, no behavior change) (fixes none; touches F112, F113)
+- [x] Step 8: shellcheck clean for `ccc-deploy/*.sh`, `docker/*.sh`, `bin/xephyguard-ccc` (quoting fixes only, no behavior change) (fixes none; touches F112, F113)
+  Done 2026-11-27 with shellcheck 0.10.0 on the LF form of each file (the repo stores LF; a Windows checkout with `core.autocrlf=true` adds CRs, which shellcheck reports as SC1017 on every line, not a real finding). Before: install.sh 4, xephyguard-ccc 12, the other four files 0. Fixes: `source=/dev/null` directives for `/etc/os-release`, `$ENV` and `./.env` (the `.` moved onto its own line between `set -a` and `set +a`, the same commands); install.sh's `ls /sys/class/net | grep -v -E '^(lo|docker|veth|br-)'` became a glob loop with the same prefixes and output (compared on a sample directory); install.sh's `[ ] && [ ] || die` keeps an inline SC2015 disable (die unless both tests pass is what it means); xephyguard-ccc gets one file-wide SC2015 disable with the reason (every doctor check is `test && ok || bad`, and `ok` is a printf that cannot fail, so it already behaves as if/else; rewriting 12 lines was not a quoting fix). After: 0 findings in all six files. F112, F113, FEATURES.md updated. Checked: `bash -n` all six, compose config -q ok, the Step 4 backup harness again.
 - [ ] Step 9: `ruff` clean for `ccc-deploy/services/*.py` (fixes none; touches F8)
 - [ ] Step 10: Add shellcheck to CI (needs approval to edit CI) (fixes none) [APPROVAL]
 

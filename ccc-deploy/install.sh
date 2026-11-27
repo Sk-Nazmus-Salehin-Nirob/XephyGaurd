@@ -30,11 +30,12 @@ while [ $# -gt 0 ]; do
 done
 
 [ "$(id -u)" = 0 ] || die "run with sudo"
+# shellcheck source=/dev/null
 . /etc/os-release
 [ "${ID:-}" = ubuntu ] || warn "tested on Ubuntu 22.04/24.04; continuing on $PRETTY_NAME"
 
 # ---------------------------------------------------------------- network questions
-ifaces=$(ls /sys/class/net | grep -v -E '^(lo|docker|veth|br-)' | tr '\n' ' ' || true)
+ifaces=$(for p in /sys/class/net/*; do n=${p##*/}; case $n in lo*|docker*|veth*|br-*) ;; *) printf '%s ' "$n" ;; esac; done)
 say "Network interfaces: $ifaces"
 default_wan=$(ip route show default | awk '{print $5; exit}' || true)
 WAN_IF=${WAN_IF:-$(ask "Internet-facing interface (WAN)" "$default_wan")}
@@ -42,6 +43,7 @@ default_lan=$(for i in $ifaces; do if [ "$i" != "$WAN_IF" ]; then echo "$i"; bre
 MODE=$(ask "Network mode (gateway|proxy_only)" "$MODE")
 if [ "$MODE" = gateway ]; then
   LAN_IF=${LAN_IF:-$(ask "Lab-facing interface (LAN)" "${default_lan:-}")}
+  # shellcheck disable=SC2015  # intended: die unless both tests pass
   [ -n "$LAN_IF" ] && [ "$LAN_IF" != "$WAN_IF" ] || die "gateway mode needs two different interfaces"
 else
   LAN_IF=${LAN_IF:-$WAN_IF}
@@ -153,7 +155,10 @@ else
   grep -q '^XG_SETUP_TOKEN=' "$ENV" || echo "XG_SETUP_TOKEN=$(rand 24)" >> "$ENV"   # older .env: add the wizard token
   grep -q '^XG_ANALYSIS_TOKEN=.' "$ENV" || echo "XG_ANALYSIS_TOKEN=$(rand 24)" >> "$ENV"   # older .env: scoring token
 fi
-set -a; . "$ENV"; set +a
+set -a
+# shellcheck source=/dev/null
+. "$ENV"
+set +a
 
 # ---------------------------------------------------------------- images, database, CA
 cd "$DEPLOY"

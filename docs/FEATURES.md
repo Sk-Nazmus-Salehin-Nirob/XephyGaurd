@@ -1098,6 +1098,7 @@ Defined in `server/routes/console.php`.
   `proxy` and `netpolicy` get `XG_CCC_IP` and listen there only (Unbound also on 127.0.0.1); in proxy_only mode
   install.sh loads the input filter `/etc/nftables.d/xephyguard-proxy-only.nft` (proxy and DNS for the lab subnet
   only) (ccc-deploy Step 3, I-CCC-4).
+  `install.sh`, `bootstrap-local.sh` and `docker/*.sh` are shellcheck clean (0.10.0, ccc-deploy Step 8).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
@@ -1112,7 +1113,7 @@ Defined in `server/routes/console.php`.
   `backup` runs with `set -e` and `umask 077` (directory 0700, files 0600 from creation), checks that
   `mysqldump` exists in the mysql container, and reports "Backup written" only after a dump that passes `gzip -t`
   and ends with mysqldump's `-- Dump completed` line; any failed step prints what failed and exits 1, and a
-  failed dump is deleted (ccc-deploy Step 4, I-CCC-5, I-CCC-8).
+  failed dump is deleted (ccc-deploy Step 4, I-CCC-5, I-CCC-8). Shellcheck clean (ccc-deploy Step 8).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.
