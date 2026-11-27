@@ -130,6 +130,8 @@ services:
     environment:   # only what the reply carries; no env_file, so no secret reaches this LAN-facing UDP service (I-CCC-13)
       XG_CCC_IP: ${XG_CCC_IP:-}
       XG_LAB_NAME: ${XG_LAB_NAME:-}
+      XG_LAB_SUBNET: ${XG_LAB_SUBNET:-}   # only these sources are answered (I-CCC-19)
+      XG_LAN_IF: ${XG_LAN_IF:-}           # bound to the lab interface where the kernel allows it
     volumes: [ "/var/lib/xephyguard/ca:/var/lib/xephyguard/ca:ro" ]
 
   screen-gateway:  # screen WebSocket relay (127.0.0.1:8082 only; LAN reaches it through nginx /screen-gw/)

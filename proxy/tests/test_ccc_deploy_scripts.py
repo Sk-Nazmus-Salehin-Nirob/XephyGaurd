@@ -68,7 +68,81 @@ def test_discovery_fingerprint_of_a_real_certificate(monkeypatch, tmp_path):
     assert discovery.fingerprint() == hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem.decode())).hexdigest()
 
 
+def _fake_socket(queue, sent, opts=None, bind_error=None):
+    class FakeSocket:
+        def __init__(self, *a):
+            self.queue = list(queue)
+
+        def setsockopt(self, level, opt, value):
+            if opt == discovery.SO_BINDTODEVICE:
+                if bind_error:
+                    raise bind_error
+                if opts is not None:
+                    opts.append(value)
+
+        def bind(self, addr):
+            pass
+
+        def recvfrom(self, n):
+            if not self.queue:
+                raise KeyboardInterrupt
+            return self.queue.pop(0)
+
+        def sendto(self, data, addr):
+            sent.append(addr[0])
+
+    return FakeSocket
+
+
+# -- ccc-deploy Step 23 (I-CCC-19): only the lab, bound to its interface, rate-limited per source --
+
+def test_discovery_answers_only_the_lab_subnet_and_binds_the_lab_interface(monkeypatch):
+    monkeypatch.setenv("XG_LAB_SUBNET", "192.168.10.0/24")
+    monkeypatch.setenv("XG_LAN_IF", "enp2s0")
+    sent, opts = [], []
+    queue = [(PROBE, ("203.0.113.9", 1)), (PROBE, ("192.168.10.21", 1)), (PROBE, ("192.168.11.5", 1))]
+    monkeypatch.setattr(discovery.socket, "socket", _fake_socket(queue, sent, opts))
+    with pytest.raises(KeyboardInterrupt):
+        discovery.main()
+    assert sent == ["192.168.10.21"] and opts == [b"enp2s0"]
+
+
+def test_discovery_without_interface_permission_still_filters(monkeypatch, caplog):
+    monkeypatch.setenv("XG_LAB_SUBNET", "10.0.0.0/8")
+    monkeypatch.setenv("XG_LAN_IF", "eth0")
+    sent = []
+    queue = [(PROBE, ("10.1.2.3", 1)), (PROBE, ("8.8.4.4", 1))]
+    monkeypatch.setattr(discovery.socket, "socket", _fake_socket(queue, sent, bind_error=PermissionError(1, "nope")))
+    with pytest.raises(KeyboardInterrupt):
+        discovery.main()
+    assert sent == ["10.1.2.3"] and "filtering by source subnet only" in caplog.text
+
+
+def test_discovery_bad_subnet_stops_at_start(monkeypatch):
+    monkeypatch.setenv("XG_LAB_SUBNET", "not-a-subnet")
+    with pytest.raises(ValueError):
+        discovery.main()
+
+
+def test_rate_limiter_burst_then_refill_per_source():
+    rl = discovery.RateLimiter(rate=0.5, burst=3)
+    assert [rl.allow("10.0.0.1", 0.0) for _ in range(4)] == [True, True, True, False]
+    assert rl.allow("10.0.0.2", 0.0) is True       # other sources are not affected
+    assert rl.allow("10.0.0.1", 1.0) is False      # half a token after 1 s
+    assert rl.allow("10.0.0.1", 2.0) is True       # one token after 2 s
+    assert rl.allow("10.0.0.1", 2.0) is False
+
+
+def test_rate_limiter_memory_is_capped():
+    rl = discovery.RateLimiter(rate=0.5, burst=1, max_sources=3)
+    for i in range(10):
+        rl.allow(f"10.0.0.{i}", 0.0)
+    assert list(rl.buckets) == ["10.0.0.7", "10.0.0.8", "10.0.0.9"]
+
+
 def test_discovery_loop_survives_bad_datagrams_and_send_errors(monkeypatch):
+    monkeypatch.delenv("XG_LAB_SUBNET", raising=False)
+    monkeypatch.delenv("XG_LAN_IF", raising=False)
     sent = []
 
     class FakeSocket:

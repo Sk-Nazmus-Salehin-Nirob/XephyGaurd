@@ -816,7 +816,8 @@ def test_compose_gives_secrets_only_to_the_services_that_use_them():
             assert "APP_KEY" not in env, (f.name, name)
             if name != "mysql":
                 assert not any("DB_ROOT_PASSWORD" in str(v) for v in env.values()), (f.name, name)
-        assert set(services["discovery"]["environment"]) == {"XG_CCC_IP", "XG_LAB_NAME"}, f.name
+        assert set(services["discovery"]["environment"]) == {"XG_CCC_IP", "XG_LAB_NAME", "XG_LAB_SUBNET",
+                                                             "XG_LAN_IF"}, f.name
 
 
 def test_compose_proxy_dns_has_no_public_fallback_by_default():

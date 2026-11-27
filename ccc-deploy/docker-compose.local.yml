@@ -134,6 +134,8 @@ services:
     environment:   # only what the reply carries (I-CCC-13)
       XG_CCC_IP: ${XG_CCC_IP:-}
       XG_LAB_NAME: ${XG_LAB_NAME:-}
+      XG_LAB_SUBNET: ${XG_LAB_SUBNET:-}   # only these sources are answered (I-CCC-19)
+      XG_LAN_IF: ${XG_LAN_IF:-}           # bound to the lab interface where the kernel allows it
     volumes:
       - xg_local_ca:/var/lib/xephyguard/ca:ro
 
