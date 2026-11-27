@@ -16,7 +16,9 @@
   `proxy` and `netpolicy` get `XG_CCC_IP` and listen there only (Unbound also on 127.0.0.1); in proxy_only mode
   install.sh loads the input filter `/etc/nftables.d/xephyguard-proxy-only.nft` (proxy and DNS for the lab subnet
   only) (ccc-deploy Step 3, I-CCC-4).
-  `install.sh`, `bootstrap-local.sh` and `docker/*.sh` are shellcheck clean (0.10.0, ccc-deploy Step 8).
+  `install.sh`, `bootstrap-local.sh` and `docker/*.sh` are shellcheck clean (0.10.0, ccc-deploy Step 8);
+  CI's deploy-config job runs `bash -n` and `shellcheck -x` on them and checks both nftables files with
+  `nft -c` (ccc-deploy Step 10).
   Only the Laravel containers (`web`, `reverb`, `worker`, `scheduler`) read the whole `.env`, with
   `DB_ROOT_PASSWORD` blanked; every other service lists its own variables (discovery: `XG_CCC_IP`, `XG_LAB_NAME`),
   so no non-app container sees `APP_KEY` or the root password (ccc-deploy Step 11, I-CCC-13).

@@ -27,7 +27,17 @@ install.sh and gateway forwarding were never run on a real two-NIC host, so ever
   Done 2026-11-27 with shellcheck 0.10.0 on the LF form of each file (the repo stores LF; a Windows checkout with `core.autocrlf=true` adds CRs, which shellcheck reports as SC1017 on every line, not a real finding). Before: install.sh 4, xephyguard-ccc 12, the other four files 0. Fixes: `source=/dev/null` directives for `/etc/os-release`, `$ENV` and `./.env` (the `.` moved onto its own line between `set -a` and `set +a`, the same commands); install.sh's `ls /sys/class/net | grep -v -E '^(lo|docker|veth|br-)'` became a glob loop with the same prefixes and output (compared on a sample directory); install.sh's `[ ] && [ ] || die` keeps an inline SC2015 disable (die unless both tests pass is what it means); xephyguard-ccc gets one file-wide SC2015 disable with the reason (every doctor check is `test && ok || bad`, and `ok` is a printf that cannot fail, so it already behaves as if/else; rewriting 12 lines was not a quoting fix). After: 0 findings in all six files. F112, F113, FEATURES.md updated. Checked: `bash -n` all six, compose config -q ok, the Step 4 backup harness again.
 - [x] Step 9: `ruff` clean for `ccc-deploy/services/*.py` (fixes none; touches F8)
   Done 2026-11-27 with ruff 0.17.6. With CI's rules (`--select E,F,W --ignore E501,E731`) and with `--isolated` defaults `discovery.py` was already clean; the wider rule set picked up from the local ruff configuration found SIM115 (`open(CA).read()` without a context manager: one file handle left to the GC per reply) and LOG015 twice (root logger). Now `with open(CA) as f`, and a module logger `xephyguard.discovery` (the format has no `%(name)s`, so the log lines are unchanged). Not done: `ruff format` (the repo is not ruff-formatted; it would only rewrap the reply dict). F8, FEATURES.md updated. Checked: ruff clean in all three modes; `fingerprint()` imported from the file returns the SHA-256 of a generated cert's DER and `''` for a missing file; compose config -q ok. Datagram validation and the lab-interface bind stay for Steps 22/23.
-- [ ] Step 10: Add shellcheck to CI (needs approval to edit CI) (fixes none) [APPROVAL]
+- [x] Step 10: Add shellcheck to CI (needs approval to edit CI) (fixes none) [APPROVAL]
+  Done 2026-11-27, approved by the owner. `.github/workflows/ci.yml` deploy-config: `bash -n` now loops over every
+  `ccc-deploy/*.sh`, `docker/*.sh`, `bin/xephyguard-ccc`, `bin/xg-env.sh` and the eval harness (before: install.sh,
+  xephyguard-ccc and the harness only); a new step prints `shellcheck --version` and runs `shellcheck -x` on the
+  same ccc-deploy files from the repo root, so the `# shellcheck source=ccc-deploy/bin/xg-env.sh` directives
+  resolve (the runner's preinstalled shellcheck, no download); the nft step also renders and `nft -c`s
+  `proxy/nftables/xephyguard-proxy-only.nft` (Step 3's file) in the same container. `new_setup_scripts/` is not
+  included: it is outside this plan and not shellcheck clean yet. F112, F113, FEATURES.md updated. Checked: the
+  YAML parses (PyYAML), the `bash -n` loop passes locally, shellcheck 0.10.0 `-x` from the root of an LF export
+  of HEAD gives 0 findings (rc 0). Not run here: the workflow itself and the nft checks (no Docker engine; the
+  runner's preinstalled shellcheck may be older than the local 0.10.0; the step prints its version).
 
 ## Phase 3: Config and secrets
 - [x] Step 11: Per-service `env_file`/`environment`: DB root password only to MySQL and the one-shot migrate job; `APP_KEY` only to app containers; discovery and proxy get none (fixes I-CCC-13; touches F112)

@@ -135,10 +135,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: bash -n ccc-deploy/install.sh && bash -n ccc-deploy/bin/xephyguard-ccc && bash -n eval/harness/agent_overhead.sh
+      - run: |
+          for f in ccc-deploy/*.sh ccc-deploy/docker/*.sh ccc-deploy/bin/xephyguard-ccc ccc-deploy/bin/xg-env.sh eval/harness/agent_overhead.sh; do
+            bash -n "$f" || exit 1
+          done
+      - name: shellcheck (ccc-deploy)
+        run: |
+          shellcheck --version
+          shellcheck -x ccc-deploy/*.sh ccc-deploy/docker/*.sh ccc-deploy/bin/xephyguard-ccc ccc-deploy/bin/xg-env.sh
       - run: cp /dev/null ccc-deploy/.env && docker compose -f ccc-deploy/docker-compose.yml config -q
-      - name: nftables ruleset loads
+      - name: nftables rulesets load
         run: |
           sed -e 's|@LAN_IF@|lan0|g; s|@WAN_IF@|wan0|g; s|@CCC_IP@|192.168.10.2|g; s|@LAB_SUBNET@|192.168.10.0/24|g; s|@PROXY_PORT@|8080|g; s|@AGENT_PORT@|8443|g' \
             proxy/nftables/xephyguard.nft > /tmp/x.nft
-          docker run --rm --cap-add NET_ADMIN -v /tmp/x.nft:/x.nft debian:bookworm-slim sh -c 'apt-get update -qq && apt-get install -y -qq nftables >/dev/null && nft -c -f /x.nft'
+          sed -e 's|@LAB_SUBNET@|192.168.10.0/24|g' proxy/nftables/xephyguard-proxy-only.nft > /tmp/p.nft
+          docker run --rm --cap-add NET_ADMIN -v /tmp/x.nft:/x.nft -v /tmp/p.nft:/p.nft debian:bookworm-slim sh -c 'apt-get update -qq && apt-get install -y -qq nftables >/dev/null && nft -c -f /x.nft && nft -c -f /p.nft'
