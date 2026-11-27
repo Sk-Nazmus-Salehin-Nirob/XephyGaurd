@@ -228,18 +228,19 @@ fi
 xg_info "Starting MySQL container..."
 "${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d mysql
 
-DB_ROOT_PW="$(xg_read_env "$ENV_FILE" DB_ROOT_PASSWORD)"
-DB_PASS="$(xg_read_env "$ENV_FILE" DB_PASSWORD)"
+# MYSQL_PWD from the mysql container's own env, inside its shell: no password in any argv (ccc-deploy I-CCC-20).
+# shellcheck disable=SC2016  # expanded by the container's sh, on purpose
+mysql_root() { "${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec "$@"' sh "$@"; }
+# shellcheck disable=SC2016
+mysql_app() { "${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" exec "$@"' sh "$@"; }
 
 for _ in {1..45}; do
-  if "${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T mysql \
-      mysqladmin ping -h 127.0.0.1 -uroot "-p${DB_ROOT_PW}" >/dev/null 2>&1; then
+  if mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null 2>&1; then
     break
   fi
   sleep 2
 done
-"${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T mysql \
-  mysqladmin ping -h 127.0.0.1 -uroot "-p${DB_ROOT_PW}" >/dev/null 2>&1 || xg_die "MySQL failed to become healthy."
+mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null 2>&1 || xg_die "MySQL failed to become healthy."
 
 # ---- CA & mitmproxy initialization / seeding ----
 HOST_CA_DIR="$SERVER_DIR/storage/app/private/ca"
@@ -284,10 +285,8 @@ xg_info "Running database migrations..."
 "${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm --no-deps --entrypoint php web \
   /var/www/html/artisan migrate --force
 
-USER_COUNT="$("${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T mysql \
-  mysql -uxephyguard "-p${DB_PASS}" xephyguard -Nse "SELECT COUNT(*) FROM users" 2>/dev/null | tr -d ' \r\n' || echo 0)"
-LAB_COUNT="$("${XG_COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T mysql \
-  mysql -uxephyguard "-p${DB_PASS}" xephyguard -Nse "SELECT COUNT(*) FROM labs" 2>/dev/null | tr -d ' \r\n' || echo 0)"
+USER_COUNT="$(mysql_app mysql -uxephyguard xephyguard -Nse "SELECT COUNT(*) FROM users" 2>/dev/null | tr -d ' \r\n' || echo 0)"
+LAB_COUNT="$(mysql_app mysql -uxephyguard xephyguard -Nse "SELECT COUNT(*) FROM labs" 2>/dev/null | tr -d ' \r\n' || echo 0)"
 
 SQLITE_DB="$SERVER_DIR/database/database.sqlite"
 if [[ -f "$SQLITE_DB" ]] && { [[ "${USER_COUNT:-0}" -eq 0 ]] || (( RESEED == 1 )); }; then

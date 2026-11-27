@@ -1,7 +1,7 @@
 -- Optional: monthly RANGE partitioning of the high-volume `events` table (MySQL 8).
 -- MySQL requires the partitioning column in every unique key, so the primary key and the
 -- (agent_id, seq) de-duplication key are rebuilt to include occurred_at. Run during maintenance:
---   docker compose exec -T mysql mysql -uroot -p"$DB_ROOT_PASSWORD" xephyguard < mysql/partition-events.sql
+--   docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot xephyguard' < mysql/partition-events.sql
 -- Dropping an old partition is then an instant retention purge:
 --   ALTER TABLE events DROP PARTITION p2026_01;
 

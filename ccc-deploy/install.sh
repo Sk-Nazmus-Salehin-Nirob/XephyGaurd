@@ -166,7 +166,9 @@ say "Building images (first run takes a few minutes)"
 docker compose build -q
 docker compose up -d mysql
 say "Waiting for MySQL"
-for _ in $(seq 60); do docker compose exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -p"$DB_ROOT_PASSWORD" >/dev/null 2>&1 && break; sleep 2; done
+# MYSQL_PWD from the mysql container's own env, inside its shell: no password in any argv (I-CCC-20).
+mysql_root() { docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec "$@"' sh "$@"; }
+for _ in $(seq 60); do mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null 2>&1 && break; sleep 2; done
 artisan() { docker compose run --rm -T web artisan "$@"; }
 artisan migrate --force
 say "Creating the lab certificate authority"

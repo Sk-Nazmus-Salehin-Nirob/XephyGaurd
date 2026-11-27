@@ -20,6 +20,8 @@
   Only the Laravel containers (`web`, `reverb`, `worker`, `scheduler`) read the whole `.env`, with
   `DB_ROOT_PASSWORD` blanked; every other service lists its own variables (discovery: `XG_CCC_IP`, `XG_LAB_NAME`),
   so no non-app container sees `APP_KEY` or the root password (ccc-deploy Step 11, I-CCC-13).
+  No MySQL password is on a command line: the healthcheck and install.sh run `mysqladmin`/`mysql` through the
+  mysql container's shell with `MYSQL_PWD` from its own `MYSQL_ROOT_PASSWORD`/`MYSQL_PASSWORD` (ccc-deploy Step 12, I-CCC-20).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

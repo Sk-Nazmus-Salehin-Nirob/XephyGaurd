@@ -15,6 +15,8 @@
   `/downloads` and `xephyguard-ccc doctor` use.
   `docker-compose.local.yml` gives `.env.local` only to the Laravel containers (with `DB_ROOT_PASSWORD` blanked);
   netpolicy, proxy, discovery and screen-gateway get explicit variables as in production (ccc-deploy Step 11).
+  `bootstrap-local.sh` and `setup-server-docker.sh` reach MySQL through `mysql_root`/`mysql_app` (`MYSQL_PWD` from
+  the container's env), so no password is on a command line (ccc-deploy Step 12).
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,

@@ -1103,6 +1103,8 @@ Defined in `server/routes/console.php`.
   Only the Laravel containers (`web`, `reverb`, `worker`, `scheduler`) read the whole `.env`, with
   `DB_ROOT_PASSWORD` blanked; every other service lists its own variables (discovery: `XG_CCC_IP`, `XG_LAB_NAME`),
   so no non-app container sees `APP_KEY` or the root password (ccc-deploy Step 11, I-CCC-13).
+  No MySQL password is on a command line: the healthcheck and install.sh run `mysqladmin`/`mysql` through the
+  mysql container's shell with `MYSQL_PWD` from its own `MYSQL_ROOT_PASSWORD`/`MYSQL_PASSWORD` (ccc-deploy Step 12, I-CCC-20).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
@@ -1118,6 +1120,7 @@ Defined in `server/routes/console.php`.
   `mysqldump` exists in the mysql container, and reports "Backup written" only after a dump that passes `gzip -t`
   and ends with mysqldump's `-- Dump completed` line; any failed step prints what failed and exits 1, and a
   failed dump is deleted (ccc-deploy Step 4, I-CCC-5, I-CCC-8). Shellcheck clean (ccc-deploy Step 8).
+  `mysqldump` gets the root password as `MYSQL_PWD` inside the mysql container, not as `-p…` (ccc-deploy Step 12).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.
@@ -1134,6 +1137,8 @@ Defined in `server/routes/console.php`.
   `/downloads` and `xephyguard-ccc doctor` use.
   `docker-compose.local.yml` gives `.env.local` only to the Laravel containers (with `DB_ROOT_PASSWORD` blanked);
   netpolicy, proxy, discovery and screen-gateway get explicit variables as in production (ccc-deploy Step 11).
+  `bootstrap-local.sh` and `setup-server-docker.sh` reach MySQL through `mysql_root`/`mysql_app` (`MYSQL_PWD` from
+  the container's env), so no password is on a command line (ccc-deploy Step 12).
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,

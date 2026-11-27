@@ -67,10 +67,12 @@ backup() (
   dc exec -T mysql sh -c 'command -v mysqldump' >/dev/null 2>&1 \
     || fail "mysqldump not available in the mysql container (is it running? sudo xephyguard-ccc status)"
   # pipefail (top of the script) makes a mysqldump error fail the pipeline; the trailer catches a truncated dump.
-  if ! dc exec -T mysql mysqldump -uroot -p"$DB_ROOT_PASSWORD" --single-transaction xephyguard | gzip > "$db" \
+  # MYSQL_PWD from the mysql container's own env, inside its shell: no password in any argv (I-CCC-20).
+  # shellcheck disable=SC2016  # expanded by the container's sh, on purpose
+  if ! dc exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot --single-transaction xephyguard' | gzip > "$db" \
      || ! gzip -t "$db" || ! gzip -dc "$db" | tail -n 1 | grep -q '^-- Dump completed'; then
     rm -f "$db"
-    fail "database dump failed (wrong DB_ROOT_PASSWORD or MySQL down? sudo xephyguard-ccc logs mysql)"
+    fail "database dump failed (root password changed, or MySQL down? sudo xephyguard-ccc logs mysql)"
   fi
   tar -czf "$out/xephyguard-ca-$ts.tgz" -C /var/lib/xephyguard ca || fail "cannot archive /var/lib/xephyguard/ca"
   cp .env "$out/xephyguard-env-$ts" || fail "cannot copy .env"

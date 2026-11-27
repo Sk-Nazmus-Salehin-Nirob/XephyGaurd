@@ -13,6 +13,7 @@
   `mysqldump` exists in the mysql container, and reports "Backup written" only after a dump that passes `gzip -t`
   and ends with mysqldump's `-- Dump completed` line; any failed step prints what failed and exits 1, and a
   failed dump is deleted (ccc-deploy Step 4, I-CCC-5, I-CCC-8). Shellcheck clean (ccc-deploy Step 8).
+  `mysqldump` gets the root password as `MYSQL_PWD` inside the mysql container, not as `-p…` (ccc-deploy Step 12).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.

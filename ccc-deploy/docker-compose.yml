@@ -35,7 +35,8 @@ services:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
     volumes: [ "/var/lib/xephyguard/mysql:/var/lib/mysql" ]
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_ROOT_PASSWORD}"]
+      # The password comes from the container's own env inside its shell: not in argv or docker inspect (I-CCC-20).
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -uroot"]
       interval: 5s
       retries: 30
 

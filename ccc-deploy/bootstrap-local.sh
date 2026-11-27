@@ -19,18 +19,23 @@ set +a
 dc() {
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
+# MYSQL_PWD from the mysql container's own env, inside its shell: no password in any argv (I-CCC-20).
+# shellcheck disable=SC2016  # expanded by the container's sh, on purpose
+mysql_root() { dc exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec "$@"' sh "$@"; }
+# shellcheck disable=SC2016
+mysql_app() { dc exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" exec "$@"' sh "$@"; }
 
 RESEED="${1:-}"
 
 echo "[1/6] Starting MySQL..."
 dc up -d mysql
 for _ in $(seq 60); do
-    if dc exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -p"$DB_ROOT_PASSWORD" >/dev/null 2>&1; then
+    if mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null 2>&1; then
         break
     fi
     sleep 2
 done
-dc exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -p"$DB_ROOT_PASSWORD" >/dev/null
+mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null
 
 echo "[2/6] Seeding CA, mitmproxy CA, and downloadable artifacts into Compose volumes..."
 dc run --rm -T --no-deps --entrypoint sh \
@@ -75,7 +80,7 @@ dc run --rm -T --no-deps --user 0:0 --entrypoint sh \
 echo "[3/6] Running Laravel migrations on MySQL..."
 dc run --rm -T --no-deps web artisan migrate --force
 
-USER_COUNT=$(dc exec -T mysql mysql -N -B -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" -e "SELECT COUNT(*) FROM users;")
+USER_COUNT=$(mysql_app mysql -N -B -u"$DB_USERNAME" "$DB_DATABASE" -e "SELECT COUNT(*) FROM users;")
 if [ "$RESEED" = "--reseed" ] || [ "$USER_COUNT" -eq 0 ]; then
     echo "[4/6] Importing server/database/database.sqlite into MySQL..."
     dc run --rm -T --no-deps \
