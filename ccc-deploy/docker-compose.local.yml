@@ -112,6 +112,9 @@ services:
     build: { context: .., dockerfile: ccc-deploy/docker/screen-gateway.Dockerfile, network: host }
     network_mode: host
     restart: unless-stopped
+    # Same as production: -addr is a flag so a .env.local SCREEN_GATEWAY_ADDR cannot widen the bind (I-CCC-1);
+    # -trusted-proxy: nginx (same host) passes the verified agent cert from :8443/screen-gw/agent.
+    command: ["/usr/local/bin/xephyguard-screen-gateway", "-addr", "127.0.0.1:8082", "-trusted-proxy", "127.0.0.1"]
     env_file: .env.local
     environment:
       SCREEN_GATEWAY_INTERNAL_TOKEN: ${XG_INTERNAL_TOKEN}  # agent cert -> PC lookup on 127.0.0.1:8000

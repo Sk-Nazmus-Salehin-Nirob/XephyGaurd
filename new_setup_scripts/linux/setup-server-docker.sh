@@ -184,7 +184,7 @@ XG_INTERNAL_URL=http://127.0.0.1:8000
 XG_ANALYSIS_URL=http://127.0.0.1:8090
 XG_ANALYSIS_TOKEN=$(xg_rand_hex 24)
 XG_REQUIRE_MTLS=true
-SCREEN_GATEWAY_ADDR=:8082
+SCREEN_GATEWAY_ADDR=127.0.0.1:8082
 SCREEN_GATEWAY_PORT=8082
 SCREEN_GATEWAY_PATH=/screen-gw
 SCREEN_GATEWAY_ISSUER=xephyguard-ccc
@@ -215,6 +215,8 @@ else
     xg_set_env "$ENV_FILE" TZ "$TZ_NAME"
   fi
   [[ -z "$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_SECRET "")" ]] && xg_set_env "$ENV_FILE" SCREEN_GATEWAY_SECRET "$(xg_rand_hex 32)"
+  # Older files bound the gateway on every interface (I-CCC-1); the LAN reaches it only through nginx /screen-gw/.
+  [[ "$(xg_read_env "$ENV_FILE" SCREEN_GATEWAY_ADDR "")" == ":8082" ]] && xg_set_env "$ENV_FILE" SCREEN_GATEWAY_ADDR "127.0.0.1:8082"
   [[ -z "$(xg_read_env "$ENV_FILE" XG_ANALYSIS_TOKEN "")" ]] && xg_set_env "$ENV_FILE" XG_ANALYSIS_TOKEN "$(xg_rand_hex 24)"
 fi
 

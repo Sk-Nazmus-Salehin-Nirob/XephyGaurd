@@ -1088,6 +1088,9 @@ Defined in `server/routes/console.php`.
   nginx :80 serves only `/ca.crt`, `/notice` and `/build/`; the install script, `/downloads` and the PAC are
   HTTPS only (redirected to :443, ccc-deploy Step 6, I-CCC-2). The install summary prints the CA fingerprint
   and points lab PCs to the pinned install command on `/enroll` (server S-74).
+  The screen gateway listens on `127.0.0.1:8082` only; agents reach it through `wss://<ccc>:8443/screen-gw/agent`
+  (mTLS), browsers through `wss://<ccc>/screen-gw/view`. `SCREEN_GATEWAY_URL` stays empty so the viewer URL
+  follows the HTTPS dashboard host (ccc-deploy Step 2, I-CCC-1).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
@@ -1104,6 +1107,9 @@ Defined in `server/routes/console.php`.
 ### F114. Local dev bootstrap and native run scripts
 - **What:** setup scripts for a new teacher server or lab PC (Docker or native, Linux and Windows),
   and daily start/stop/status scripts.
+  The Docker stack's screen gateway binds `127.0.0.1:8082` only (`-addr` flag in `docker-compose.local.yml`,
+  `SCREEN_GATEWAY_ADDR=127.0.0.1:8082` in a new or re-run `.env.local`); the LAN reaches it only through nginx
+  `/screen-gw/` (ccc-deploy Step 2, I-CCC-1). The native no-nginx "direct HTTP" mode still serves it on `:<gateway port>`.
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,
