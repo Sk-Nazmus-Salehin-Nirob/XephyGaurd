@@ -1115,6 +1115,8 @@ Defined in `server/routes/console.php`.
   fine), writes the lab name single-quoted, and reads `.env` with `xg_env_load` (`ccc-deploy/bin/xg-env.sh`), which
   parses KEY=VALUE instead of running the file as shell (ccc-deploy Step 13, I-CCC-21).
   The proxy takes `network_mode` from state.json; `XG_NETWORK_MODE` is only its default (ccc-deploy Step 14, I-CCC-9).
+  IP forwarding (`/etc/sysctl.d/60-xephyguard.conf`) is set only in gateway mode; a proxy_only install removes that
+  file and leaves the running value alone (ccc-deploy Step 15, I-CCC-29).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
@@ -1132,6 +1134,8 @@ Defined in `server/routes/console.php`.
   failed dump is deleted (ccc-deploy Step 4, I-CCC-5, I-CCC-8). Shellcheck clean (ccc-deploy Step 8).
   `mysqldump` gets the root password as `MYSQL_PWD` inside the mysql container, not as `-p…` (ccc-deploy Step 12).
   It reads `.env` with `xg_env_load` from `$XG_DEPLOY/bin/xg-env.sh` (parsed, never sourced; ccc-deploy Step 13).
+  `doctor` takes the network mode from state.json (ccc-deploy Step 14) and checks IP forwarding only in gateway
+  mode (ccc-deploy Step 15).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.

@@ -90,9 +90,16 @@ fi
 systemctl enable --now docker chrony >/dev/null
 
 # ---------------------------------------------------------------- host networking
-say "Configuring the host (IP forwarding, DNS port 53)"
-echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/60-xephyguard.conf
-sysctl -q -p /etc/sysctl.d/60-xephyguard.conf
+# Only the gateway routes lab traffic; a proxy_only host must not become a router (I-CCC-29).
+if [ "$MODE" = gateway ]; then
+  say "Configuring the host (IP forwarding, DNS port 53)"
+  echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/60-xephyguard.conf
+  sysctl -q -p /etc/sysctl.d/60-xephyguard.conf
+else
+  say "Configuring the host (DNS port 53; no IP forwarding in proxy_only mode)"
+  # An earlier gateway install left this file; the running value is left to the admin.
+  rm -f /etc/sysctl.d/60-xephyguard.conf
+fi
 if systemctl is-active -q systemd-resolved; then
   mkdir -p /etc/systemd/resolved.conf.d
   printf '[Resolve]\nDNSStubListener=no\n' > /etc/systemd/resolved.conf.d/xephyguard.conf

@@ -15,6 +15,8 @@
   failed dump is deleted (ccc-deploy Step 4, I-CCC-5, I-CCC-8). Shellcheck clean (ccc-deploy Step 8).
   `mysqldump` gets the root password as `MYSQL_PWD` inside the mysql container, not as `-p…` (ccc-deploy Step 12).
   It reads `.env` with `xg_env_load` from `$XG_DEPLOY/bin/xg-env.sh` (parsed, never sourced; ccc-deploy Step 13).
+  `doctor` takes the network mode from state.json (ccc-deploy Step 14) and checks IP forwarding only in gateway
+  mode (ccc-deploy Step 15).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.

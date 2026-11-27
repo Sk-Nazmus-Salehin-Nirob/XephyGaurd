@@ -26,8 +26,8 @@ doctor() {
   mode=$(jq -r '.network_mode // empty' /var/lib/xephyguard/net/state.json 2>/dev/null || true)
   XG_NETWORK_MODE=${mode:-${XG_NETWORK_MODE:-gateway}}
   echo "Host (network mode: $XG_NETWORK_MODE)"
-  [ "$(sysctl -n net.ipv4.ip_forward)" = 1 ] && ok "IP forwarding on" || bad "IP forwarding is off" "sudo sysctl -w net.ipv4.ip_forward=1 (install.sh makes it permanent)"
-  if [ "$XG_NETWORK_MODE" = gateway ]; then
+  if [ "$XG_NETWORK_MODE" = gateway ]; then   # forwarding is needed (and checked) only on the gateway (I-CCC-29)
+    [ "$(sysctl -n net.ipv4.ip_forward)" = 1 ] && ok "IP forwarding on" || bad "IP forwarding is off" "sudo sysctl -w net.ipv4.ip_forward=1 (install.sh makes it permanent)"
     nft list table inet xephyguard >/dev/null 2>&1 && ok "nftables gateway rules loaded" || bad "nftables rules missing" "sudo nft -f /etc/nftables.d/xephyguard.nft"
     ip -4 addr show dev "$XG_LAN_IF" | grep -q "inet $XG_CCC_IP/" && ok "$XG_CCC_IP on $XG_LAN_IF" || bad "$XG_CCC_IP is not configured on $XG_LAN_IF" "set a fixed IP with netplan, then sudo netplan apply"
   else
