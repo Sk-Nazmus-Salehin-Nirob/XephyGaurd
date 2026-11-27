@@ -828,6 +828,22 @@ def test_compose_proxy_dns_has_no_public_fallback_by_default():
         assert dns == ["127.0.0.1", "${XG_DNS_FALLBACK:-127.0.0.1}"], f.name
 
 
+def test_compose_hardens_proxy_discovery_and_gateway():
+    """ccc-deploy Step 18 (I-CCC-30): no capabilities beyond what each needs, no privilege gain; the two
+    services that run as nobody also get a read-only root filesystem."""
+    yaml = pytest.importorskip("yaml")
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "ccc-deploy"
+    for f in sorted(deploy.glob("docker-compose*.yml")):
+        services = yaml.safe_load(f.read_text())["services"]
+        for name in ("proxy", "discovery", "screen-gateway"):
+            svc = services[name]
+            assert svc["cap_drop"] == ["ALL"], (f.name, name)
+            assert "no-new-privileges:true" in svc["security_opt"], (f.name, name)
+        assert services["proxy"]["cap_add"] == ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID"], f.name
+        for name in ("discovery", "screen-gateway"):
+            assert services[name]["read_only"] is True and "cap_add" not in services[name], (f.name, name)
+
+
 # -- Step 17 (I-PROXY-29): network_mode comes from the parsed State, the document is read once per digest --
 
 @pytest.mark.parametrize("doc_mode,expected", [("proxy_only", "proxy_only"), ("gateway", "gateway"),

@@ -1122,6 +1122,9 @@ Defined in `server/routes/console.php`.
   `/etc/docker/daemon.json` is merged by `ccc-deploy/bin/xg-docker-daemon.py`: `iptables`/`ip6tables` false, log
   rotation only if no `log-driver` is set, every other key kept; a backup `daemon.json.xephyguard-<time>.bak` first,
   Docker restarted only if the file changed, invalid JSON stops the install untouched (ccc-deploy Step 17, I-CCC-17).
+  `discovery` and `screen-gateway` (both `nobody`) run with `cap_drop: [ALL]`, `no-new-privileges`, a read-only root
+  and a `/tmp` tmpfs; `proxy` with `cap_drop: [ALL]` plus `CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID` (root
+  entrypoint until gosu) and `no-new-privileges`, not read-only (ccc-deploy Step 18, I-CCC-30).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

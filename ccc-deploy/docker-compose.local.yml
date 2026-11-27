@@ -81,6 +81,11 @@ services:
     image: xephyguard/ccc-proxy:local
     build: { context: .., dockerfile: ccc-deploy/docker/proxy.Dockerfile, network: host }
     network_mode: host
+    # The entrypoints run as root only to chown, read the 0640 state.json and gosu to uid 1500: just those
+    # capabilities (I-CCC-30). No read_only: the mitmproxy image's own entrypoint runs usermod on /etc/passwd.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
     dns:   # Unbound only: a public fallback would send every lab lookup out when Unbound fails (I-CCC-28)
       - 127.0.0.1
       - ${XG_DNS_FALLBACK:-127.0.0.1}   # opt in to a fallback resolver by setting it in .env.local
@@ -111,6 +116,11 @@ services:
     image: xephyguard/ccc-discovery:local
     build: { context: .., dockerfile: ccc-deploy/docker/discovery.Dockerfile, network: host }
     network_mode: host
+    # Runs as nobody and writes no files: no capabilities, no privilege gain, read-only root (I-CCC-30).
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
     restart: unless-stopped
     environment:   # only what the reply carries (I-CCC-13)
       XG_CCC_IP: ${XG_CCC_IP:-}
@@ -122,6 +132,11 @@ services:
     image: xephyguard/ccc-screen-gateway:local
     build: { context: .., dockerfile: ccc-deploy/docker/screen-gateway.Dockerfile, network: host }
     network_mode: host
+    # Runs as nobody and writes no files: no capabilities, no privilege gain, read-only root (I-CCC-30).
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
     restart: unless-stopped
     # Same as production: -addr is a flag so a .env.local SCREEN_GATEWAY_ADDR cannot widen the bind (I-CCC-1);
     # -trusted-proxy: nginx (same host) passes the verified agent cert from :8443/screen-gw/agent.
