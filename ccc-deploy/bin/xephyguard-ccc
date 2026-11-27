@@ -5,7 +5,7 @@
 #   logs [svc]    follow logs (web, worker, proxy, netpolicy, analysis, ...)
 #   enroll-key    show the lab enrollment key (--rotate to replace it)
 #   backup DIR    database dump + CA + settings into DIR
-#   update        rebuild images, migrate, restart
+#   update [DIR]  backup (default /var/backups/xephyguard), then rebuild, migrate, restart
 #   artisan ...   run a Laravel artisan command (as www-data)
 # The doctor checks are "test && ok || bad": ok is a printf that cannot fail, so bad runs only when the test fails.
 # shellcheck disable=SC2015
@@ -98,8 +98,13 @@ case "${1:-}" in
   logs) shift; dc logs -f --tail=200 "$@" ;;
   enroll-key) shift; dc exec -T -u www-data web php artisan xephyguard:enroll-key "$@" ;;
   backup) backup "${2:-}" ;;
-  # up runs the one-shot migrate service first; the app roles start only if it succeeds (I-CCC-24).
-  update) dc build && dc up -d ;;
+  # A backup first, the rollback point for a failed migration; no backup, no update (I-CCC-25).
+  # up then runs the one-shot migrate service; the app roles start only if it succeeds (I-CCC-24).
+  update)
+    dir=${2:-/var/backups/xephyguard}
+    echo "Backing up to $dir before the update"
+    backup "$dir" || { echo "Update aborted: the backup failed, nothing was changed" >&2; exit 1; }
+    dc build && dc up -d ;;
   # As www-data, the owner of the app files: a root run would leave root-owned state.json, cache or logs (I-CCC-10).
   artisan) shift; dc exec -u www-data web php artisan "$@" ;;
   *) sed -n '2,10p' "$0" ;;
