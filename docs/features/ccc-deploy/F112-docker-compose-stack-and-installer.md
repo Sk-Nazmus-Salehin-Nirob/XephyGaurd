@@ -22,6 +22,10 @@
   so no non-app container sees `APP_KEY` or the root password (ccc-deploy Step 11, I-CCC-13).
   No MySQL password is on a command line: the healthcheck and install.sh run `mysqladmin`/`mysql` through the
   mysql container's shell with `MYSQL_PWD` from its own `MYSQL_ROOT_PASSWORD`/`MYSQL_PASSWORD` (ccc-deploy Step 12, I-CCC-20).
+  install.sh refuses an answer that is not a plain value (IPv4 address, IPv4/prefix subnet, interface name,
+  gateway|proxy_only, a lab name without quotes, `$`, backticks, backslashes or control characters; non-ASCII is
+  fine), writes the lab name single-quoted, and reads `.env` with `xg_env_load` (`ccc-deploy/bin/xg-env.sh`), which
+  parses KEY=VALUE instead of running the file as shell (ccc-deploy Step 13, I-CCC-21).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

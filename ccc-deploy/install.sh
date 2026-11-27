@@ -54,6 +54,16 @@ CCC_IP=${CCC_IP:-$(ask "CCC address on the lab network" "${cur_ip:-}")}
 SUBNET=${SUBNET:-$(ask "Lab subnet" "$(echo "$CCC_IP" | cut -d. -f1-3).0/24")}
 LAB_NAME=$(ask "Lab name" "$LAB_NAME")
 TZ_NAME=$(timedatectl show -p Timezone --value 2>/dev/null || echo UTC)
+# The answers go into .env, the nft rules (sed) and the CA: only plain values (I-CCC-21).
+ipv4='((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])'
+[[ $CCC_IP =~ ^$ipv4$ ]] || die "CCC address '$CCC_IP' is not an IPv4 address"
+[[ $SUBNET =~ ^$ipv4/(3[0-2]|[12]?[0-9])$ ]] || die "lab subnet '$SUBNET' is not IPv4/prefix (e.g. 192.168.10.0/24)"
+for i in "$LAN_IF" "$WAN_IF"; do [[ $i =~ ^[A-Za-z0-9_.@:-]{1,15}$ ]] || die "interface name '$i' is not valid"; done
+case $MODE in gateway | proxy_only) ;; *) die "network mode must be gateway or proxy_only" ;; esac
+case $LAB_NAME in
+  '' | *[\'\"\$\`\\]* | *[[:cntrl:]]*) die "lab name may not be empty or contain quotes, \$, backticks, backslashes or control characters" ;;
+esac
+[[ $TZ_NAME =~ ^[A-Za-z0-9_+/-]+$ ]] || TZ_NAME=UTC
 if ! ip -4 addr show dev "$LAN_IF" | grep -q "inet $CCC_IP/"; then
   warn "$CCC_IP is not configured on $LAN_IF. Give the CCC a fixed address, e.g. /etc/netplan/60-xephyguard.yaml:"
   cat <<NP
@@ -127,7 +137,7 @@ REVERB_APP_SECRET=$(rand 24)
 REVERB_HOST=127.0.0.1
 REVERB_PORT=8081
 REVERB_SCHEME=http
-XG_LAB_NAME="$LAB_NAME"
+XG_LAB_NAME='$LAB_NAME'
 XG_CCC_IP=$CCC_IP
 XG_LAB_SUBNET=$SUBNET
 XG_LAN_IF=$LAN_IF
@@ -155,10 +165,10 @@ else
   grep -q '^XG_SETUP_TOKEN=' "$ENV" || echo "XG_SETUP_TOKEN=$(rand 24)" >> "$ENV"   # older .env: add the wizard token
   grep -q '^XG_ANALYSIS_TOKEN=.' "$ENV" || echo "XG_ANALYSIS_TOKEN=$(rand 24)" >> "$ENV"   # older .env: scoring token
 fi
-set -a
-# shellcheck source=/dev/null
-. "$ENV"
-set +a
+# Parsed, not sourced: a value is never run as shell (I-CCC-21).
+# shellcheck source=ccc-deploy/bin/xg-env.sh
+. "$DEPLOY/bin/xg-env.sh"
+xg_env_load "$ENV"
 
 # ---------------------------------------------------------------- images, database, CA
 cd "$DEPLOY"

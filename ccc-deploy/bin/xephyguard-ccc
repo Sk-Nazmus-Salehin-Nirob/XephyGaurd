@@ -12,10 +12,10 @@
 set -uo pipefail
 XG_DEPLOY=/opt/xephyguard/ccc-deploy
 cd "$XG_DEPLOY" || { echo "XephyGuard not installed in $XG_DEPLOY"; exit 1; }
-set -a
-# shellcheck source=/dev/null
-. ./.env
-set +a
+# Parsed, not sourced: a value is never run as shell (I-CCC-21).
+# shellcheck source=ccc-deploy/bin/xg-env.sh
+. "$XG_DEPLOY/bin/xg-env.sh" || { echo "missing $XG_DEPLOY/bin/xg-env.sh"; exit 1; }
+xg_env_load ./.env || exit 1
 dc() { docker compose "$@"; }
 ok()   { printf '  \033[32m✔\033[0m %s\n' "$*"; }
 bad()  { printf '  \033[31m✘\033[0m %s\n      → %s\n' "$1" "$2"; FAIL=1; }

@@ -11,10 +11,10 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
-set -a
-# shellcheck source=/dev/null
-. "$ENV_FILE"
-set +a
+# Parsed, not sourced: a value is never run as shell (I-CCC-21).
+# shellcheck source=ccc-deploy/bin/xg-env.sh
+. "$DEPLOY_DIR/bin/xg-env.sh"
+xg_env_load "$ENV_FILE"
 
 dc() {
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
