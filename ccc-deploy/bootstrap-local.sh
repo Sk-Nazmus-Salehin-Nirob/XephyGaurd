@@ -35,7 +35,10 @@ for _ in $(seq 60); do
     fi
     sleep 2
 done
-mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null
+if ! mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null 2>&1; then   # I-CCC-16: a clear stop
+    echo "MySQL did not start within 2 minutes; see: docker compose -f $COMPOSE_FILE logs mysql" >&2
+    exit 1
+fi
 
 echo "[2/6] Seeding CA, mitmproxy CA, and downloadable artifacts into Compose volumes..."
 dc run --rm -T --no-deps --entrypoint sh \

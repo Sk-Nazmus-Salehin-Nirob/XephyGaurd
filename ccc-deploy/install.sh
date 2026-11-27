@@ -186,6 +186,9 @@ say "Waiting for MySQL"
 # MYSQL_PWD from the mysql container's own env, inside its shell: no password in any argv (I-CCC-20).
 mysql_root() { docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec "$@"' sh "$@"; }
 for _ in $(seq 60); do mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null 2>&1 && break; sleep 2; done
+# After about 2 minutes, stop here instead of failing later in migrate with a confusing error (I-CCC-16).
+mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null 2>&1 \
+  || die "MySQL did not start within 2 minutes; see: docker compose -f $DEPLOY/docker-compose.yml logs mysql"
 artisan() { docker compose run --rm -T web artisan "$@"; }
 docker compose run --rm -T migrate   # the one-shot migrate service; later `run web` calls depend on it (I-CCC-24)
 say "Creating the lab certificate authority"

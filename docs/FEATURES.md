@@ -1139,6 +1139,8 @@ Defined in `server/routes/console.php`.
   Migrations run only in the one-shot `migrate` service (`artisan migrate --force`, `restart: "no"`); web, reverb,
   worker and scheduler start after it completes successfully; the web entrypoint no longer migrates
   (ccc-deploy Step 21, I-CCC-24).
+  If MySQL does not answer within about 2 minutes, install.sh (and bootstrap-local.sh) stop with "MySQL did not
+  start" and the `logs mysql` command, instead of failing later in migrate (ccc-deploy Step 24, I-CCC-16).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
