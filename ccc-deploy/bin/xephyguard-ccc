@@ -42,9 +42,18 @@ doctor() {
     [ "$st" = running ] && ok "$s running" || bad "$s is ${st:-not running}" "sudo xephyguard-ccc logs $s"
   done
   dig +time=2 +tries=1 @127.0.0.1 example.com A +short >/dev/null && ok "DNS resolver answers" || bad "DNS resolver not answering" "sudo xephyguard-ccc logs netpolicy (is something else using port 53?)"
-  [ -z "$(dig +short @127.0.0.1 dns.google A)" ] && ok "DoH resolvers are sinkholed" || bad "dns.google still resolves" "check /var/lib/xephyguard/net/unbound-xephyguard.conf"
+  # NXDOMAIN is the sinkhole; no answer at all is a failure too, not a pass (I-CCC-23).
+  doh=$(dig +time=2 +tries=1 +noall +comments @127.0.0.1 dns.google A 2>/dev/null || true)
+  case $doh in
+    *"status: NXDOMAIN"*) ok "DoH resolvers are sinkholed" ;;
+    *"status: NOERROR"*)  bad "dns.google still resolves" "check /var/lib/xephyguard/net/unbound-xephyguard.conf" ;;
+    *)                    bad "DoH sinkhole not checked: no answer from the resolver" "sudo xephyguard-ccc logs netpolicy" ;;
+  esac
   (exec 3<>"/dev/tcp/$XG_CCC_IP/8080") 2>/dev/null && ok "Proxy listening on $XG_CCC_IP:8080" || bad "Proxy not listening" "sudo xephyguard-ccc logs proxy"
-  curl -sk --max-time 3 "https://127.0.0.1/up" >/dev/null && ok "Dashboard reachable" || bad "Dashboard not reachable on 443" "sudo xephyguard-ccc logs web"
+  # Verified against the lab CA under the certificate's name, never curl -k (I-CCC-22).
+  curl -sf --max-time 3 --cacert /var/lib/xephyguard/ca/ca.crt --resolve xephyguard-ccc:443:127.0.0.1 \
+    "https://xephyguard-ccc/up" >/dev/null && ok "Dashboard reachable (TLS verified with the lab CA)" \
+    || bad "Dashboard not reachable on 443 with a certificate from the lab CA" "sudo xephyguard-ccc logs web"
   # The fingerprint operators compare with the one in the Linux install command and on the Downloads page (I-CCC-2).
   if fp=$(openssl x509 -in /var/lib/xephyguard/ca/ca.crt -noout -fingerprint -sha256 2>/dev/null); then
     ok "Lab CA fingerprint (SHA-256): $(printf '%s' "${fp#*=}" | tr -d ':' | tr 'A-F' 'a-f')"

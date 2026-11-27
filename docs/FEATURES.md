@@ -1166,6 +1166,9 @@ Defined in `server/routes/console.php`.
   if it succeeds (ccc-deploy Step 21).
   `doctor`'s "netpolicy running" now also means the policy watcher runs: the container exits when it does
   (ccc-deploy Step 25).
+  The dashboard check verifies TLS with the lab CA (`--cacert`, `--resolve xephyguard-ccc:443:127.0.0.1`, `-f`),
+  never `curl -k`; the DoH check passes only on an NXDOMAIN for `dns.google` and fails when the resolver gives no
+  answer (ccc-deploy Step 26, I-CCC-22, I-CCC-23).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.
