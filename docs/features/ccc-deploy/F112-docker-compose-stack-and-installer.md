@@ -38,6 +38,8 @@
   and a `/tmp` tmpfs; `proxy` with `cap_drop: [ALL]` plus `CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID` (root
   entrypoint until gosu) and `no-new-privileges`, not read-only (ccc-deploy Step 18, I-CCC-30).
   `analysis` gets `XG_ANALYSIS_BIND: 127.0.0.1` in both compose files (ccc-deploy Step 19, I-CCC-18).
+  Every base image (`docker/*.Dockerfile`, `mysql` in both compose files) is pinned as `name:exact-tag@sha256:…`,
+  and the gateway build uses `GOTOOLCHAIN=local` (ccc-deploy Step 20, I-CCC-14; updating them is Step 32).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

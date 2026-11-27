@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import pathlib
+import re
 
 import pytest
 
@@ -16,6 +17,27 @@ def _load(name, rel):
 
 
 daemon = _load("xg_docker_daemon", "ccc-deploy/bin/xg-docker-daemon.py")
+
+
+# -- ccc-deploy Step 20 (I-CCC-14): base images pinned by exact tag and digest, no toolchain download --
+
+PINNED = re.compile(r"^[\w./-]+:[\w.-]*\d[\w.-]*@sha256:[0-9a-f]{64}$")
+
+
+def test_every_base_image_is_pinned_by_tag_and_digest():
+    images = []
+    for f in sorted((ROOT / "ccc-deploy/docker").glob("*.Dockerfile")):
+        images += [(f.name, ln.split()[1]) for ln in f.read_text().splitlines() if ln.startswith("FROM ")]
+    for f in sorted((ROOT / "ccc-deploy").glob("docker-compose*.yml")):
+        images += [(f.name, ln.split("image:", 1)[1].strip()) for ln in f.read_text().splitlines()
+                   if ln.strip().startswith("image:") and "xephyguard/" not in ln]
+    assert len(images) >= 11
+    assert [i for i in images if not PINNED.match(i[1])] == []
+
+
+def test_go_builds_never_download_a_toolchain():
+    text = (ROOT / "ccc-deploy/docker/screen-gateway.Dockerfile").read_text()
+    assert "ENV GOTOOLCHAIN=local" in text and "GOTOOLCHAIN=auto" not in text
 
 
 # -- ccc-deploy Step 17 (I-CCC-17): daemon.json is merged, never overwritten --

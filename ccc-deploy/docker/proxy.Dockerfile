@@ -1,4 +1,4 @@
-FROM mitmproxy/mitmproxy:12
+FROM mitmproxy/mitmproxy:12.3.1@sha256:2711066c855659b5af8b1dbb84494ed3eff69b42ece439c60b4fe09a2db829d4
 # Dedicated uid/gid 1500 (owner of the CA bundle on the host, see install.sh).
 RUN groupmod -o -g 1500 mitmproxy && usermod -o -u 1500 -g 1500 mitmproxy && chown -R 1500:1500 /home/mitmproxy
 COPY proxy/xg_netpolicy /opt/xephyguard/proxy/xg_netpolicy

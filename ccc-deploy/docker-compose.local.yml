@@ -21,7 +21,7 @@ x-app: &app
 
 services:
   mysql:
-    image: mysql:8.4
+    image: mysql:8.4.13@sha256:8c233bad33d520a7aae1c1e619c3a9775f4a1ba2d463d692fada04ec7f40be00
     network_mode: host
     restart: unless-stopped
     command: ["--bind-address=127.0.0.1", "--port=3306", "--mysqlx=OFF", "--innodb-buffer-pool-size=512M", "--default-time-zone=${DB_TIMEZONE:-+00:00}"]
