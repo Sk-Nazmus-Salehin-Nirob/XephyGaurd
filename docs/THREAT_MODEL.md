@@ -13,7 +13,7 @@ Red-team scenario ids refer to `eval/scenarios/*.yaml`; measured outcomes go in 
 | # | Bypass attempt | Prevented by | Detected by | Residual risk | Scenario |
 |---|---|---|---|---|---|
 | 1 | Open a chatbot / LLM API | DNS sinkhole (Unbound view) + SNI filter at the gateway | blocked attempt logged (net_events), counted in score | new AI domains not on the list → keep lists updated, import community lists | web.*, api.openai |
-| 2 | Google AI Overview / Bing Copilot | `udm=14` rewrite + CSS fallback on inspected hosts; Bing chat path rules | `search-ai rewritten` events | markup changes; PCs without the lab CA get no inspection → `live_checks/google_ai_overview.py` weekly | search.ai_overview |
+| 2 | Google AI Overview / Bing Copilot | `udm=14` rewrite + CSS fallback on inspected hosts; Bing chat path rules | `search-ai rewritten` events | markup changes; PCs without the interception CA get no inspection → `live_checks/google_ai_overview.py` weekly | search.ai_overview |
 | 3 | Change browser/system proxy settings | gateway mode: traffic is redirected regardless of PC settings; proxy-only mode: PAC pushed by browser policy, fetched over HTTPS from the lab CA (a LAN host cannot swap it; the CCC never serves it over plain HTTP, S-52), and with no `DIRECT` fallback for PCs in a Test session or isolated (fails closed if the proxy is unreachable) | – | in a session the proxy-only **network lock** (DECISIONS #23) backs the PAC on the PC: `strict` drops every public destination except the CCC, so ignoring the PAC means no Internet; proxy-only mode is still weaker: a student with local admin can remove the browser policy; outside Test mode the PAC keeps `DIRECT` so a proxy outage does not cut the lab off | bypass.proxy_env |
 | 4 | VPN / Tor / web proxy | gateway: strict egress in Test (only 80/443 via proxy); block_ai PCs dropped towards VPN/tunnel ports (`vpn_ports` in data/network/proxy.yaml); VPN/Tor/proxy domains blocked. proxy-only: network lock `strict` drops every public destination except the CCC | VPN client processes, tun/wg adapters (`net.vpn_*`); in a session, TCP connections to a public host on a tunnel port (`net.tunnel_flow`, ports in web.yaml) | VPN over TCP 443 to an unlisted IP passes the SNI layer if it mimics TLS with a benign SNI | bypass.vpn_tun, bypass.tor |
 | 5 | DoH / DoT / public DNS | DNS DNAT to the CCC; resolver IPs and port 853 dropped; DoH hostnames sinkholed; browser policy `DnsOverHttpsMode=off` | blocked attempts | private DoH on an unknown host:443 | bypass.doh, bypass.dot, bypass.public_dns |
@@ -53,7 +53,13 @@ Red-team scenario ids refer to `eval/scenarios/*.yaml`; measured outcomes go in 
 * Lab users are **standard users** (no sudo / local admin). With admin rights every agent-side
   control can be disabled; the gateway layers still apply.
 * The CCC host and its CA key are trusted. Backups (`xephyguard-ccc backup`) contain the CA key.
-* The mitmproxy container holds the CA key to mint interception certificates (decision 11).
+* The mitmproxy container holds only its own interception CA key (decision 31), never the lab CA key. A
+  compromised proxy can mint certificates that the lab PCs' browsers accept for the sites it intercepts, but
+  not certificates for the CCC's own names (excluded name constraints, where the client honours them on a
+  root), and nothing the agent trusts: the agent's TLS, its client certificates (nginx `ssl_verify_depth 1`)
+  and the signature bundles all depend on the lab CA only. The interception CA is replaced by re-running
+  `xephyguard-ccc update` after deleting `/var/lib/xephyguard/mitmproxy/mitmproxy-ca.pem`; agents follow the
+  policy.
 
 ## Privacy threats (abuse of the monitoring itself)
 * Over-collection → tiered modes, title capture off/app-only by default, numeric reduction on the PC.

@@ -7,6 +7,9 @@
 - **What:** `doctor`, `status`, `logs [svc]`, `enroll-key`, `backup DIR` (DB dump + CA + storage + interception CA + settings),
   `update` (build, migrate, restart), `artisan …`.
   `doctor` also prints the lab CA SHA-256 fingerprint to compare with the install command (ccc-deploy Step 6).
+  `doctor` fails when the proxy's bundle is missing or its key is the lab root's; `update` runs
+  `bin/xg-interception-ca.sh` after the backup (same names as install.sh), so an older install gets its own
+  interception CA, and restarts the proxy when the CA was created (ccc-deploy Step 7, I-CCC-3).
   `doctor` probes the proxy on `$XG_CCC_IP:8080` (it no longer listens on loopback) and, in proxy_only mode,
   checks that the `inet xephyguard_input` table is loaded (ccc-deploy Step 3).
   `backup` runs with `set -e` and `umask 077` (directory 0700, files 0600 from creation), checks that

@@ -40,6 +40,19 @@ if ! mysql_root mysqladmin ping -h 127.0.0.1 -uroot >/dev/null 2>&1; then   # I-
     exit 1
 fi
 
+# The proxy's own interception CA, made on this host from the lab ca.crt only; the lab ca.key never goes to
+# the proxy and there is no fallback to it (I-CCC-3, I-CCC-15). Written before the CA volume is seeded so the
+# server can publish interception-ca.crt (S-75). install.sh's excluded names plus the loopback ones.
+CA_SRC="$REPO_ROOT/server/storage/app/private/ca"
+MITM_SRC="$REPO_ROOT/server/storage/app/private/mitmproxy"
+ica_names=("IP:127.0.0.1" "DNS:localhost" "DNS:xephyguard-ccc")
+[ -n "${XG_CCC_IP:-}" ] && ica_names+=("IP:$XG_CCC_IP")
+ica=$(bash "$DEPLOY_DIR/bin/xg-interception-ca.sh" "$MITM_SRC" "$CA_SRC" "${ica_names[@]}") || {
+    echo "Could not create the proxy's interception CA (needs openssl and $CA_SRC/ca.crt)" >&2
+    exit 1
+}
+echo "Proxy interception CA: $ica"
+
 echo "[2/6] Seeding CA, mitmproxy CA, and downloadable artifacts into Compose volumes..."
 dc run --rm -T --no-deps --entrypoint sh \
     -v "$REPO_ROOT/server/storage/app/private/ca:/src/ca:ro" \
@@ -60,20 +73,12 @@ dc run --rm -T --no-deps --entrypoint sh \
     '
 
 dc run --rm -T --no-deps --user 0:0 --entrypoint sh \
-    -v "$REPO_ROOT/server/storage/app/private/ca:/src/ca:ro" \
+    -v "$MITM_SRC:/src/mitm:ro" \
     proxy -eu -c '
         mkdir -p /home/mitmproxy/.mitmproxy
-        if [ -f /src/ca/ca.key ] && [ -f /src/ca/ca.crt ]; then
-            cat /src/ca/ca.key /src/ca/ca.crt > /home/mitmproxy/.mitmproxy/mitmproxy-ca.pem
-            cp /src/ca/ca.crt /home/mitmproxy/.mitmproxy/mitmproxy-ca-cert.pem
-        elif [ -f /src/ca/mitmproxy-ca.pem ]; then
-            cp /src/ca/mitmproxy-ca.pem /home/mitmproxy/.mitmproxy/mitmproxy-ca.pem
-            if [ -f /src/ca/interception-ca.crt ]; then
-                cp /src/ca/interception-ca.crt /home/mitmproxy/.mitmproxy/mitmproxy-ca-cert.pem
-            else
-                cp /src/ca/mitmproxy-ca.pem /home/mitmproxy/.mitmproxy/mitmproxy-ca-cert.pem
-            fi
-        fi
+        # Only the interception CA is mounted here, never the lab CA directory (I-CCC-15).
+        rm -f /home/mitmproxy/.mitmproxy/mitmproxy-ca.p12 /home/mitmproxy/.mitmproxy/mitmproxy-ca-cert.p12 /home/mitmproxy/.mitmproxy/mitmproxy-ca-cert.cer
+        cp /src/mitm/mitmproxy-ca.pem /src/mitm/mitmproxy-ca-cert.pem /home/mitmproxy/.mitmproxy/
         chown -R 1500:1500 /home/mitmproxy/.mitmproxy
         chmod 0700 /home/mitmproxy/.mitmproxy
         chmod 0600 /home/mitmproxy/.mitmproxy/mitmproxy-ca.pem

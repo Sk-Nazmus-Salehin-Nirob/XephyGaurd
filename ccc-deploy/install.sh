@@ -194,10 +194,16 @@ docker compose run --rm -T migrate   # the one-shot migrate service; later `run 
 say "Creating the lab certificate authority"
 artisan xephyguard:ca:init --server-ip="$CCC_IP" --server-dns=xephyguard-ccc --server-dns="$(hostname)"
 chown 33:33 "$STATE/ca"/ca.key "$STATE/ca"/server.key && chmod 0600 "$STATE/ca"/*.key && chmod 0644 "$STATE/ca"/*.crt
-# The transparent proxy signs on-the-fly certificates with the lab CA (key never leaves the CCC).
-cat "$STATE/ca/ca.key" "$STATE/ca/ca.crt" > "$STATE/mitmproxy/mitmproxy-ca.pem"
-cp "$STATE/ca/ca.crt" "$STATE/mitmproxy/mitmproxy-ca-cert.pem"
-chown 1500:1500 "$STATE/mitmproxy"/mitmproxy-ca*.pem && chmod 0600 "$STATE/mitmproxy/mitmproxy-ca.pem"
+# The transparent proxy signs on-the-fly certificates with its own interception CA, never the lab root:
+# ca.key stays out of the proxy container (I-CCC-3). Agents install the CA from the policy (server S-75).
+# The CCC's own names are excluded name constraints (the server certificate has the same SANs).
+ica_names=("IP:$CCC_IP" "DNS:xephyguard-ccc")
+hn=$(hostname)
+[[ $hn =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] && ica_names+=("DNS:$hn")
+ica=$(bash "$DEPLOY/bin/xg-interception-ca.sh" "$STATE/mitmproxy" "$STATE/ca" "${ica_names[@]}") \
+  || die "could not create the proxy's interception CA ($DEPLOY/bin/xg-interception-ca.sh)"
+say "Proxy interception CA: $ica"
+chown 1500:1500 "$STATE/mitmproxy" "$STATE/mitmproxy"/mitmproxy-ca*.pem
 artisan xephyguard:bootstrap
 
 # ---------------------------------------------------------------- firewall

@@ -136,13 +136,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
-          for f in ccc-deploy/*.sh ccc-deploy/docker/*.sh ccc-deploy/bin/xephyguard-ccc ccc-deploy/bin/xg-env.sh eval/harness/agent_overhead.sh; do
+          for f in ccc-deploy/*.sh ccc-deploy/docker/*.sh ccc-deploy/bin/*.sh ccc-deploy/bin/xephyguard-ccc eval/harness/agent_overhead.sh; do
             bash -n "$f" || exit 1
           done
       - name: shellcheck (ccc-deploy)
         run: |
           shellcheck --version
-          shellcheck -x ccc-deploy/*.sh ccc-deploy/docker/*.sh ccc-deploy/bin/xephyguard-ccc ccc-deploy/bin/xg-env.sh
+          shellcheck -x ccc-deploy/*.sh ccc-deploy/docker/*.sh ccc-deploy/bin/*.sh ccc-deploy/bin/xephyguard-ccc
       - run: cp /dev/null ccc-deploy/.env && docker compose -f ccc-deploy/docker-compose.yml config -q
       - name: nftables rulesets load
         run: |

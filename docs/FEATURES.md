@@ -86,12 +86,13 @@ Paths are relative to the repo root. `S/` = `server/app/`, `A/` = `agent/`.
 - **In/out/side effects:** writes the CA key and cert to `XG_CA_DIR` (default
   `storage/app/private/ca`), server cert/key files.
 - **Status:** working (used by the enrollment and signature tests). ⚠SEC the same CA key also
-  signs bundles and sits in the proxy container (`docs/HISTORY.md`, batch 5).
+  signed bundles and sat in the proxy container until ccc-deploy Step 7 (`docs/HISTORY.md`, batch 5).
   The proxy's own interception CA (`XG_CA_DIR/interception-ca.crt`, certificate only, a separate self-signed root
   because the lab CA's `pathlen:0` allows no intermediate) is published when present: `interception_ca_sha256` in
   the agent policy, its PEM as `interception_ca` in the policy response, `GET /interception-ca.crt`, and its
-  fingerprint on Downloads; a file that is not a CA certificate counts as none (S-75). The proxy still uses the lab
-  CA until ccc-deploy Step 7 creates that file and switches mitmproxy to it.
+  fingerprint on Downloads; a file that is not a CA certificate counts as none (S-75). ccc-deploy install.sh,
+  `xephyguard-ccc update` and bootstrap-local.sh create it, and mitmproxy signs with it instead of the lab CA
+  (ccc-deploy Step 7, DECISIONS #31).
 - **Test:** 1. `php artisan xephyguard:ca:init --server-ip=127.0.0.1`. 2. `curl -s localhost:8000/ca.crt | openssl x509 -noout -subject -fingerprint -sha256`.
 
 ### F4. CCC doctor (self-check)
@@ -1162,6 +1163,12 @@ Defined in `server/routes/console.php`.
   For a partitioned `events` table, `mysql/partition-maintenance.sql` (run once, repeatable) adds the procedure
   `xg_extend_event_partitions(n)` and a monthly MySQL event that keeps partitions three months ahead, so events
   never pile up in `pmax` (ccc-deploy Step 31, I-CCC-27).
+  mitmproxy signs with its own interception CA, never the lab root: install.sh runs `bin/xg-interception-ca.sh`
+  (self-signed EC P-256, `pathlen:0`, name constraints excluding `XG_CCC_IP`, `xephyguard-ccc` and the host
+  name), which writes `/var/lib/xephyguard/mitmproxy/mitmproxy-ca.pem` (0600, uid 1500) and the certificate to
+  `/var/lib/xephyguard/ca/interception-ca.crt` for the server to publish; it keeps a valid one and replaces a
+  lab-root bundle from an older install, a non-CA, one near expiry or one with other excluded names
+  (ccc-deploy Step 7, I-CCC-3, DECISIONS #31).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
@@ -1171,6 +1178,9 @@ Defined in `server/routes/console.php`.
 - **What:** `doctor`, `status`, `logs [svc]`, `enroll-key`, `backup DIR` (DB dump + CA + storage + interception CA + settings),
   `update` (build, migrate, restart), `artisan …`.
   `doctor` also prints the lab CA SHA-256 fingerprint to compare with the install command (ccc-deploy Step 6).
+  `doctor` fails when the proxy's bundle is missing or its key is the lab root's; `update` runs
+  `bin/xg-interception-ca.sh` after the backup (same names as install.sh), so an older install gets its own
+  interception CA, and restarts the proxy when the CA was created (ccc-deploy Step 7, I-CCC-3).
   `doctor` probes the proxy on `$XG_CCC_IP:8080` (it no longer listens on loopback) and, in proxy_only mode,
   checks that the `inet xephyguard_input` table is loaded (ccc-deploy Step 3).
   `backup` runs with `set -e` and `umask 077` (directory 0700, files 0600 from creation), checks that
@@ -1221,6 +1231,10 @@ Defined in `server/routes/console.php`.
   a native CCC without Nginx has no HTTPS, so there `--deb` is needed (server S-74 follow-up).
   `setup-server-docker.sh` refuses a lab name with quotes, `$`, backticks, backslashes or control characters and
   writes it single-quoted into `.env.local`, as install.sh does (ccc-deploy Step 13 follow-up).
+  `bootstrap-local.sh` creates the proxy's interception CA on the host with `bin/xg-interception-ca.sh` (into
+  `server/storage/app/private/mitmproxy`, `interception-ca.crt` next to the lab `ca.crt`) and mounts only that
+  folder into the proxy seed container; without openssl or the lab `ca.crt` it stops, with no fallback to the lab
+  `ca.key` (ccc-deploy Step 7, I-CCC-15). `setup-server-docker.sh` still builds its own bundle (follow-up).
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,

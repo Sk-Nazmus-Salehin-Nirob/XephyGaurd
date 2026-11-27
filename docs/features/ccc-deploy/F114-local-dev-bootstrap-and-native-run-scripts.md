@@ -25,6 +25,10 @@
   a native CCC without Nginx has no HTTPS, so there `--deb` is needed (server S-74 follow-up).
   `setup-server-docker.sh` refuses a lab name with quotes, `$`, backticks, backslashes or control characters and
   writes it single-quoted into `.env.local`, as install.sh does (ccc-deploy Step 13 follow-up).
+  `bootstrap-local.sh` creates the proxy's interception CA on the host with `bin/xg-interception-ca.sh` (into
+  `server/storage/app/private/mitmproxy`, `interception-ca.crt` next to the lab `ca.crt`) and mounts only that
+  folder into the proxy seed container; without openssl or the lab `ca.crt` it stops, with no fallback to the lab
+  `ca.key` (ccc-deploy Step 7, I-CCC-15). `setup-server-docker.sh` still builds its own bundle (follow-up).
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,

@@ -5,7 +5,7 @@
 #   logs [svc]    follow logs (web, worker, proxy, netpolicy, analysis, ...)
 #   enroll-key    show the lab enrollment key (--rotate to replace it)
 #   backup DIR    database dump + CA + settings into DIR
-#   update [DIR]  backup (default /var/backups/xephyguard), then rebuild, migrate, restart
+#   update [DIR]  backup (default /var/backups/xephyguard), proxy CA check, then rebuild, migrate, restart
 #   artisan ...   run a Laravel artisan command (as www-data)
 # The doctor checks are "test && ok || bad": ok is a printf that cannot fail, so bad runs only when the test fails.
 # shellcheck disable=SC2015
@@ -60,6 +60,15 @@ doctor() {
   else
     bad "Lab CA certificate not readable" "sudo xephyguard-ccc logs web (the setup creates /var/lib/xephyguard/ca/ca.crt)"
   fi
+  # The proxy must sign with its own interception CA, never with the lab root key (I-CCC-3).
+  pb=/var/lib/xephyguard/mitmproxy/mitmproxy-ca.pem
+  if ! kp=$(openssl pkey -in "$pb" -pubout 2>/dev/null); then
+    bad "Proxy interception CA missing" "sudo xephyguard-ccc update (creates it)"
+  elif [ "$kp" = "$(openssl x509 -in /var/lib/xephyguard/ca/ca.crt -noout -pubkey 2>/dev/null)" ]; then
+    bad "The proxy holds the lab root CA key" "sudo xephyguard-ccc update (gives the proxy its own interception CA)"
+  else
+    ok "Proxy signs with its own interception CA, not the lab root"
+  fi
   echo "Application"
   dc exec -T -u www-data web php artisan xephyguard:doctor || FAIL=1
   exit $FAIL
@@ -96,6 +105,19 @@ backup() (
   echo "restore: docs/SETUP_CCC.md, Restore)"
 )
 
+# The proxy's own interception CA, with the names install.sh excludes; replaces the lab-root bundle of an
+# install made before it (I-CCC-3) and follows a new CCC IP. Sets ICA to created or unchanged.
+ica_update() {
+  local names=("DNS:xephyguard-ccc") hn
+  [ -n "${XG_CCC_IP:-}" ] && names+=("IP:$XG_CCC_IP")
+  hn=$(hostname)
+  [[ $hn =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] && names+=("DNS:$hn")
+  ICA=$(bash "$XG_DEPLOY/bin/xg-interception-ca.sh" /var/lib/xephyguard/mitmproxy /var/lib/xephyguard/ca "${names[@]}") \
+    || { echo "Update aborted: could not create the proxy's interception CA" >&2; return 1; }
+  chown 1500:1500 /var/lib/xephyguard/mitmproxy /var/lib/xephyguard/mitmproxy/mitmproxy-ca*.pem || return 1
+  echo "Proxy interception CA: $ICA"
+}
+
 case "${1:-}" in
   doctor) doctor ;;
   status) dc ps ;;
@@ -108,7 +130,9 @@ case "${1:-}" in
     dir=${2:-/var/backups/xephyguard}
     echo "Backing up to $dir before the update"
     backup "$dir" || { echo "Update aborted: the backup failed, nothing was changed" >&2; exit 1; }
-    dc build && dc up -d ;;
+    ica_update || exit 1
+    # Only a mounted file changed when the CA is new, so up -d alone would keep the old one loaded.
+    dc build && dc up -d && { [ "$ICA" != created ] || dc restart proxy; } ;;
   # As www-data, the owner of the app files: a root run would leave root-owned state.json, cache or logs (I-CCC-10).
   artisan) shift; dc exec -u www-data web php artisan "$@" ;;
   *) sed -n '2,10p' "$0" ;;

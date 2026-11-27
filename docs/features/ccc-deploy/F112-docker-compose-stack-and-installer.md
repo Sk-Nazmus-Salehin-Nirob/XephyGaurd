@@ -52,6 +52,12 @@
   For a partitioned `events` table, `mysql/partition-maintenance.sql` (run once, repeatable) adds the procedure
   `xg_extend_event_partitions(n)` and a monthly MySQL event that keeps partitions three months ahead, so events
   never pile up in `pmax` (ccc-deploy Step 31, I-CCC-27).
+  mitmproxy signs with its own interception CA, never the lab root: install.sh runs `bin/xg-interception-ca.sh`
+  (self-signed EC P-256, `pathlen:0`, name constraints excluding `XG_CCC_IP`, `xephyguard-ccc` and the host
+  name), which writes `/var/lib/xephyguard/mitmproxy/mitmproxy-ca.pem` (0600, uid 1500) and the certificate to
+  `/var/lib/xephyguard/ca/interception-ca.crt` for the server to publish; it keeps a valid one and replaces a
+  lab-root bundle from an older install, a non-CA, one near expiry or one with other excluded names
+  (ccc-deploy Step 7, I-CCC-3, DECISIONS #31).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
