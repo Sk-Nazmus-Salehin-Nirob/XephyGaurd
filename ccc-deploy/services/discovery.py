@@ -15,13 +15,15 @@ import socket
 import ssl
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+log = logging.getLogger("xephyguard.discovery")
 PORT = int(os.environ.get("XG_DISCOVERY_PORT", "47474"))
 CA = os.environ.get("XG_CA_DIR", "/var/lib/xephyguard/ca") + "/ca.crt"
 
 
 def fingerprint() -> str:
     try:
-        der = ssl.PEM_cert_to_DER_cert(open(CA).read())
+        with open(CA) as f:
+            der = ssl.PEM_cert_to_DER_cert(f.read())
         return hashlib.sha256(der).hexdigest()
     except OSError:
         return ""
@@ -31,7 +33,7 @@ def main() -> None:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", PORT))
-    logging.info("discovery responder on udp/%d", PORT)
+    log.info("discovery responder on udp/%d", PORT)
     while True:
         data, addr = s.recvfrom(2048)
         try:
@@ -43,7 +45,7 @@ def main() -> None:
         reply = {"service": "xephyguard-ccc", "host": os.environ.get("XG_CCC_IP", ""), "api_port": int(os.environ.get("XG_AGENT_PORT", "8443")),
                  "ca_fingerprint": fingerprint(), "lab": os.environ.get("XG_LAB_NAME", "")}
         s.sendto(json.dumps(reply).encode(), addr)
-        logging.info("answered %s", addr[0])
+        log.info("answered %s", addr[0])
 
 
 if __name__ == "__main__":
