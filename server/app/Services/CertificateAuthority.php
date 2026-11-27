@@ -53,6 +53,38 @@ class CertificateAuthority
         return openssl_x509_fingerprint($this->certPem(), 'sha256');
     }
 
+    /**
+     * The proxy's own interception CA (ccc-deploy install.sh writes it; not signed by the lab CA, whose
+     * pathlen:0 forbids intermediates). Only its certificate is here; the key stays with mitmproxy (I-CCC-3).
+     */
+    public function interceptionCertPath(): string
+    {
+        return $this->dir.'/interception-ca.crt';
+    }
+
+    /** The interception CA certificate, or null while there is none (or the file is not a CA certificate). */
+    public function interceptionCertPem(): ?string
+    {
+        $pem = @file_get_contents($this->interceptionCertPath());
+        if ($pem === false || ! str_contains($pem, 'BEGIN CERTIFICATE')) {
+            return null;
+        }
+        $info = @openssl_x509_parse($pem);
+        if (! is_array($info) || stripos((string) ($info['extensions']['basicConstraints'] ?? ''), 'CA:TRUE') === false) {
+            return null;
+        }
+
+        return $pem;
+    }
+
+    /** SHA-256 of the interception CA (same format as fingerprint()), or null while there is none. */
+    public function interceptionFingerprint(): ?string
+    {
+        $pem = $this->interceptionCertPem();
+
+        return $pem === null ? null : openssl_x509_fingerprint($pem, 'sha256');
+    }
+
     public function expiresAt(): ?\DateTimeImmutable
     {
         $info = openssl_x509_parse($this->certPem());

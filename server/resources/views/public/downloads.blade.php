@@ -58,6 +58,13 @@
         <button type="button" class="btn btn-sm" x-show="fp" @click="xgCopy(fp, 'CA fingerprint copied')"><svg class="i i-sm" aria-hidden="true"><use href="#i-copy"/></svg> Copy</button>
       </div>
     </div>
+    @if (! empty($interceptionFingerprint))
+    <div>
+      <div class="cmd-label">Proxy interception CA SHA-256 fingerprint</div>
+      <p class="help">The web proxy's own CA (<a href="{{ route('interception-ca.cert') }}">interception-ca.crt</a>). Enrolled agents install it from the CCC automatically; it only lets browsers accept the inspected search pages and is never used to trust the CCC itself.</p>
+      <div class="key"><code>{{ $interceptionFingerprint }}</code></div>
+    </div>
+    @endif
   </div>
 </section>
 <div class="cols-2">

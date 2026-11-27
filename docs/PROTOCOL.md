@@ -41,6 +41,14 @@ one issued with that token (`AuthenticateAgent`). Per-agent rate limit: 120 requ
 `policy.version` is a deterministic CRC of the policy. Agents refuse signature bundles whose signature
 does not verify against the lab CA and report a `tamper/signature_invalid` event.
 
+`policy.interception_ca_sha256` (lowercase hex SHA-256 of the DER, the same format as the lab CA fingerprint;
+absent while the CCC has none) names the web proxy's own interception CA, a separate self-signed root the PC's
+browsers and OS store must trust for the inspected hosts. The response's top-level `interception_ca` carries its
+PEM (`null` while there is none), so the agent gets it over this pinned mTLS channel; it installs it only when the
+PEM's SHA-256 equals `interception_ca_sha256`, and never uses it to trust the CCC itself (that stays the lab CA).
+An absent field means no interception CA: the agent removes one it installed earlier. The same certificate is
+public at `GET /interception-ca.crt` (404 while there is none).
+
 `policy.screen.privacy_rules` (optional, at most 128 entries) lists windows the live screen view must never show:
 `[{"process": "keepassxc", "title_regex": "bank|incognito"}]`. A window matches an entry when every field that is set
 matches (`process` = executable name, case-insensitive; `title_regex` = case-insensitive regex search over the first

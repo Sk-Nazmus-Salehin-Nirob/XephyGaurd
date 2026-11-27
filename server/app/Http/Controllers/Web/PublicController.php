@@ -41,6 +41,18 @@ class PublicController extends Controller
         ]);
     }
 
+    /** The proxy's interception CA (public, like ca.crt); agents get it over mTLS in the policy response instead (S-75). */
+    public function interceptionCaCert(): Response
+    {
+        $pem = CertificateAuthority::fromConfig()->interceptionCertPem();
+        abort_if($pem === null, 404);
+
+        return response($pem, 200, [
+            'Content-Type' => 'application/x-pem-file',
+            'Content-Disposition' => 'attachment; filename="xephyguard-interception-ca.crt"',
+        ]);
+    }
+
     /** Run as `curl --cacert xg-ca.crt https://<ccc>/install/linux.sh | sudo bash -s -- --key <KEY> --ca-fingerprint <FP>`; see InstallCommand. */
     public function linuxInstaller(): Response
     {
@@ -93,6 +105,7 @@ class PublicController extends Controller
         return response()->view('public.downloads', [
             'ccc' => $ccc,
             'fingerprint' => $ca->exists() ? $ca->fingerprint() : null,
+            'interceptionFingerprint' => $ca->interceptionFingerprint(),
             'setupFile' => $setupFile,
             'files' => $files,
         ]);

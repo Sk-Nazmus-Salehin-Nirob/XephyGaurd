@@ -73,8 +73,8 @@ The audit has no performance finding. No step until one is measured.
 - [x] Step 40: Check that FetchContent pins (nlohmann/json, toml++, Catch2) are exact tags; report only, ask before updating (fixes none; touches none) — pins exact (json URL+SHA256, toml++ v3.4.0, Catch2 v3.7.1 tags); nothing updated
 
 ## Interception CA (ccc-deploy Step 7, approved by the owner 2026-11-27)
-- [ ] Step 41: When the policy's `interception_ca_sha256` differs from the installed one, fetch
-  `https://<ccc>/interception-ca.crt` with `ca_file` (the lab root) as the only trust anchor and the CCC host check,
+- [ ] Step 41: When the policy's `interception_ca_sha256` differs from the installed one, take the PEM from the
+  policy response's `interception_ca` (same mTLS channel, pinned to `ca_file`; server S-75),
   refuse it unless its SHA-256 equals the policy value and it is a CA cert, write it atomically to
   `<ca dir>/interception-ca.crt` and install it into the OS trust: Linux
   `/usr/local/share/ca-certificates/xephyguard-interception-ca.crt` + `update-ca-certificates` + the NSS script;

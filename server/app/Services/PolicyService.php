@@ -97,7 +97,8 @@ class PolicyService
         $rules = config('xephyguard.data_dir').'/screen/privacy_rules.yaml';
 
         return hash('sha256', json_encode(config('xephyguard')).'|'.json_encode(NoticeText::features()).'|'
-            .(is_file($rules) ? (string) filemtime($rules) : '-'));
+            .(is_file($rules) ? (string) filemtime($rules) : '-').'|'
+            .(app(CertificateAuthority::class)->interceptionFingerprint() ?? '-'));
     }
 
     /** Resolves the policy from scratch (no cache). */
@@ -148,6 +149,8 @@ class PolicyService
             'network_lock' => ($proxyOnly && $session && $mode !== 'always_on')
                 ? (in_array($session->network_lock, LabSession::NETWORK_LOCKS, true) ? $session->network_lock : 'observe')
                 : null,
+            // The proxy's interception CA the PC must trust; the PEM comes in the response's `interception_ca` (S-75).
+            'interception_ca_sha256' => app(CertificateAuthority::class)->interceptionFingerprint(),
         ], fn ($v) => $v !== null && $v !== []);
         $policy['session_id'] = $session?->id ?? 0;
         $policy['version'] = self::version($policy);
@@ -178,6 +181,8 @@ class PolicyService
                 'channel' => 'private-pc.'.$pc->id,
                 'auth_path' => '/api/agent/v1/broadcasting/auth',
             ],
+            // Over this mTLS channel, so the agent gets it from the CCC it pinned (S-75); null while there is none.
+            'interception_ca' => app(CertificateAuthority::class)->interceptionCertPem(),
         ];
     }
 }
