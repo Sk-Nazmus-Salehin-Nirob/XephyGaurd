@@ -1119,6 +1119,9 @@ Defined in `server/routes/console.php`.
   file and leaves the running value alone (ccc-deploy Step 15, I-CCC-29).
   The proxy resolves through Unbound (127.0.0.1) only; a fallback resolver is used only if `XG_DNS_FALLBACK` is
   set in `.env` (ccc-deploy Step 16, I-CCC-28).
+  `/etc/docker/daemon.json` is merged by `ccc-deploy/bin/xg-docker-daemon.py`: `iptables`/`ip6tables` false, log
+  rotation only if no `log-driver` is set, every other key kept; a backup `daemon.json.xephyguard-<time>.bak` first,
+  Docker restarted only if the file changed, invalid JSON stops the install untouched (ccc-deploy Step 17, I-CCC-17).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).

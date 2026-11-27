@@ -79,14 +79,14 @@ fi
 say "Installing Docker, nftables and tools"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq docker.io docker-compose-v2 nftables openssl curl dnsutils chrony jq >/dev/null
+apt-get install -y -qq docker.io docker-compose-v2 nftables openssl curl dnsutils chrony jq python3 >/dev/null
 mkdir -p /etc/docker
 # Docker must not touch the firewall: XephyGuard owns forwarding via nftables, and all CCC
-# containers use host networking, so Docker's NAT/iptables rules are not needed.
-if ! grep -q '"iptables": false' /etc/docker/daemon.json 2>/dev/null; then
-  echo '{ "iptables": false, "ip6tables": false, "log-driver": "json-file", "log-opts": { "max-size": "20m", "max-file": "5" } }' > /etc/docker/daemon.json
-  systemctl restart docker
-fi
+# containers use host networking, so Docker's NAT/iptables rules are not needed. The keys are merged
+# into the admin's daemon.json (backup first), never written over it (I-CCC-17).
+daemon=$(python3 "$DEPLOY/bin/xg-docker-daemon.py" /etc/docker/daemon.json) \
+  || die "/etc/docker/daemon.json is not valid JSON; fix it, then run install.sh again"
+[ "$daemon" = changed ] && systemctl restart docker
 systemctl enable --now docker chrony >/dev/null
 
 # ---------------------------------------------------------------- host networking
