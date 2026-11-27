@@ -53,7 +53,7 @@ time sync, disk, containers, CA expiry, signatures, analysis service, silent PCs
 | Backup (DB, CA, storage, interception CA, secrets) | `sudo xephyguard-ccc backup /mnt/backup` |
 | Update (backs up to `/var/backups/xephyguard` first) | `git pull && sudo xephyguard-ccc update` |
 | Enrollment key | `sudo xephyguard-ccc enroll-key` (`--rotate` to replace) |
-| Partition the events table (large labs) | see `ccc-deploy/mysql/partition-events.sql` |
+| Partition the events table (large labs) | see `ccc-deploy/mysql/partition-events.sql`, then run `partition-maintenance.sql` once (new partitions every month) |
 | Publish installers | `scripts/release.sh <ver> --publish-to /var/lib/xephyguard/storage/public/downloads` |
 
 ## Restore

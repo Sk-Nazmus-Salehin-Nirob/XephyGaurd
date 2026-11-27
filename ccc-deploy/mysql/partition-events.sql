@@ -4,6 +4,8 @@
 --   docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot xephyguard' < mysql/partition-events.sql
 -- Dropping an old partition is then an instant retention purge:
 --   ALTER TABLE events DROP PARTITION p2026_01;
+-- Then run mysql/partition-maintenance.sql once: it adds the partitions from 2027-03 on and a monthly
+-- event that keeps three months ahead, so new events do not end up in pmax (I-CCC-27).
 
 ALTER TABLE events DROP FOREIGN KEY events_pc_id_foreign;
 ALTER TABLE events DROP PRIMARY KEY, ADD PRIMARY KEY (id, occurred_at);

@@ -1143,6 +1143,9 @@ Defined in `server/routes/console.php`.
   start" and the `logs mysql` command, instead of failing later in migrate (ccc-deploy Step 24, I-CCC-16).
   `netpolicy` exits (and Docker restarts it) when either Unbound or the `--watch --apply` policy watcher exits, so
   "netpolicy running" means both run; SIGTERM stops both with status 0 (ccc-deploy Step 25, I-CCC-11).
+  For a partitioned `events` table, `mysql/partition-maintenance.sql` (run once, repeatable) adds the procedure
+  `xg_extend_event_partitions(n)` and a monthly MySQL event that keeps partitions three months ahead, so events
+  never pile up in `pmax` (ccc-deploy Step 31, I-CCC-27).
 - **Trigger:** `sudo ccc-deploy/install.sh`; `docker compose -f ccc-deploy/docker-compose.yml up -d`.
 - **Code:** `ccc-deploy/install.sh`, `docker-compose.yml`, `docker/*.Dockerfile`, `nginx/xephyguard.conf`.
 - **Status:** partly working (compose config valid; `install.sh` never run on a real two-NIC host).
