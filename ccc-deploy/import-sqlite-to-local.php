@@ -60,65 +60,74 @@ $colStmt = $dst->prepare(
 
 $dst->exec('SET FOREIGN_KEY_CHECKS = 0');
 
-foreach ($tables as $table) {
-    if (in_array($table, $skipTables, true)) {
-        continue;
-    }
-
-    $colStmt->execute([$dbName, $table]);
-    $mysqlCols = [];
-    foreach ($colStmt->fetchAll(PDO::FETCH_ASSOC) as $c) {
-        $mysqlCols[$c['COLUMN_NAME']] = [
-            'type' => strtolower($c['DATA_TYPE']),
-            'prec' => (int) $c['PREC'],
-        ];
-    }
-    if ($mysqlCols === []) {
-        echo "skip {$table} (not in target schema)\n";
-        continue;
-    }
-
-    $sqliteCols = array_column($src->query("PRAGMA table_info(\"{$table}\")")->fetchAll(PDO::FETCH_ASSOC), 'name');
-    $cols = array_values(array_intersect($sqliteCols, array_keys($mysqlCols)));
-    if ($cols === []) {
-        continue;
-    }
-
-    $dst->exec("TRUNCATE TABLE `{$table}`");
-
-    $selectSql = 'SELECT '.implode(', ', array_map(fn ($c) => "\"{$c}\"", $cols))." FROM \"{$table}\"";
-    $rows = $src->query($selectSql)->fetchAll(PDO::FETCH_ASSOC);
-    $srcCount = count($rows);
-
-    if ($srcCount > 0) {
-        $colList = implode(', ', array_map(fn ($c) => "`{$c}`", $cols));
-        $rowPlaceholder = '('.implode(', ', array_fill(0, count($cols), '?')).')';
-        $dst->beginTransaction();
-        foreach (array_chunk($rows, 200) as $chunk) {
-            $placeholders = implode(', ', array_fill(0, count($chunk), $rowPlaceholder));
-            $insertSql = "INSERT INTO `{$table}` ({$colList}) VALUES {$placeholders}";
-            $params = [];
-            foreach ($chunk as $row) {
-                foreach ($cols as $col) {
-                    $val = $row[$col];
-                    $meta = $mysqlCols[$col];
-                    if (in_array($meta['type'], ['timestamp', 'datetime'], true)) {
-                        $val = normalizeTemporalValue($val, $meta['prec'], $tz);
-                    }
-                    $params[] = $val;
-                }
-            }
-            $dst->prepare($insertSql)->execute($params);
+// One transaction for the whole import, and DELETE instead of TRUNCATE (an implicit commit): any error or
+// row-count mismatch rolls every table back, so MySQL keeps the data it had (I-CCC-31).
+$dst->beginTransaction();
+try {
+    foreach ($tables as $table) {
+        if (in_array($table, $skipTables, true)) {
+            continue;
         }
-        $dst->commit();
-    }
 
-    $dstCount = (int) $dst->query("SELECT COUNT(*) FROM `{$table}`")->fetchColumn();
-    echo sprintf("%-24s src=%-5d dst=%-5d\n", $table, $srcCount, $dstCount);
-    if ($dstCount !== $srcCount) {
-        fwrite(STDERR, "Row count mismatch for {$table}!\n");
-        exit(2);
+        $colStmt->execute([$dbName, $table]);
+        $mysqlCols = [];
+        foreach ($colStmt->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            $mysqlCols[$c['COLUMN_NAME']] = [
+                'type' => strtolower($c['DATA_TYPE']),
+                'prec' => (int) $c['PREC'],
+            ];
+        }
+        if ($mysqlCols === []) {
+            echo "skip {$table} (not in target schema)\n";
+            continue;
+        }
+
+        $sqliteCols = array_column($src->query("PRAGMA table_info(\"{$table}\")")->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $cols = array_values(array_intersect($sqliteCols, array_keys($mysqlCols)));
+        if ($cols === []) {
+            continue;
+        }
+
+        $selectSql = 'SELECT '.implode(', ', array_map(fn ($c) => "\"{$c}\"", $cols))." FROM \"{$table}\"";
+        $rows = $src->query($selectSql)->fetchAll(PDO::FETCH_ASSOC);   // read before anything is removed
+        $srcCount = count($rows);
+
+        $dst->exec("DELETE FROM `{$table}`");
+
+        if ($srcCount > 0) {
+            $colList = implode(', ', array_map(fn ($c) => "`{$c}`", $cols));
+            $rowPlaceholder = '('.implode(', ', array_fill(0, count($cols), '?')).')';
+            foreach (array_chunk($rows, 200) as $chunk) {
+                $placeholders = implode(', ', array_fill(0, count($chunk), $rowPlaceholder));
+                $insertSql = "INSERT INTO `{$table}` ({$colList}) VALUES {$placeholders}";
+                $params = [];
+                foreach ($chunk as $row) {
+                    foreach ($cols as $col) {
+                        $val = $row[$col];
+                        $meta = $mysqlCols[$col];
+                        if (in_array($meta['type'], ['timestamp', 'datetime'], true)) {
+                            $val = normalizeTemporalValue($val, $meta['prec'], $tz);
+                        }
+                        $params[] = $val;
+                    }
+                }
+                $dst->prepare($insertSql)->execute($params);
+            }
+        }
+
+        $dstCount = (int) $dst->query("SELECT COUNT(*) FROM `{$table}`")->fetchColumn();
+        echo sprintf("%-24s src=%-5d dst=%-5d\n", $table, $srcCount, $dstCount);
+        if ($dstCount !== $srcCount) {
+            throw new RuntimeException("row count mismatch for {$table}");
+        }
     }
+    $dst->commit();
+} catch (Throwable $e) {
+    if ($dst->inTransaction()) {
+        $dst->rollBack();
+    }
+    fwrite(STDERR, "Import failed, MySQL left as it was: {$e->getMessage()}\n");
+    exit(2);
 }
 
 $dst->exec('SET FOREIGN_KEY_CHECKS = 1');

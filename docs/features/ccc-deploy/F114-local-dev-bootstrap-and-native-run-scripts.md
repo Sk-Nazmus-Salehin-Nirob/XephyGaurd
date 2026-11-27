@@ -17,6 +17,9 @@
   netpolicy, proxy, discovery and screen-gateway get explicit variables as in production (ccc-deploy Step 11).
   `bootstrap-local.sh` and `setup-server-docker.sh` reach MySQL through `mysql_root`/`mysql_app` (`MYSQL_PWD` from
   the container's env), so no password is on a command line (ccc-deploy Step 12).
+  `import-sqlite-to-local.php` (`bootstrap-local.sh --reseed`) imports every table in one transaction with
+  `DELETE FROM` instead of `TRUNCATE`; an error or a row-count mismatch rolls it all back and MySQL keeps its data
+  (ccc-deploy Step 27, I-CCC-31).
 - **Code:** `new_setup_scripts/` (`setup-server-docker.sh`, `setup-server-native.sh`,
   `install-agent.sh`, `setup-server.ps1/.bat`, `deploy-agents.ps1`), `start_server/` (`start-server`,
   `stop-server`, `status-server` for Linux and Windows), `ccc-deploy/bootstrap-local.sh`,
