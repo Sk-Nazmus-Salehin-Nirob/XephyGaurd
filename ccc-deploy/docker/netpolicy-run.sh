@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Starts Unbound and keeps DNS + nftables in sync with /var/lib/xephyguard/net/state.json.
 set -e
 OUT=/var/lib/xephyguard/net
@@ -32,6 +32,15 @@ export XG_UNBOUND_CONF="$UNBOUND_CONF"
 unbound-checkconf "$UNBOUND_CONF"
 unbound -d -c "$UNBOUND_CONF" &
 UNBOUND=$!
-trap 'kill $UNBOUND' TERM INT
 python3 -m xg_netpolicy.generate --state "$OUT/state.json" --out "$OUT" --watch --apply &
-wait $UNBOUND
+WATCH=$!
+# Both must run (I-CCC-11): when either Unbound or the policy watcher exits, stop the other and exit non-zero,
+# so Docker restarts the container instead of leaving DNS running on a policy that no longer updates.
+trap 'kill "$UNBOUND" "$WATCH" 2>/dev/null; wait; exit 0' TERM INT
+set +e
+wait -n "$UNBOUND" "$WATCH"
+rc=$?
+echo "netpolicy: unbound or the policy watcher exited (status $rc); stopping so Docker restarts the container" >&2
+kill "$UNBOUND" "$WATCH" 2>/dev/null
+wait
+exit 1

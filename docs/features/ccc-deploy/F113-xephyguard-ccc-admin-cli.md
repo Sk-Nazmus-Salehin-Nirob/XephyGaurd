@@ -19,6 +19,8 @@
   mode (ccc-deploy Step 15).
   `update` is `build` then `up -d`: compose runs the one-shot `migrate` service first and starts the app roles only
   if it succeeds (ccc-deploy Step 21).
+  `doctor`'s "netpolicy running" now also means the policy watcher runs: the container exits when it does
+  (ccc-deploy Step 25).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.
