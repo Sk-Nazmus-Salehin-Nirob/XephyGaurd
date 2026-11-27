@@ -50,8 +50,30 @@ time sync, disk, containers, CA expiry, signatures, analysis service, silent PCs
 |---|---|
 | Health check | `sudo xephyguard-ccc doctor` |
 | Logs | `sudo xephyguard-ccc logs web` (or worker, proxy, netpolicy, analysis, reverb) |
-| Backup (DB + CA + secrets) | `sudo xephyguard-ccc backup /mnt/backup` |
-| Update | `git pull && sudo xephyguard-ccc update` |
+| Backup (DB, CA, storage, interception CA, secrets) | `sudo xephyguard-ccc backup /mnt/backup` |
+| Update (backs up to `/var/backups/xephyguard` first) | `git pull && sudo xephyguard-ccc update` |
 | Enrollment key | `sudo xephyguard-ccc enroll-key` (`--rotate` to replace) |
 | Partition the events table (large labs) | see `ccc-deploy/mysql/partition-events.sql` |
 | Publish installers | `scripts/release.sh <ver> --publish-to /var/lib/xephyguard/storage/public/downloads` |
+
+## Restore
+A backup is five files with one timestamp `TS`: `xephyguard-db-TS.sql.gz`, `xephyguard-ca-TS.tgz`,
+`xephyguard-storage-TS.tgz` (evidence, downloads), `xephyguard-mitmproxy-TS.tgz` (interception CA bundle) and
+`xephyguard-env-TS` (`.env`: DB passwords, `APP_KEY`, tokens). They hold private keys and student data: keep them
+offline and 0600. On the same or a new Ubuntu host, with the repository at `/opt/xephyguard`:
+
+1. Put the files back **before** installing, so install.sh keeps them (it keeps an existing `.env`, and
+   `xephyguard:ca:init` keeps an existing CA):
+   ```
+   sudo install -d -m 0755 /var/lib/xephyguard
+   for p in ca storage mitmproxy; do sudo tar -xzpf xephyguard-$p-TS.tgz -C /var/lib/xephyguard; done
+   sudo install -m 0600 xephyguard-env-TS /opt/xephyguard/ccc-deploy/.env
+   ```
+2. `sudo /opt/xephyguard/ccc-deploy/install.sh` (same lab answers; MySQL starts with the restored passwords).
+3. Load the database (the dump drops and recreates every table):
+   ```
+   cd /opt/xephyguard/ccc-deploy
+   gunzip -c xephyguard-db-TS.sql.gz | sudo docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot xephyguard'
+   sudo docker compose restart && sudo xephyguard-ccc doctor
+   ```
+   The lab CA fingerprint `doctor` prints must be the one from before: enrolled PCs keep trusting the CCC.

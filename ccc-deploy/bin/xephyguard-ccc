@@ -87,9 +87,13 @@ backup() (
     fail "database dump failed (root password changed, or MySQL down? sudo xephyguard-ccc logs mysql)"
   fi
   tar -czf "$out/xephyguard-ca-$ts.tgz" -C /var/lib/xephyguard ca || fail "cannot archive /var/lib/xephyguard/ca"
+  # Evidence screenshots, downloads and the interception CA bundle the DB rows refer to (I-CCC-26).
+  tar -czf "$out/xephyguard-storage-$ts.tgz" -C /var/lib/xephyguard storage || fail "cannot archive /var/lib/xephyguard/storage"
+  tar -czf "$out/xephyguard-mitmproxy-$ts.tgz" -C /var/lib/xephyguard mitmproxy || fail "cannot archive /var/lib/xephyguard/mitmproxy"
   cp .env "$out/xephyguard-env-$ts" || fail "cannot copy .env"
-  chmod 0600 "$db" "$out/xephyguard-ca-$ts.tgz" "$out/xephyguard-env-$ts" || fail "cannot chmod the backup files"
-  echo "Backup written to $out (contains the CA private key and secrets: store it safely)"
+  chmod 0600 "$db" "$out"/xephyguard-*-"$ts".tgz "$out/xephyguard-env-$ts" || fail "cannot chmod the backup files"
+  echo "Backup written to $out (contains the CA private keys, secrets and student evidence: store it safely;"
+  echo "restore: docs/SETUP_CCC.md, Restore)"
 )
 
 case "${1:-}" in

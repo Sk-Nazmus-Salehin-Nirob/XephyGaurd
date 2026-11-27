@@ -4,7 +4,7 @@
 - **Area:** 19. Packaging and deployment tools
 - **Source:** [docs/FEATURES.md](../../FEATURES.md) (status legend, roles, `S/` = `server/app/`, `A/` = `agent/`)
 
-- **What:** `doctor`, `status`, `logs [svc]`, `enroll-key`, `backup DIR` (DB dump + CA + settings),
+- **What:** `doctor`, `status`, `logs [svc]`, `enroll-key`, `backup DIR` (DB dump + CA + storage + interception CA + settings),
   `update` (build, migrate, restart), `artisan …`.
   `doctor` also prints the lab CA SHA-256 fingerprint to compare with the install command (ccc-deploy Step 6).
   `doctor` probes the proxy on `$XG_CCC_IP:8080` (it no longer listens on loopback) and, in proxy_only mode,
@@ -28,6 +28,8 @@
   (`docker compose exec -u www-data`), so they never leave root-owned app files (ccc-deploy Step 28, I-CCC-10).
   `update [DIR]` first runs `backup DIR` (default `/var/backups/xephyguard`) and stops without building anything
   if it fails (ccc-deploy Step 29, I-CCC-25).
+  `backup` also archives `/var/lib/xephyguard/storage` (evidence, downloads) and `/var/lib/xephyguard/mitmproxy`
+  (interception CA bundle); the restore steps are in docs/SETUP_CCC.md, "Restore" (ccc-deploy Step 30, I-CCC-26).
 - **Code:** `ccc-deploy/bin/xephyguard-ccc`.
 - **Status:** unclear (only syntax-checked).
 - **Test:** 1. `xephyguard-ccc status`. 2. `xephyguard-ccc backup /tmp/xg-backup` and check the files.
